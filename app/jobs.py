@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import json
+import shutil
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@dataclass
+class Job:
+    id: str
+    kind: str
+    status: str
+    path: Path
+    inputs: list[str]
+    created_at: str
+    updated_at: str
+    options: dict[str, Any] = field(default_factory=dict)
+    output: str | None = None
+    error: str | None = None
+    logs: list[str] = field(default_factory=list)
+
+    def public(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["path"] = str(self.path)
+        return data
+
+
+class JobStore:
+    def __init__(self, root: Path, ttl_hours: int) -> None:
+        self.root = root
+        self.ttl = timedelta(hours=ttl_hours)
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def create(self, kind: str, inputs: list[str], options: dict[str, Any] | None = None) -> Job:
+        job_id = uuid.uuid4().hex[:12]
+        path = self.root / job_id
+        path.mkdir(parents=True, exist_ok=False)
+        now = utc_now().isoformat()
+        job = Job(
+            id=job_id,
+            kind=kind,
+            status="queued",
+            path=path,
+            inputs=inputs,
+            options=options or {},
+            created_at=now,
+            updated_at=now,
+        )
+        self.save(job)
+        return job
+
+    def save(self, job: Job) -> None:
+        job.updated_at = utc_now().isoformat()
+        payload = job.public()
+        (job.path / "job.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def get(self, job_id: str) -> Job:
+        path = self.root / job_id / "job.json"
+        if not path.exists():
+            raise KeyError(job_id)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["path"] = Path(data["path"])
+        return Job(**data)
+
+    def log(self, job: Job, message: str) -> None:
+        job.logs.append(message)
+        self.save(job)
+
+    def set_status(self, job: Job, status: str, error: str | None = None) -> None:
+        job.status = status
+        job.error = error
+        self.save(job)
+
+    def set_output(self, job: Job, output: Path) -> None:
+        job.output = str(output)
+        job.status = "done"
+        self.save(job)
+
+    def delete(self, job_id: str) -> None:
+        shutil.rmtree(self.root / job_id, ignore_errors=True)
+
+    def cleanup_expired(self) -> int:
+        removed = 0
+        cutoff = utc_now() - self.ttl
+        for job_file in self.root.glob("*/job.json"):
+            try:
+                data = json.loads(job_file.read_text(encoding="utf-8"))
+                created = datetime.fromisoformat(data["created_at"])
+            except Exception:
+                continue
+            if created < cutoff:
+                shutil.rmtree(job_file.parent, ignore_errors=True)
+                removed += 1
+        return removed

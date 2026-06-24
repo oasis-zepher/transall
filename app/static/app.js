@@ -616,6 +616,26 @@ function clearFormatSlot(slotName) {
   finalizeRouteSelection();
 }
 
+function clearDraggedSlot(slotName) {
+  if (slotName === "source") {
+    sourceFormat = null;
+  } else if (slotName === "target") {
+    targetFormat = null;
+  }
+}
+
+function moveFilledSlotToEmptySlot(fromSlotName, toSlotName, format) {
+  if (!format || fromSlotName === toSlotName) return;
+  clearDraggedSlot(fromSlotName);
+  if (toSlotName === "source") {
+    sourceFormat = format;
+  } else if (toSlotName === "target") {
+    targetFormat = format;
+  }
+  markSettlingNodes(sourceFormat, targetFormat);
+  finalizeRouteSelection();
+}
+
 function reuseOppositeSlotFormat(slotName) {
   const formatToReuse = slotName === "source" ? targetFormat : sourceFormat;
   if (!formatToReuse) return false;
@@ -810,7 +830,7 @@ function finishSlotDrag(x, y) {
       swapFilledSlots();
       return;
     }
-    assignFormatToSlot(targetSlot.dataset.routeSlot, format);
+    moveFilledSlotToEmptySlot(slotName, targetSlot.dataset.routeSlot, format);
   } else {
     clearFormatSlot(slotName);
   }

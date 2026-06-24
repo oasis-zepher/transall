@@ -111,6 +111,17 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("sourceFormat = targetFormat", js)
         self.assertIn("targetFormat = previousSource", js)
 
+    def test_dragging_filled_slot_to_empty_slot_moves_without_duplication(self):
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("moveFilledSlotToEmptySlot", js)
+        self.assertIn("clearDraggedSlot", js)
+        self.assertIn("sourceFormat = null", js)
+        self.assertIn("targetFormat = null", js)
+        finish_slot_block = js[js.index("function finishSlotDrag"):js.index("function endSlotDrag")]
+        self.assertIn("moveFilledSlotToEmptySlot(slotName, targetSlot.dataset.routeSlot, format)", finish_slot_block)
+        self.assertNotIn("assignFormatToSlot(targetSlot.dataset.routeSlot, format)", finish_slot_block)
+
     def test_format_drag_has_single_visible_module_source(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
@@ -248,8 +259,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=stability-1", html)
-        self.assertIn("/static/app.js?v=stability-1", html)
+        self.assertIn("/static/styles.css?v=slot-move-1", html)
+        self.assertIn("/static/app.js?v=slot-move-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")

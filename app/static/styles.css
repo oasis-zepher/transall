@@ -70,6 +70,11 @@ button {
   padding: 24px 0 32px;
 }
 
+.shell.is-route-active {
+  padding-top: 16px;
+  padding-bottom: 4px;
+}
+
 .topbar,
 .router {
   animation: rise 420ms var(--ease) both;
@@ -86,6 +91,14 @@ button {
   gap: 24px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 16px;
+}
+
+.shell.is-route-active .topbar {
+  padding-bottom: 10px;
+}
+
+.shell.is-route-active h1 {
+  font-size: clamp(26px, 2.4vw, 34px);
 }
 
 .topbar-right {
@@ -152,6 +165,13 @@ h3 {
   overflow: visible;
 }
 
+.shell.is-route-active .router {
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 18px;
+  min-height: calc(100vh - 96px);
+  padding: 14px 0 8px;
+}
+
 .format-orbit {
   --orbit-size: min(560px, calc(100vw - 32px));
   position: relative;
@@ -206,10 +226,11 @@ h3 {
 }
 
 .shell.is-route-active .format-orbit {
+  --orbit-size: min(470px, calc(100vw - 32px));
   position: sticky;
-  top: clamp(52px, calc(50vh - 300px), 200px);
+  top: clamp(54px, calc(50vh - 250px), 180px);
   align-self: start;
-  transform: translate3d(0, 0, 0) scale(0.76);
+  transform: translate3d(0, 0, 0) scale(0.78);
   box-shadow: 0 14px 44px rgba(30, 45, 38, 0.1);
 }
 
@@ -996,14 +1017,23 @@ pre {
 /* Precision Deck */
 .shell.is-route-active .conversion-page {
   display: grid;
-  grid-template-columns: minmax(228px, 292px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  min-height: calc(100vh - 158px);
 }
 
 .shell.is-route-active .workspace {
-  grid-template-columns: 1fr;
-  gap: 14px;
+  grid-template-columns: minmax(250px, 0.9fr) minmax(285px, 1.1fr);
+  gap: 12px;
+  align-items: stretch;
+  padding-top: 0;
+}
+
+.shell.is-route-active .input-panel,
+.shell.is-route-active .result-panel {
+  align-self: stretch;
+  height: 100%;
 }
 
 .precision-rail,
@@ -1032,10 +1062,10 @@ pre {
 }
 
 .precision-rail {
-  min-height: 590px;
-  padding: 18px;
+  min-height: 0;
+  padding: 14px;
   align-content: start;
-  gap: 16px;
+  gap: 10px;
   background:
     linear-gradient(90deg, rgba(32, 37, 34, 0.045) 1px, transparent 1px),
     linear-gradient(rgba(32, 37, 34, 0.035) 1px, transparent 1px),
@@ -1046,22 +1076,24 @@ pre {
 .precision-rail .route-panel-head {
   align-items: center;
   border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 18%);
-  padding-bottom: 10px;
+  padding-bottom: 8px;
 }
 
 .precision-rail h2 {
   border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 10%);
-  padding-bottom: 14px;
-  font-size: clamp(30px, 3.8vw, 46px);
+  padding-bottom: 8px;
+  font-size: clamp(24px, 2.45vw, 32px);
+  line-height: 1.02;
 }
 
 #routeSummary {
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.38;
 }
 
 .status-matrix {
   border: 0;
-  gap: 8px;
+  gap: 6px;
 }
 
 .status-matrix div {
@@ -1077,19 +1109,19 @@ pre {
 }
 
 .status-matrix strong {
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .spec-list {
-  gap: 8px;
+  gap: 6px;
 }
 
 .spec-list div {
-  grid-template-columns: 54px 1fr;
-  gap: 10px;
+  grid-template-columns: 42px 1fr;
+  gap: 8px;
   border: 1px solid color-mix(in srgb, var(--line), transparent 18%);
   background: rgba(255, 253, 248, 0.58);
-  padding: 10px;
+  padding: 8px;
 }
 
 .spec-list dt {
@@ -1098,7 +1130,8 @@ pre {
 }
 
 .spec-list dd {
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.32;
 }
 
 .diagnostics-list {
@@ -1111,15 +1144,24 @@ pre {
 }
 
 .diagnostic-item {
+  grid-template-columns: minmax(76px, 1fr) auto;
   border-left-width: 4px;
   background:
     linear-gradient(180deg, rgba(255, 253, 248, 0.84), rgba(240, 244, 240, 0.82)),
     var(--panel-2);
   box-shadow: var(--inset-line);
+  padding: 7px 8px;
+}
+
+.diagnostic-item small {
+  display: none;
 }
 
 .command-deck {
-  padding: 18px;
+  padding: 14px;
+  display: grid;
+  grid-template-rows: auto minmax(180px, 1fr) auto auto auto;
+  align-content: stretch;
 }
 
 .command-deck .panel-head,
@@ -1128,7 +1170,7 @@ pre {
 }
 
 .file-well {
-  min-height: 210px;
+  min-height: 132px;
   border: 1px solid color-mix(in srgb, var(--line-strong), var(--target) 10%);
   background:
     linear-gradient(90deg, rgba(32, 37, 34, 0.05) 1px, transparent 1px),
@@ -1147,15 +1189,15 @@ pre {
 }
 
 .file-well::before {
-  inset: 12px;
+  inset: 9px;
   border: 1px dashed color-mix(in srgb, var(--line-strong), transparent 4%);
 }
 
 .file-well::after {
-  left: 18px;
-  right: 18px;
-  bottom: 16px;
-  height: 4px;
+  left: 14px;
+  right: 14px;
+  bottom: 11px;
+  height: 3px;
   background:
     repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent), transparent 18%) 0 20px, transparent 20px 28px);
   opacity: 0.5;
@@ -1176,7 +1218,7 @@ pre {
 }
 
 .file-well .slot-copy strong {
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .file-list {
@@ -1187,19 +1229,19 @@ pre {
 .control-strip {
   border: 1px solid color-mix(in srgb, var(--line), transparent 16%);
   background: linear-gradient(180deg, rgba(251, 252, 249, 0.9), rgba(239, 244, 239, 0.78));
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   box-shadow: var(--inset-line);
 }
 
 .control-strip + .control-strip {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .control-strip label {
   border: 1px solid color-mix(in srgb, var(--line), transparent 18%);
   background: rgba(255, 253, 248, 0.72);
-  padding: 9px;
+  padding: 7px;
   color: var(--ink-soft);
 }
 
@@ -1212,7 +1254,7 @@ pre {
 .actions {
   align-items: center;
   border-top: 1px solid color-mix(in srgb, var(--line), transparent 10%);
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .actions button[type="submit"] {
@@ -1221,14 +1263,17 @@ pre {
 }
 
 .execution-deck {
-  min-height: 420px;
+  min-height: 0;
   display: grid;
-  align-content: start;
+  grid-template-rows: auto minmax(118px, 0.8fr) minmax(122px, 1fr);
+  align-content: stretch;
+  padding: 14px;
 }
 
 .execution-grid {
   grid-template-columns: minmax(0, 1.15fr) minmax(160px, 0.85fr);
   gap: 10px;
+  min-height: 0;
 }
 
 .console-pane,
@@ -1240,8 +1285,16 @@ pre {
   box-shadow: var(--inset-line);
 }
 
+.console-pane,
+.artifact-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
 .console-pane pre {
-  min-height: 156px;
+  min-height: 0;
+  max-height: none;
   color: #26332b;
   background:
     linear-gradient(90deg, rgba(32, 37, 34, 0.035) 1px, transparent 1px),
@@ -1250,7 +1303,6 @@ pre {
 }
 
 .artifact-pane {
-  display: grid;
   align-content: start;
   gap: 8px;
 }
@@ -1262,16 +1314,19 @@ pre {
 }
 
 .filmstrip-pane {
-  margin-top: 2px;
+  margin-top: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
 }
 
 .preview {
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 8px;
 }
 
 .preview:empty {
-  min-height: 150px;
+  min-height: 100%;
   border: 1px dashed color-mix(in srgb, var(--line-strong), transparent 12%);
   background:
     linear-gradient(90deg, rgba(32, 37, 34, 0.045) 1px, transparent 1px),

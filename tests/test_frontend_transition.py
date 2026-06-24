@@ -259,8 +259,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=active-compass-center-1", html)
-        self.assertIn("/static/app.js?v=active-compass-center-1", html)
+        self.assertIn("/static/styles.css?v=filled-deck-1", html)
+        self.assertIn("/static/app.js?v=filled-deck-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -302,8 +302,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=active-compass-center-1", html)
-        self.assertIn("/static/app.js?v=active-compass-center-1", html)
+        self.assertIn("/static/styles.css?v=filled-deck-1", html)
+        self.assertIn("/static/app.js?v=filled-deck-1", html)
 
     def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -322,6 +322,53 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("position: sticky", active_orbit_block)
         self.assertIn("top: clamp", active_orbit_block)
         self.assertIn("align-self: start", active_orbit_block)
+
+    def test_active_conversion_deck_is_compact_enough_for_first_viewport(self):
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        active_router_block = css[css.index(".shell.is-route-active .router {"):css.index(".format-orbit {")]
+        active_page_block = css[css.index(".shell.is-route-active .conversion-page {"):css.index(".shell.is-route-active .workspace {")]
+        workspace_block = css[css.index(".shell.is-route-active .workspace {"):css.index(".precision-rail,")]
+        rail_block = css[css.index(".precision-rail {"):css.index(".precision-rail .route-panel-head")]
+        file_well_block = css[css.index(".file-well {"):css.index(".file-well::before,")]
+        execution_start = css.index(".execution-deck {")
+        console_start = css.index(".console-pane pre {")
+        execution_block = css[execution_start:css.index(".execution-grid", execution_start)]
+        console_block = css[console_start:css.index(".artifact-pane", console_start)]
+        preview_start = css.rindex(".preview:empty {")
+        diagnostic_start = css.rindex(".diagnostic-item small {")
+        preview_block = css[preview_start:css.index(".preview img", preview_start)]
+        diagnostic_block = css[diagnostic_start:css.index(".command-deck", diagnostic_start)]
+
+        self.assertIn("grid-template-columns: minmax(300px, 360px) minmax(0, 1fr)", active_router_block)
+        self.assertIn("grid-template-columns: minmax(190px, 220px) minmax(0, 1fr)", active_page_block)
+        self.assertIn("grid-template-columns: minmax(250px, 0.9fr) minmax(285px, 1.1fr)", workspace_block)
+        self.assertIn("min-height: 0", rail_block)
+        self.assertIn("min-height: 132px", file_well_block)
+        self.assertIn("min-height: 0", execution_block)
+        self.assertIn("min-height: 0", console_block)
+        self.assertIn("max-height: none", console_block)
+        self.assertIn("min-height: 100%", preview_block)
+        self.assertIn("display: none", diagnostic_block)
+
+    def test_active_conversion_deck_stretches_to_fill_right_side(self):
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        active_page_block = css[css.index(".shell.is-route-active .conversion-page {"):css.index(".shell.is-route-active .workspace {")]
+        workspace_block = css[css.index(".shell.is-route-active .workspace {"):css.index(".shell.is-route-active .input-panel")]
+        active_panels_block = css[css.index(".shell.is-route-active .input-panel,"):css.index(".precision-rail,")]
+        command_block = css[css.index(".command-deck {"):css.index(".command-deck .panel-head")]
+        execution_block = css[css.index(".execution-deck {"):css.index(".execution-grid")]
+        filmstrip_block = css[css.index(".filmstrip-pane {"):css.index(".preview {", css.index(".filmstrip-pane {"))]
+
+        self.assertIn("align-items: stretch", active_page_block)
+        self.assertIn("min-height: calc(100vh - 158px)", active_page_block)
+        self.assertIn("align-items: stretch", workspace_block)
+        self.assertIn("align-self: stretch", active_panels_block)
+        self.assertIn("height: 100%", active_panels_block)
+        self.assertIn("grid-template-rows: auto minmax(180px, 1fr) auto auto auto", command_block)
+        self.assertIn("grid-template-rows: auto minmax(118px, 0.8fr) minmax(122px, 1fr)", execution_block)
+        self.assertIn("grid-template-rows: auto minmax(0, 1fr)", filmstrip_block)
 
 
 if __name__ == "__main__":

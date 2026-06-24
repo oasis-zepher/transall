@@ -1,4 +1,4 @@
-# Doc Workbench
+# Proteuswitch
 
 macOS local web service for document conversion, PDF edits, Markdown extraction, PDF translation, and OCR.
 

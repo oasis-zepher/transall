@@ -1,1 +1,1 @@
-"""Local document conversion workbench."""
+"""Proteuswitch local document conversion service."""

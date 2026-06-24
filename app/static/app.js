@@ -52,7 +52,7 @@ const ROUTE_ANIMATION_MS = 900;
 const NODE_SETTLE_MS = 420;
 const POINTER_DRAG_THRESHOLD = 6;
 const CLICK_SUPPRESS_MS = 450;
-const GLOSSARY_STORAGE_KEY = "doc-workbench.translate.glossary";
+const GLOSSARY_STORAGE_KEY = "proteuswitch.translate.glossary";
 const TEXT_SELECTION_CLASS = "is-format-dragging";
 
 const formats = {

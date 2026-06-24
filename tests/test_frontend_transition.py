@@ -248,8 +248,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=layout-engines-1", html)
-        self.assertIn("/static/app.js?v=layout-engines-1", html)
+        self.assertIn("/static/styles.css?v=proteuswitch-1", html)
+        self.assertIn("/static/app.js?v=proteuswitch-1", html)
 
 
 if __name__ == "__main__":

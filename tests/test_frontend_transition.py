@@ -248,9 +248,14 @@ class FrontendTransitionTests(unittest.TestCase):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
-        self.assertIn('class="translation-glossary"', html)
+        self.assertIn('class="topbar-glossary translation-glossary"', html)
+        self.assertIn('id="glossary"', html[html.index('<div class="topbar-right">'):html.index("</header>")])
+        self.assertNotIn('id="glossary"', html[html.index('<form id="jobForm"'):html.index("</form>")])
+        self.assertNotIn('id="providerStatus"', html)
         self.assertIn(".translation-glossary", css)
-        self.assertIn("grid-column: 2", css[css.index(".translation-glossary"):css.index(".actions")])
+        self.assertIn(".topbar-glossary", css)
+        self.assertIn("position: absolute", css[css.index(".topbar-glossary:focus-within textarea"):css.index(".route-reset")])
+        self.assertIn("providerStatus) {", js)
         self.assertIn("GLOSSARY_STORAGE_KEY", js)
         self.assertIn("loadStoredGlossary", js)
         self.assertIn("saveStoredGlossary", js)
@@ -259,8 +264,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=no-route-rail-1", html)
-        self.assertIn("/static/app.js?v=no-route-rail-1", html)
+        self.assertIn("/static/styles.css?v=topbar-glossary-1", html)
+        self.assertIn("/static/app.js?v=topbar-glossary-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -302,8 +307,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=no-route-rail-1", html)
-        self.assertIn("/static/app.js?v=no-route-rail-1", html)
+        self.assertIn("/static/styles.css?v=topbar-glossary-1", html)
+        self.assertIn("/static/app.js?v=topbar-glossary-1", html)
 
     def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")

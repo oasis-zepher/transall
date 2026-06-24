@@ -109,6 +109,47 @@ button {
   text-align: right;
 }
 
+.topbar-glossary {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 168px;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink-soft);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topbar-glossary textarea {
+  width: 168px;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  resize: none;
+  overflow: hidden;
+  padding: 5px 7px;
+  font-size: 12px;
+  line-height: 1.25;
+  background: color-mix(in srgb, var(--panel), var(--paper-2) 28%);
+}
+
+.topbar-glossary:focus-within textarea {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(360px, calc(100vw - 32px));
+  height: 132px;
+  max-height: 132px;
+  overflow: auto;
+  box-shadow: var(--shadow-tight);
+}
+
 .route-reset {
   display: none;
 }
@@ -151,7 +192,6 @@ h3 {
   margin-bottom: 6px;
 }
 
-.status-pill,
 .job-state {
   border: 1px solid var(--line);
   background: var(--paper-2);
@@ -852,12 +892,12 @@ h3 {
   margin-top: 14px;
 }
 
-.translation-glossary {
+.control-strip .translation-glossary {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
 
-.translation-glossary textarea {
+.control-strip .translation-glossary textarea {
   min-height: 112px;
 }
 
@@ -1461,9 +1501,19 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .translation-glossary {
+  .control-strip .translation-glossary {
     grid-column: 1;
     grid-row: auto;
+  }
+
+  .topbar-glossary {
+    grid-template-columns: 1fr;
+    align-items: start;
+    text-align: left;
+  }
+
+  .topbar-glossary textarea {
+    width: 100%;
   }
 
   .route-facts div {

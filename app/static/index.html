@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Proteuswitch</title>
-    <link rel="stylesheet" href="/static/styles.css?v=no-route-rail-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=topbar-glossary-1" />
   </head>
   <body>
     <main class="shell">
@@ -16,7 +16,10 @@
         <div class="topbar-right">
           <p id="routeLine">选择源格式和目标格式</p>
           <button type="button" id="resetRoute" class="quiet-button route-reset">重选</button>
-          <div class="status-pill" id="providerStatus">Providers</div>
+          <label class="topbar-glossary translation-glossary">
+            长期术语表
+            <textarea id="glossary" rows="1" placeholder="术语映射保存在本机"></textarea>
+          </label>
         </div>
       </header>
 
@@ -150,10 +153,6 @@
                     <option value="bilingual">双语对照 PDF</option>
                   </select>
                 </label>
-                <label data-panel="translate" class="translation-glossary">
-                  长期术语表
-                  <textarea id="glossary" rows="5" placeholder="一行一个术语映射，会保存在本机"></textarea>
-                </label>
                 <label data-panel="edit">
                   PDF 操作
                   <select id="editAction">
@@ -248,6 +247,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=no-route-rail-1"></script>
+    <script src="/static/app.js?v=topbar-glossary-1"></script>
   </body>
 </html>

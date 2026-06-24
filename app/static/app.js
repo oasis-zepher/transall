@@ -434,7 +434,9 @@ async function loadProviders() {
   const res = await fetch("/api/config/providers");
   const data = await res.json();
   const ready = data.providers.filter((p) => p.configured).map((p) => p.name).join(", ");
-  providerStatus.textContent = ready ? `已配置: ${ready}` : "未配置翻译密钥";
+  if (providerStatus) {
+    providerStatus.textContent = ready ? `已配置: ${ready}` : "未配置翻译密钥";
+  }
 }
 
 async function loadDiagnostics() {

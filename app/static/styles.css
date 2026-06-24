@@ -206,6 +206,9 @@ h3 {
 }
 
 .shell.is-route-active .format-orbit {
+  position: sticky;
+  top: clamp(52px, calc(50vh - 300px), 200px);
+  align-self: start;
   transform: translate3d(0, 0, 0) scale(0.76);
   box-shadow: 0 14px 44px rgba(30, 45, 38, 0.1);
 }
@@ -1332,6 +1335,9 @@ pre {
   }
 
   .shell.is-route-active .format-orbit {
+    position: relative;
+    top: auto;
+    align-self: center;
     transform: translate3d(0, 0, 0) scale(0.86);
   }
 

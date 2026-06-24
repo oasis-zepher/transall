@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Proteuswitch</title>
-    <link rel="stylesheet" href="/static/styles.css?v=slot-move-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=precision-deck-1" />
   </head>
   <body>
     <main class="shell">
@@ -72,7 +72,7 @@
         </div>
 
         <div class="conversion-page" aria-label="转换子页">
-          <aside class="route-panel" aria-label="路径详情">
+          <aside class="route-panel precision-rail" aria-label="路径详情">
             <div class="route-panel-head">
               <p class="eyebrow">Route</p>
               <button type="button" id="resetRoute" class="quiet-button">重选</button>
@@ -80,7 +80,7 @@
             <h2 id="routeTitle">未选择</h2>
             <p id="routeSummary">点击圆盘中的两个格式。第一个是源格式，第二个是目标格式。</p>
 
-            <div class="route-stats">
+            <div class="route-stats status-matrix">
               <div>
                 <span>状态</span>
                 <strong id="routeStatus">等待选择</strong>
@@ -91,7 +91,7 @@
               </div>
             </div>
 
-            <dl class="route-facts">
+            <dl class="route-facts spec-list">
               <div>
                 <dt>输入</dt>
                 <dd id="routeInput">选择源格式后显示</dd>
@@ -109,7 +109,7 @@
           </aside>
 
           <section class="workspace">
-            <form id="jobForm" class="panel input-panel">
+            <form id="jobForm" class="panel input-panel command-deck">
               <div class="panel-head">
                 <div>
                   <p class="eyebrow">Input</p>
@@ -118,7 +118,7 @@
                 <span id="fileCount">0 files</span>
               </div>
 
-              <div class="file-slot" id="dropzone">
+              <div class="file-slot file-well" id="dropzone">
                 <input id="files" name="files" type="file" multiple />
                 <div class="slot-copy">
                   <strong id="slotTitle">放入文件</strong>
@@ -135,7 +135,7 @@
                 <option value="ocr">OCR</option>
               </select>
 
-              <div class="settings-grid">
+              <div class="settings-grid control-strip">
                 <label data-panel="translate">
                   翻译服务
                   <select id="provider">
@@ -163,7 +163,7 @@
                 </label>
               </div>
 
-              <div class="settings-grid advanced" id="advanced">
+              <div class="settings-grid advanced control-strip" id="advanced">
                 <label data-panel="edit">
                   删除页
                   <input id="deletePages" placeholder="如 2,4-6" />
@@ -215,7 +215,7 @@
               </div>
             </form>
 
-            <section class="panel result-panel">
+            <section class="panel result-panel execution-deck">
               <div class="panel-head">
                 <div>
                   <p class="eyebrow">Output</p>
@@ -224,19 +224,19 @@
                 <span id="jobState" class="job-state">未开始</span>
               </div>
 
-              <div class="output-grid">
-                <section class="log-pane">
+              <div class="output-grid execution-grid">
+                <section class="log-pane console-pane">
                   <h3>运行日志</h3>
                   <pre id="log">等待任务。</pre>
                 </section>
-                <section class="file-pane">
+                <section class="file-pane artifact-pane">
                   <h3>结果文件</h3>
                   <a id="download" class="download" hidden>下载结果</a>
                   <p id="emptyOutput">任务完成后显示下载入口。</p>
                 </section>
               </div>
 
-              <section class="preview-pane">
+              <section class="preview-pane filmstrip-pane">
                 <div class="preview-head">
                   <h3>PDF 预览</h3>
                   <span>最多显示前 12 页</span>
@@ -248,6 +248,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=slot-move-1"></script>
+    <script src="/static/app.js?v=precision-deck-1"></script>
   </body>
 </html>

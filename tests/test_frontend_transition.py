@@ -259,8 +259,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=slot-move-1", html)
-        self.assertIn("/static/app.js?v=slot-move-1", html)
+        self.assertIn("/static/styles.css?v=precision-deck-1", html)
+        self.assertIn("/static/app.js?v=precision-deck-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -284,6 +284,26 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("ocrFallback", js)
         self.assertIn("ocr_fallback", js)
         self.assertIn("ocr_language", js)
+
+    def test_conversion_page_uses_precision_deck_structure(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        for class_name in (
+            "precision-rail",
+            "command-deck",
+            "file-well",
+            "control-strip",
+            "execution-deck",
+            "console-pane",
+            "artifact-pane",
+            "filmstrip-pane",
+        ):
+            self.assertIn(class_name, html)
+            self.assertIn(f".{class_name}", css)
+
+        self.assertIn("/static/styles.css?v=precision-deck-1", html)
+        self.assertIn("/static/app.js?v=precision-deck-1", html)
 
 
 if __name__ == "__main__":

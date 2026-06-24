@@ -4,6 +4,9 @@
   --paper-2: #e6ebe6;
   --panel: #fbfcf9;
   --panel-2: #eef3ee;
+  --panel-3: #f8faf5;
+  --metal: #d8ded7;
+  --track: #eef1eb;
   --ink: #202522;
   --ink-soft: #48534b;
   --muted: #667166;
@@ -16,6 +19,8 @@
   --warn: #8a6428;
   --bad: #9f3737;
   --shadow: 0 18px 60px rgba(30, 45, 38, 0.11);
+  --shadow-tight: 0 10px 30px rgba(28, 42, 35, 0.1);
+  --inset-line: inset 0 1px 0 rgba(255, 253, 248, 0.88), inset 0 -1px 0 rgba(32, 37, 34, 0.04);
   --radius: 6px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-main: 900ms;
@@ -973,6 +978,298 @@ pre {
   background: white;
 }
 
+/* Precision Deck */
+.shell.is-route-active .conversion-page {
+  display: grid;
+  grid-template-columns: minmax(228px, 292px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.shell.is-route-active .workspace {
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.precision-rail,
+.command-deck,
+.execution-deck {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--line), var(--ink) 8%);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(246, 249, 244, 0.96)),
+    var(--panel);
+  box-shadow: var(--shadow-tight), var(--inset-line);
+}
+
+.precision-rail::before,
+.command-deck::before,
+.execution-deck::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--source) 48%, var(--target));
+  opacity: 0.78;
+}
+
+.precision-rail {
+  min-height: 590px;
+  padding: 18px;
+  align-content: start;
+  gap: 16px;
+  background:
+    linear-gradient(90deg, rgba(32, 37, 34, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(32, 37, 34, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 253, 248, 0.94), rgba(239, 244, 239, 0.94));
+  background-size: 18px 18px, 18px 18px, auto;
+}
+
+.precision-rail .route-panel-head {
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 18%);
+  padding-bottom: 10px;
+}
+
+.precision-rail h2 {
+  border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 10%);
+  padding-bottom: 14px;
+  font-size: clamp(30px, 3.8vw, 46px);
+}
+
+#routeSummary {
+  font-size: 13px;
+}
+
+.status-matrix {
+  border: 0;
+  gap: 8px;
+}
+
+.status-matrix div {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.78), rgba(238, 243, 238, 0.86)),
+    var(--panel-2);
+  box-shadow: var(--inset-line);
+}
+
+.status-matrix div + div {
+  border-left: 1px solid var(--line);
+}
+
+.status-matrix strong {
+  font-size: 15px;
+}
+
+.spec-list {
+  gap: 8px;
+}
+
+.spec-list div {
+  grid-template-columns: 54px 1fr;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--line), transparent 18%);
+  background: rgba(255, 253, 248, 0.58);
+  padding: 10px;
+}
+
+.spec-list dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.spec-list dd {
+  font-size: 13px;
+}
+
+.diagnostics-list {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.diagnostics-list:empty {
+  display: none;
+}
+
+.diagnostic-item {
+  border-left-width: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.84), rgba(240, 244, 240, 0.82)),
+    var(--panel-2);
+  box-shadow: var(--inset-line);
+}
+
+.command-deck {
+  padding: 18px;
+}
+
+.command-deck .panel-head,
+.execution-deck .panel-head {
+  border-bottom-color: color-mix(in srgb, var(--line), transparent 12%);
+}
+
+.file-well {
+  min-height: 210px;
+  border: 1px solid color-mix(in srgb, var(--line-strong), var(--target) 10%);
+  background:
+    linear-gradient(90deg, rgba(32, 37, 34, 0.05) 1px, transparent 1px),
+    linear-gradient(rgba(32, 37, 34, 0.045) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(179, 72, 45, 0.07), transparent 42%),
+    var(--track);
+  background-size: 18px 18px, 18px 18px, auto, auto;
+  box-shadow: inset 0 0 0 1px rgba(255, 253, 248, 0.58), inset 0 -18px 36px rgba(32, 37, 34, 0.035);
+}
+
+.file-well::before,
+.file-well::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.file-well::before {
+  inset: 12px;
+  border: 1px dashed color-mix(in srgb, var(--line-strong), transparent 4%);
+}
+
+.file-well::after {
+  left: 18px;
+  right: 18px;
+  bottom: 16px;
+  height: 4px;
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent), transparent 18%) 0 20px, transparent 20px 28px);
+  opacity: 0.5;
+}
+
+.file-well.is-dragging {
+  background:
+    linear-gradient(90deg, rgba(179, 72, 45, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(179, 72, 45, 0.07) 1px, transparent 1px),
+    var(--accent-soft);
+  background-size: 18px 18px;
+  box-shadow: inset 0 0 0 2px rgba(179, 72, 45, 0.18), 0 12px 30px rgba(179, 72, 45, 0.12);
+}
+
+.file-well .slot-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.file-well .slot-copy strong {
+  font-size: 24px;
+}
+
+.file-list {
+  position: relative;
+  z-index: 1;
+}
+
+.control-strip {
+  border: 1px solid color-mix(in srgb, var(--line), transparent 16%);
+  background: linear-gradient(180deg, rgba(251, 252, 249, 0.9), rgba(239, 244, 239, 0.78));
+  gap: 10px;
+  padding: 10px;
+  box-shadow: var(--inset-line);
+}
+
+.control-strip + .control-strip {
+  margin-top: 10px;
+}
+
+.control-strip label {
+  border: 1px solid color-mix(in srgb, var(--line), transparent 18%);
+  background: rgba(255, 253, 248, 0.72);
+  padding: 9px;
+  color: var(--ink-soft);
+}
+
+.control-strip input,
+.control-strip select,
+.control-strip textarea {
+  background: var(--panel-3);
+}
+
+.actions {
+  align-items: center;
+  border-top: 1px solid color-mix(in srgb, var(--line), transparent 10%);
+  padding-top: 14px;
+}
+
+.actions button[type="submit"] {
+  min-width: 148px;
+  box-shadow: 0 10px 24px rgba(179, 72, 45, 0.18);
+}
+
+.execution-deck {
+  min-height: 420px;
+  display: grid;
+  align-content: start;
+}
+
+.execution-grid {
+  grid-template-columns: minmax(0, 1.15fr) minmax(160px, 0.85fr);
+  gap: 10px;
+}
+
+.console-pane,
+.artifact-pane,
+.filmstrip-pane {
+  border-color: color-mix(in srgb, var(--line), var(--ink) 8%);
+  background:
+    linear-gradient(180deg, rgba(238, 243, 238, 0.88), rgba(229, 236, 229, 0.92));
+  box-shadow: var(--inset-line);
+}
+
+.console-pane pre {
+  min-height: 156px;
+  color: #26332b;
+  background:
+    linear-gradient(90deg, rgba(32, 37, 34, 0.035) 1px, transparent 1px),
+    #dfe8df;
+  background-size: 12px 12px;
+}
+
+.artifact-pane {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.artifact-pane .download {
+  width: 100%;
+  justify-content: center;
+  margin: 0;
+}
+
+.filmstrip-pane {
+  margin-top: 2px;
+}
+
+.preview {
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
+}
+
+.preview:empty {
+  min-height: 150px;
+  border: 1px dashed color-mix(in srgb, var(--line-strong), transparent 12%);
+  background:
+    linear-gradient(90deg, rgba(32, 37, 34, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(32, 37, 34, 0.04) 1px, transparent 1px),
+    rgba(255, 253, 248, 0.54);
+  background-size: 20px 20px;
+}
+
+.preview img {
+  border-color: color-mix(in srgb, var(--line), var(--ink) 10%);
+  box-shadow: 0 8px 18px rgba(32, 37, 34, 0.1);
+}
+
 .is-warning {
   color: var(--warn) !important;
 }
@@ -1001,7 +1298,8 @@ pre {
 
 @media (max-width: 980px) {
   .router,
-  .workspace {
+  .workspace,
+  .shell.is-route-active .conversion-page {
     grid-template-columns: 1fr;
   }
 

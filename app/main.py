@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_UPLOAD_BYTES
 from .conversion import convert_to_pdf, extract_markdown
+from .diagnostics import collect_diagnostics
 from .jobs import Job, JobStore
 from .ocr import ocr_document
 from .pdf_ops import PdfEditOptions, apply_pdf_edits, merge_pdfs, parse_page_spec, render_preview_pages
@@ -33,6 +34,10 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
     @app.get("/api/config/providers")
     def providers() -> dict[str, object]:
         return {"providers": load_provider_configs(include_secrets=False)}
+
+    @app.get("/api/diagnostics")
+    def diagnostics() -> dict[str, object]:
+        return collect_diagnostics()
 
     @app.post("/api/jobs")
     async def create_job(
@@ -131,13 +136,14 @@ def run_job(store: JobStore, job_id: str) -> None:
         inputs = sorted(path for path in upload_dir.iterdir() if path.is_file())
         if not inputs:
             raise ValueError("No uploaded files")
+        store.log(job, f"Task: {job.kind}")
+        store.log(job, f"Inputs: {', '.join(path.name for path in inputs)}")
 
         if job.kind == "convert":
             outputs = [convert_to_pdf(path, output_dir) for path in inputs]
             output = _single_or_zip(outputs, output_dir / "converted-files.zip")
         elif job.kind == "extract_markdown":
-            outputs = [extract_markdown(path, output_dir / f"{path.stem}.md") for path in inputs]
-            output = _single_or_zip(outputs, output_dir / "markdown-files.zip")
+            output = _run_extract_markdown(job, inputs, output_dir)
         elif job.kind == "pdf_edit":
             output = _run_pdf_edit(job, inputs, output_dir)
         elif job.kind == "pdf_translate":
@@ -150,8 +156,23 @@ def run_job(store: JobStore, job_id: str) -> None:
         store.set_output(job, output)
         store.log(job, f"Output written: {output.name}")
     except Exception as exc:
+        store.log(job, f"Failed stage: {job.kind}")
+        store.log(job, f"Failure detail: {exc}")
         store.set_status(job, "failed", str(exc))
-        store.log(job, f"Failed: {exc}")
+
+
+def _run_extract_markdown(job: Job, inputs: list[Path], output_dir: Path) -> Path:
+    options = job.options
+    outputs = [
+        extract_markdown(
+            path,
+            output_dir / f"{path.stem}.md",
+            ocr_fallback=bool(options.get("ocr_fallback", False)),
+            ocr_language=str(options.get("ocr_language") or "chi_sim+eng"),
+        )
+        for path in inputs
+    ]
+    return _single_or_zip(outputs, output_dir / "markdown-files.zip")
 
 
 def _run_pdf_edit(job: Job, inputs: list[Path], output_dir: Path) -> Path:

@@ -248,8 +248,31 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=proteuswitch-1", html)
-        self.assertIn("/static/app.js?v=proteuswitch-1", html)
+        self.assertIn("/static/styles.css?v=stability-1", html)
+        self.assertIn("/static/app.js?v=stability-1", html)
+
+    def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="diagnosticsList"', html)
+        self.assertIn(".diagnostics-list", css)
+        self.assertIn("loadDiagnostics", js)
+        self.assertIn('fetch("/api/diagnostics")', js)
+        self.assertIn("dependenciesForRoute", js)
+        self.assertIn("missingRequiredDependencies", js)
+        self.assertIn("diagnosticsReady", js)
+        self.assertIn("submitButton.disabled = !canSubmit", js)
+        self.assertIn("install_hint", js)
+
+    def test_pdf_and_image_to_markdown_send_ocr_fallback_options(self):
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('target === "md" && ["pdf", "image"].includes(source)', js)
+        self.assertIn("ocrFallback", js)
+        self.assertIn("ocr_fallback", js)
+        self.assertIn("ocr_language", js)
 
 
 if __name__ == "__main__":

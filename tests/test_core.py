@@ -6,6 +6,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 import fitz
+from PIL import Image
 
 
 def make_pdf(path: Path) -> None:
@@ -117,6 +118,58 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertEqual(output_text, "converted source.docx")
         self.assertEqual(calls, [{"enable_plugins": True}])
+
+    def test_pdf_markdown_extraction_uses_ocr_fallback_when_markitdown_returns_empty_text(self):
+        from app.conversion import extract_markdown
+
+        class EmptyMarkItDown:
+            def __init__(self, **kwargs):
+                pass
+
+            def convert(self, source):
+                return SimpleNamespace(text_content="")
+
+        def fake_ocr_markdown(source, output, language):
+            output.write_text(f"ocr {source.name} {language}", encoding="utf-8")
+            return output
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            "sys.modules",
+            {"markitdown": SimpleNamespace(MarkItDown=EmptyMarkItDown)},
+        ), patch("app.conversion.ocr_to_markdown", side_effect=fake_ocr_markdown):
+            root = Path(tmp)
+            source = root / "scan.pdf"
+            make_pdf(source)
+            output = extract_markdown(
+                source,
+                root / "scan.md",
+                ocr_fallback=True,
+                ocr_language="chi_sim+eng",
+            )
+            output_text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(output_text, "ocr scan.pdf chi_sim+eng")
+
+    def test_image_markdown_extraction_uses_ocr_without_markitdown(self):
+        from app.conversion import extract_markdown
+
+        def fake_ocr_markdown(source, output, language):
+            output.write_text(f"image ocr {source.name} {language}", encoding="utf-8")
+            return output
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.conversion.ocr_to_markdown", side_effect=fake_ocr_markdown):
+            root = Path(tmp)
+            source = root / "scan.png"
+            Image.new("RGB", (80, 60), "white").save(source)
+            output = extract_markdown(
+                source,
+                root / "scan.md",
+                ocr_fallback=True,
+                ocr_language="eng",
+            )
+            output_text = output.read_text(encoding="utf-8")
+
+        self.assertEqual(output_text, "image ocr scan.png eng")
 
     def test_markdown_and_html_pdf_conversion_use_playwright_renderer(self):
         from app.conversion import convert_to_pdf

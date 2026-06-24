@@ -14,6 +14,7 @@ const routeKind = document.querySelector("#routeKind");
 const routeSummary = document.querySelector("#routeSummary");
 const routeInput = document.querySelector("#routeInput");
 const routeOutput = document.querySelector("#routeOutput");
+const diagnosticsList = document.querySelector("#diagnosticsList");
 const formTitle = document.querySelector("#formTitle");
 const sourcePick = document.querySelector("#sourcePick");
 const targetPick = document.querySelector("#targetPick");
@@ -46,6 +47,8 @@ let slotDragState = null;
 let suppressNextNodeClick = false;
 let suppressClickUntil = 0;
 let hasOpenedRoutePage = false;
+let diagnosticsByName = {};
+let diagnosticsReady = false;
 
 const ROUTE_ENTER_DELAY_MS = 180;
 const ROUTE_ANIMATION_MS = 900;
@@ -127,6 +130,17 @@ function resolveRoute(source, target) {
       ...routeCopy.ocr,
     };
   }
+  if (target === "md" && ["pdf", "image"].includes(source)) {
+    return {
+      kind: "extract_markdown",
+      title: `${formatLabel(source)} → Markdown`,
+      enabled: true,
+      accept: formats[source].input,
+      input: formats[source].detail,
+      ocrFallback: true,
+      ...routeCopy.extract_markdown,
+    };
+  }
   if (target === "pdf" && source !== "pdf") {
     return {
       kind: "convert",
@@ -196,6 +210,12 @@ function optionsForKind() {
       output_format: value("#ocrOutputFormat") || "searchable_pdf",
     };
   }
+  if (kind.value === "extract_markdown") {
+    return {
+      ocr_fallback: Boolean(activeRoute?.ocrFallback),
+      ocr_language: value("#ocrLanguage") || "chi_sim+eng",
+    };
+  }
   return {};
 }
 
@@ -210,9 +230,11 @@ function refreshControls() {
   }
 
   document.querySelectorAll("[data-panel]").forEach((el) => {
+    const isOcrPanel = el.dataset.panel === "ocr" && kind.value === "ocr";
     const show = el.dataset.panel === "edit" && kind.value === "pdf_edit"
       || el.dataset.panel === "translate" && kind.value === "pdf_translate"
-      || el.dataset.panel === "ocr" && kind.value === "ocr";
+      || isOcrPanel
+      || el.dataset.panel === "ocr" && activeRoute?.ocrFallback;
     el.dataset.hidden = show ? "false" : "true";
   });
 
@@ -278,6 +300,7 @@ function updateRouteUi() {
     coreStatus.textContent = sourceFormat ? "继续选择" : "";
     submitButton.disabled = true;
     filesInput.accept = sourceFormat ? formats[sourceFormat].input : "";
+    renderDiagnostics();
     return;
   }
 
@@ -291,14 +314,83 @@ function updateRouteUi() {
   routeOutput.textContent = activeRoute.output;
   formTitle.textContent = activeRoute.enabled ? activeRoute.kindLabel : "路径未接入";
   coreStatus.textContent = activeRoute.kindLabel;
-  submitButton.disabled = !activeRoute.enabled || isSubmitting;
+  const canSubmit = activeRoute.enabled && !isSubmitting && missingRequiredDependencies().length === 0;
+  submitButton.disabled = !canSubmit;
   filesInput.accept = activeRoute.accept;
+  renderDiagnostics();
 
   if (!activeRoute.enabled) {
     log.textContent = "该转换路径第一版未接入。可选：转 PDF、转 Markdown、PDF → PDF。";
   } else if (log.textContent.startsWith("该转换路径")) {
     log.textContent = "等待任务。";
   }
+}
+
+function dependenciesForRoute(route = activeRoute) {
+  if (!route || !route.enabled) return [];
+  if (route.kind === "convert") {
+    if (["word", "ppt", "excel"].includes(sourceFormat)) return [{ name: "libreoffice", required: true }];
+    if (["md", "html", "data"].includes(sourceFormat)) return [{ name: "playwright", required: true }];
+    return [];
+  }
+  if (route.kind === "extract_markdown") {
+    if (sourceFormat === "image") return [{ name: "tesseract", required: true }];
+    if (sourceFormat === "pdf") {
+      return [
+        { name: "markitdown", required: "one-of-markdown" },
+        { name: "tesseract", required: "one-of-markdown" },
+      ];
+    }
+    return [{ name: "markitdown", required: true }];
+  }
+  if (route.kind === "ocr") return [{ name: "tesseract", required: true }];
+  if (route.kind === "pdf_translate") {
+    return [
+      { name: value("#provider") || "deepseek", required: true },
+      { name: "babeldoc", required: false },
+      { name: "pdf2zh", required: false },
+    ];
+  }
+  return [];
+}
+
+function missingRequiredDependencies() {
+  if (!diagnosticsReady) return [];
+  const requirements = dependenciesForRoute();
+  const markdownFallback = requirements.filter((item) => item.required === "one-of-markdown");
+  const missing = requirements.filter((item) => item.required === true && !diagnosticsByName[item.name]?.available);
+  if (markdownFallback.length && !markdownFallback.some((item) => diagnosticsByName[item.name]?.available)) {
+    missing.push(...markdownFallback);
+  }
+  return missing;
+}
+
+function renderDiagnostics() {
+  if (!diagnosticsList) return;
+  diagnosticsList.innerHTML = "";
+  if (!activeRoute || !activeRoute.enabled) return;
+  const requirements = dependenciesForRoute();
+  if (!requirements.length) {
+    diagnosticsList.textContent = "该路径不需要额外外部引擎。";
+    return;
+  }
+  if (!diagnosticsReady) {
+    diagnosticsList.textContent = "正在检测本机依赖。";
+    return;
+  }
+  requirements.forEach((requirement) => {
+    const dependency = diagnosticsByName[requirement.name] || {};
+    const item = document.createElement("div");
+    const available = Boolean(dependency.available);
+    item.className = `diagnostic-item ${available ? "is-ready" : "is-missing"} ${requirement.required === false ? "is-optional" : ""}`;
+    const status = available ? "可用" : requirement.required === false ? "可选缺失" : "缺失";
+    item.innerHTML = `
+      <strong>${dependency.label || requirement.name}</strong>
+      <span>${status}</span>
+      <small>${available ? dependency.detail || "" : dependency.install_hint || "请安装对应依赖"}</small>
+    `;
+    diagnosticsList.appendChild(item);
+  });
 }
 
 function updateFileUi() {
@@ -343,6 +435,19 @@ async function loadProviders() {
   const data = await res.json();
   const ready = data.providers.filter((p) => p.configured).map((p) => p.name).join(", ");
   providerStatus.textContent = ready ? `已配置: ${ready}` : "未配置翻译密钥";
+}
+
+async function loadDiagnostics() {
+  try {
+    const res = await fetch("/api/diagnostics");
+    const data = await res.json();
+    diagnosticsByName = Object.fromEntries((data.dependencies || []).map((dependency) => [dependency.name, dependency]));
+    diagnosticsReady = true;
+  } catch (error) {
+    diagnosticsByName = {};
+    diagnosticsReady = false;
+  }
+  refreshControls();
 }
 
 async function submitJob(event) {
@@ -830,6 +935,8 @@ routeSlots.forEach((slot) => {
 });
 
 filesInput.addEventListener("change", updateFileUi);
+document.querySelector("#provider")?.addEventListener("change", refreshControls);
+document.querySelector("#ocrLanguage")?.addEventListener("input", refreshControls);
 
 dropzone.addEventListener("dragenter", () => dropzone.classList.add("is-dragging"));
 dropzone.addEventListener("dragover", (event) => {
@@ -863,3 +970,4 @@ glossaryInput?.addEventListener("input", saveStoredGlossary);
 loadStoredGlossary();
 refreshControls();
 loadProviders();
+loadDiagnostics();

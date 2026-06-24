@@ -656,6 +656,59 @@ h3 {
   line-height: 1.45;
 }
 
+.diagnostics-list {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diagnostic-item {
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--source);
+  background: rgba(255, 253, 248, 0.72);
+  padding: 9px 10px;
+}
+
+.diagnostic-item strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.diagnostic-item span {
+  color: var(--source);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnostic-item small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.diagnostic-item.is-missing {
+  border-left-color: var(--bad);
+}
+
+.diagnostic-item.is-missing span {
+  color: var(--bad);
+}
+
+.diagnostic-item.is-optional {
+  border-left-color: var(--warn);
+}
+
+.diagnostic-item.is-optional span {
+  color: var(--warn);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(360px, 440px) 1fr;

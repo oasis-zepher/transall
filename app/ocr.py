@@ -34,6 +34,17 @@ def ocr_document(
     return output
 
 
+def ocr_to_markdown(source: Path, output: Path, language: str = "chi_sim+eng") -> Path:
+    ext = source.suffix.lower()
+    if ext not in PDF_EXTENSIONS and ext not in IMAGE_EXTENSIONS:
+        raise ValueError("OCR Markdown fallback supports PDF and image inputs")
+    _ensure_tesseract_available()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    text = _ocr_to_text(source, language).strip()
+    output.write_text(text + ("\n" if text else ""), encoding="utf-8")
+    return output
+
+
 def _ensure_tesseract_available() -> None:
     if not shutil.which("tesseract"):
         raise RuntimeError("OCR requires Tesseract. Install it on macOS with: brew install tesseract")

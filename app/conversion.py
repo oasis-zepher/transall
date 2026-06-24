@@ -8,6 +8,7 @@ from PIL import Image
 
 from .config import HTML_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, OFFICE_EXTENSIONS, PDF_EXTENSIONS, TEXT_EXTENSIONS
 from .browser_pdf import render_browser_pdf
+from .ocr import ocr_to_markdown
 
 
 def convert_to_pdf(source: Path, output_dir: Path) -> Path:
@@ -26,14 +27,26 @@ def convert_to_pdf(source: Path, output_dir: Path) -> Path:
     raise ValueError(f"Unsupported input for PDF conversion: {source.suffix}")
 
 
-def extract_markdown(source: Path, output: Path) -> Path:
+def extract_markdown(
+    source: Path,
+    output: Path,
+    ocr_fallback: bool = False,
+    ocr_language: str = "chi_sim+eng",
+) -> Path:
+    ext = source.suffix.lower()
+    if ocr_fallback and ext in IMAGE_EXTENSIONS:
+        return ocr_to_markdown(source, output, ocr_language)
     try:
         from markitdown import MarkItDown
     except Exception as exc:
+        if ocr_fallback and ext in PDF_EXTENSIONS:
+            return ocr_to_markdown(source, output, ocr_language)
         raise RuntimeError("MarkItDown is not installed. Run: pip install -r requirements.txt") from exc
     md = MarkItDown(enable_plugins=True)
     result = md.convert(str(source))
     text = getattr(result, "text_content", None) or getattr(result, "markdown", "")
+    if ocr_fallback and ext in PDF_EXTENSIONS and not text.strip():
+        return ocr_to_markdown(source, output, ocr_language)
     output.write_text(text, encoding="utf-8")
     return output
 

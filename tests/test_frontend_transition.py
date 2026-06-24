@@ -259,8 +259,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=precision-deck-1", html)
-        self.assertIn("/static/app.js?v=precision-deck-1", html)
+        self.assertIn("/static/styles.css?v=compass-center-1", html)
+        self.assertIn("/static/app.js?v=compass-center-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -302,8 +302,17 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=precision-deck-1", html)
-        self.assertIn("/static/app.js?v=precision-deck-1", html)
+        self.assertIn("/static/styles.css?v=compass-center-1", html)
+        self.assertIn("/static/app.js?v=compass-center-1", html)
+
+    def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        hidden_page_block = css[css.index(".conversion-page {"):css.index(".conversion-page .route-panel")]
+        active_page_block = css[css.index(".shell.is-route-active .conversion-page {"):css.index(".shell.is-route-active .conversion-page .route-panel")]
+
+        self.assertIn("position: absolute", hidden_page_block)
+        self.assertIn("position: relative", active_page_block)
 
 
 if __name__ == "__main__":

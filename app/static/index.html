@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Proteuswitch</title>
-    <link rel="stylesheet" href="/static/styles.css?v=filled-deck-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=no-route-rail-1" />
   </head>
   <body>
     <main class="shell">
@@ -15,6 +15,7 @@
         </div>
         <div class="topbar-right">
           <p id="routeLine">选择源格式和目标格式</p>
+          <button type="button" id="resetRoute" class="quiet-button route-reset">重选</button>
           <div class="status-pill" id="providerStatus">Providers</div>
         </div>
       </header>
@@ -75,7 +76,6 @@
           <aside class="route-panel precision-rail" aria-label="路径详情">
             <div class="route-panel-head">
               <p class="eyebrow">Route</p>
-              <button type="button" id="resetRoute" class="quiet-button">重选</button>
             </div>
             <h2 id="routeTitle">未选择</h2>
             <p id="routeSummary">点击圆盘中的两个格式。第一个是源格式，第二个是目标格式。</p>
@@ -248,6 +248,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=filled-deck-1"></script>
+    <script src="/static/app.js?v=no-route-rail-1"></script>
   </body>
 </html>

@@ -109,6 +109,14 @@ button {
   text-align: right;
 }
 
+.route-reset {
+  display: none;
+}
+
+.shell.is-route-active .route-reset {
+  display: inline-flex;
+}
+
 h1,
 h2,
 h3,
@@ -249,21 +257,19 @@ h3 {
 }
 
 .shell.is-route-active .conversion-page .route-panel {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-  transition-delay: 180ms;
+  display: none;
 }
 
 .shell.is-route-active .conversion-page .input-panel {
   opacity: 1;
   transform: translate3d(0, 0, 0);
-  transition-delay: 300ms;
+  transition-delay: 180ms;
 }
 
 .shell.is-route-active .conversion-page .result-panel {
   opacity: 1;
   transform: translate3d(0, 0, 0);
-  transition-delay: 420ms;
+  transition-delay: 300ms;
 }
 
 .format-orbit::after {
@@ -1017,14 +1023,14 @@ pre {
 /* Precision Deck */
 .shell.is-route-active .conversion-page {
   display: grid;
-  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: stretch;
   min-height: calc(100vh - 158px);
 }
 
 .shell.is-route-active .workspace {
-  grid-template-columns: minmax(250px, 0.9fr) minmax(285px, 1.1fr);
+  grid-template-columns: minmax(320px, 0.92fr) minmax(380px, 1.08fr);
   gap: 12px;
   align-items: stretch;
   padding-top: 0;

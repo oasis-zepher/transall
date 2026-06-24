@@ -259,8 +259,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=filled-deck-1", html)
-        self.assertIn("/static/app.js?v=filled-deck-1", html)
+        self.assertIn("/static/styles.css?v=no-route-rail-1", html)
+        self.assertIn("/static/app.js?v=no-route-rail-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -302,8 +302,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=filled-deck-1", html)
-        self.assertIn("/static/app.js?v=filled-deck-1", html)
+        self.assertIn("/static/styles.css?v=no-route-rail-1", html)
+        self.assertIn("/static/app.js?v=no-route-rail-1", html)
 
     def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -341,8 +341,8 @@ class FrontendTransitionTests(unittest.TestCase):
         diagnostic_block = css[diagnostic_start:css.index(".command-deck", diagnostic_start)]
 
         self.assertIn("grid-template-columns: minmax(300px, 360px) minmax(0, 1fr)", active_router_block)
-        self.assertIn("grid-template-columns: minmax(190px, 220px) minmax(0, 1fr)", active_page_block)
-        self.assertIn("grid-template-columns: minmax(250px, 0.9fr) minmax(285px, 1.1fr)", workspace_block)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", active_page_block)
+        self.assertIn("grid-template-columns: minmax(320px, 0.92fr) minmax(380px, 1.08fr)", workspace_block)
         self.assertIn("min-height: 0", rail_block)
         self.assertIn("min-height: 132px", file_well_block)
         self.assertIn("min-height: 0", execution_block)
@@ -350,6 +350,20 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("max-height: none", console_block)
         self.assertIn("min-height: 100%", preview_block)
         self.assertIn("display: none", diagnostic_block)
+
+    def test_active_route_rail_is_removed_from_visible_layout(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="resetRoute"', html[html.index('<div class="topbar-right">'):html.index("</header>")])
+        self.assertNotIn('id="resetRoute"', html[html.index('<aside class="route-panel'):html.index("</aside>")])
+        active_route_panel_block = css[css.index(".shell.is-route-active .conversion-page .route-panel {"):css.index(".shell.is-route-active .conversion-page .input-panel")]
+        route_reset_block = css[css.index(".route-reset {"):css.index(".shell.is-route-active .route-reset")]
+        active_route_reset_block = css[css.index(".shell.is-route-active .route-reset {"):css.index("h1,")]
+
+        self.assertIn("display: none", active_route_panel_block)
+        self.assertIn("display: none", route_reset_block)
+        self.assertIn("display: inline-flex", active_route_reset_block)
 
     def test_active_conversion_deck_stretches_to_fill_right_side(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")

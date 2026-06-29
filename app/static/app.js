@@ -55,7 +55,8 @@ const ROUTE_ANIMATION_MS = 900;
 const NODE_SETTLE_MS = 420;
 const POINTER_DRAG_THRESHOLD = 6;
 const CLICK_SUPPRESS_MS = 450;
-const GLOSSARY_STORAGE_KEY = "proteuswitch.translate.glossary";
+const GLOSSARY_STORAGE_KEY = "transall.translate.glossary";
+const LEGACY_GLOSSARY_STORAGE_KEY = "proteuswitch.translate.glossary";
 const TEXT_SELECTION_CLASS = "is-format-dragging";
 
 const formats = {
@@ -980,7 +981,16 @@ refreshPreview.addEventListener("click", () => currentJob && loadPreview(current
 
 function loadStoredGlossary() {
   if (!glossaryInput) return;
-  glossaryInput.value = localStorage.getItem(GLOSSARY_STORAGE_KEY) || "";
+  const stored = localStorage.getItem(GLOSSARY_STORAGE_KEY);
+  if (stored !== null) {
+    glossaryInput.value = stored;
+    return;
+  }
+  const legacyStored = localStorage.getItem(LEGACY_GLOSSARY_STORAGE_KEY);
+  if (legacyStored !== null) {
+    localStorage.setItem(GLOSSARY_STORAGE_KEY, legacyStored);
+    glossaryInput.value = legacyStored;
+  }
 }
 
 function saveStoredGlossary() {

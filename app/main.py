@@ -21,7 +21,7 @@ from .translation import load_provider_configs, translate_pdf
 
 def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -> FastAPI:
     store = JobStore(data_dir, ttl_hours=JOB_TTL_HOURS)
-    app = FastAPI(title="Proteuswitch")
+    app = FastAPI(title="transall")
     static_dir = APP_ROOT / "app" / "static"
 
     if static_dir.exists():

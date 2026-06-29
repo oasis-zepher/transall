@@ -1,1 +1,1 @@
-"""Proteuswitch local document conversion service."""
+"""transall local document conversion service."""

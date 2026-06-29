@@ -6,10 +6,11 @@ import zipfile
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .capabilities import capabilities_payload, preflight as run_preflight
 from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_UPLOAD_BYTES
 from .conversion import convert_to_pdf, extract_markdown
 from .diagnostics import collect_diagnostics
@@ -31,6 +32,10 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
     def index() -> FileResponse:
         return FileResponse(static_dir / "index.html")
 
+    @app.get("/favicon.ico", status_code=204)
+    def favicon() -> Response:
+        return Response(status_code=204)
+
     @app.get("/api/config/providers")
     def providers() -> dict[str, object]:
         return {"providers": load_provider_configs(include_secrets=False)}
@@ -38,6 +43,14 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
     @app.get("/api/diagnostics")
     def diagnostics() -> dict[str, object]:
         return collect_diagnostics()
+
+    @app.get("/api/capabilities")
+    def capabilities() -> dict[str, object]:
+        return capabilities_payload()
+
+    @app.post("/api/preflight")
+    def preflight(payload: Annotated[dict[str, object], Body()]) -> dict[str, object]:
+        return run_preflight(payload)
 
     @app.post("/api/jobs")
     async def create_job(
@@ -54,6 +67,7 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
             raise HTTPException(status_code=400, detail="options must be valid JSON") from exc
 
         job = store.create(kind, [file.filename or "upload" for file in files], parsed_options)
+        store.set_status(job, "queued", stage="uploading", message="正在上传文件")
         upload_dir = job.path / "uploads"
         upload_dir.mkdir(exist_ok=True)
         total = 0
@@ -64,7 +78,16 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
                 while chunk := await file.read(1024 * 1024):
                     total += len(chunk)
                     if total > MAX_UPLOAD_BYTES:
-                        store.set_status(job, "failed", "Upload exceeds 200 MB limit")
+                        store.set_status(
+                            job,
+                            "failed",
+                            "Upload exceeds 200 MB limit",
+                            stage="failed",
+                            message="上传文件超过限制",
+                            error_code="upload_too_large",
+                            error_hint="减少文件数量或压缩文件后重试。",
+                            retryable=False,
+                        )
                         raise HTTPException(status_code=413, detail="Upload exceeds 200 MB limit")
                     handle.write(chunk)
 
@@ -128,7 +151,7 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
 def run_job(store: JobStore, job_id: str) -> None:
     job = store.get(job_id)
-    store.set_status(job, "running")
+    store.set_status(job, "running", stage="starting", message="任务启动中")
     try:
         upload_dir = job.path / "uploads"
         output_dir = job.path / "outputs"
@@ -140,15 +163,20 @@ def run_job(store: JobStore, job_id: str) -> None:
         store.log(job, f"Inputs: {', '.join(path.name for path in inputs)}")
 
         if job.kind == "convert":
+            store.set_status(job, "running", stage="converting", message="正在转换文件")
             outputs = [convert_to_pdf(path, output_dir) for path in inputs]
             output = _single_or_zip(outputs, output_dir / "converted-files.zip")
         elif job.kind == "extract_markdown":
+            store.set_status(job, "running", stage="extracting", message="正在提取 Markdown")
             output = _run_extract_markdown(job, inputs, output_dir)
         elif job.kind == "pdf_edit":
+            store.set_status(job, "running", stage="editing", message="正在修改 PDF")
             output = _run_pdf_edit(job, inputs, output_dir)
         elif job.kind == "pdf_translate":
+            store.set_status(job, "running", stage="translating", message="正在翻译 PDF")
             output = _run_pdf_translate(job, inputs, output_dir)
         elif job.kind == "ocr":
+            store.set_status(job, "running", stage="ocr", message="正在执行 OCR")
             output = _run_ocr(job, inputs, output_dir)
         else:
             raise ValueError(f"Unsupported job kind: {job.kind}")
@@ -158,7 +186,63 @@ def run_job(store: JobStore, job_id: str) -> None:
     except Exception as exc:
         store.log(job, f"Failed stage: {job.kind}")
         store.log(job, f"Failure detail: {exc}")
-        store.set_status(job, "failed", str(exc))
+        error = classify_error(exc)
+        store.set_status(
+            job,
+            "failed",
+            str(exc),
+            stage="failed",
+            message=error["message"],
+            error_code=error["code"],
+            error_hint=error["hint"],
+            retryable=error["retryable"],
+        )
+
+
+def classify_error(exc: Exception) -> dict[str, object]:
+    detail = str(exc)
+    lower = detail.lower()
+    if "pdf edit requires pdf input" in lower or "pdf translation requires pdf input" in lower:
+        return {
+            "code": "pdf_input_required",
+            "message": "需要 PDF 输入文件",
+            "hint": "请选择 PDF 文件，或切换到适合该文件类型的转换路径。",
+            "retryable": False,
+        }
+    if "ocr supports pdf and image inputs" in lower:
+        return {
+            "code": "ocr_input_required",
+            "message": "OCR 只支持 PDF 或图片",
+            "hint": "请选择 PDF、PNG、JPG、WEBP 或 TIFF 文件。",
+            "retryable": False,
+        }
+    if "no uploaded files" in lower:
+        return {
+            "code": "file_required",
+            "message": "没有可处理的上传文件",
+            "hint": "重新选择文件后再提交。",
+            "retryable": False,
+        }
+    if "api key is not configured" in lower:
+        return {
+            "code": "missing_provider",
+            "message": "翻译服务未配置",
+            "hint": "在 .env 中配置对应 API key 后重启服务。",
+            "retryable": True,
+        }
+    if "tesseract" in lower:
+        return {
+            "code": "missing_dependency",
+            "message": "OCR 依赖不可用",
+            "hint": "运行 brew install tesseract tesseract-lang 后重启服务。",
+            "retryable": True,
+        }
+    return {
+        "code": "task_failed",
+        "message": "任务执行失败",
+        "hint": "查看运行日志中的失败细节。",
+        "retryable": True,
+    }
 
 
 def _run_extract_markdown(job: Job, inputs: list[Path], output_dir: Path) -> Path:

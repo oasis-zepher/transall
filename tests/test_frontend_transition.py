@@ -218,7 +218,8 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn('kind: "ocr"', js)
         self.assertIn('target === "ocr"', js)
         self.assertIn('["pdf", "image"].includes(source)', js)
-        self.assertIn('el.dataset.panel === "ocr" && kind.value === "ocr"', js)
+        self.assertIn('panel === "ocr" && kind.value === "ocr"', js)
+        self.assertIn("routePanels.includes(panel)", js)
         self.assertIn('option value="ocr"', html)
 
     def test_data_format_node_routes_to_markdown_and_pdf(self):
@@ -239,7 +240,8 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn('<option value="translated">纯译文 PDF</option>', html)
         self.assertIn('<input id="sourceLang" value="en" />', html)
         self.assertIn('<input id="targetLang" value="zh" />', html)
-        self.assertIn('el.dataset.panel === "translate" && kind.value === "pdf_translate"', js)
+        self.assertIn('panel === "translate" && kind.value === "pdf_translate"', js)
+        self.assertIn("routePanels.includes(panel)", js)
         self.assertNotIn('id="pages"', html)
         self.assertNotIn('pages: value("#pages")', js)
 
@@ -264,8 +266,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=topbar-glossary-1", html)
-        self.assertIn("/static/app.js?v=topbar-glossary-1", html)
+        self.assertIn("/static/styles.css?v=stability-1", html)
+        self.assertIn("/static/app.js?v=stability-1", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -281,6 +283,38 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("diagnosticsReady", js)
         self.assertIn("submitButton.disabled = !canSubmit", js)
         self.assertIn("install_hint", js)
+
+    def test_frontend_loads_routes_from_capabilities_endpoint(self):
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('fetch("/api/capabilities")', js)
+        self.assertIn("capabilityRoutes", js)
+        self.assertIn("capabilityFormats", js)
+        self.assertIn("loadCapabilities", js)
+
+    def test_frontend_preflight_blocks_submit_with_server_issues(self):
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('fetch("/api/preflight"', js)
+        self.assertIn("blocking_issues", js)
+        self.assertIn("preflightResult", js)
+        self.assertIn("renderPreflight", js)
+
+    def test_frontend_restores_most_recent_job_after_refresh(self):
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("LAST_JOB_STORAGE_KEY", js)
+        self.assertIn("restoreLastJob", js)
+        self.assertIn("localStorage.setItem(LAST_JOB_STORAGE_KEY", js)
+        self.assertIn("localStorage.removeItem(LAST_JOB_STORAGE_KEY", js)
+
+    def test_advanced_options_start_collapsed_and_expand_only_when_relevant(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="advancedToggle"', html)
+        self.assertIn("advancedCollapsed", js)
+        self.assertIn("routeHasAdvancedOptions", js)
 
     def test_pdf_and_image_to_markdown_send_ocr_fallback_options(self):
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
@@ -307,8 +341,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=topbar-glossary-1", html)
-        self.assertIn("/static/app.js?v=topbar-glossary-1", html)
+        self.assertIn("/static/styles.css?v=stability-1", html)
+        self.assertIn("/static/app.js?v=stability-1", html)
 
     def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")

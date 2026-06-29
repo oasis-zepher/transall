@@ -32,6 +32,7 @@ const slotHint = document.querySelector("#slotHint");
 const emptyOutput = document.querySelector("#emptyOutput");
 const shell = document.querySelector(".shell");
 const glossaryInput = document.querySelector("#glossary");
+const advancedToggle = document.querySelector("#advancedToggle");
 
 let currentJob = null;
 let sourceFormat = null;
@@ -49,6 +50,13 @@ let suppressClickUntil = 0;
 let hasOpenedRoutePage = false;
 let diagnosticsByName = {};
 let diagnosticsReady = false;
+let capabilityFormats = null;
+let capabilityRoutes = [];
+let capabilitiesReady = false;
+let preflightResult = null;
+let preflightRequestId = 0;
+let preflightTimer = null;
+let advancedCollapsed = true;
 
 const ROUTE_ENTER_DELAY_MS = 180;
 const ROUTE_ANIMATION_MS = 900;
@@ -57,6 +65,7 @@ const POINTER_DRAG_THRESHOLD = 6;
 const CLICK_SUPPRESS_MS = 450;
 const GLOSSARY_STORAGE_KEY = "transall.translate.glossary";
 const LEGACY_GLOSSARY_STORAGE_KEY = "proteuswitch.translate.glossary";
+const LAST_JOB_STORAGE_KEY = "transall.lastJobId";
 const TEXT_SELECTION_CLASS = "is-format-dragging";
 
 const formats = {
@@ -106,11 +115,27 @@ const routeCopy = {
 };
 
 function formatLabel(format) {
-  return formats[format]?.label || format || "";
+  return capabilityFormats?.[format]?.label || formats[format]?.label || format || "";
 }
 
 function resolveRoute(source, target) {
   if (!source || !target) return null;
+  if (capabilityRoutes.length) {
+    const route = capabilityRoutes.find((item) => item.source === source && item.target === target);
+    if (route) return route;
+    return {
+      kind: "convert",
+      title: `${formatLabel(source)} → ${formatLabel(target)}`,
+      enabled: false,
+      accept: capabilityFormats?.[source]?.input || formats[source]?.input || "",
+      input: capabilityFormats?.[source]?.detail || formats[source]?.detail || "未知格式",
+      output: "该路径第一版未接入。",
+      summary: "当前支持：常见文档/图片/文本数据转 PDF，常见文档/数据转 Markdown，PDF 修改，PDF 翻译为中文PDF，PDF/图片 OCR。",
+      kindLabel: "未接入",
+      requirements: [],
+      optionPanels: [],
+    };
+  }
   if (source === "pdf" && target === "translated_pdf") {
     return {
       kind: "pdf_translate",
@@ -231,16 +256,32 @@ function refreshControls() {
   }
 
   document.querySelectorAll("[data-panel]").forEach((el) => {
-    const isOcrPanel = el.dataset.panel === "ocr" && kind.value === "ocr";
-    const show = el.dataset.panel === "edit" && kind.value === "pdf_edit"
-      || el.dataset.panel === "translate" && kind.value === "pdf_translate"
-      || isOcrPanel
-      || el.dataset.panel === "ocr" && activeRoute?.ocrFallback;
+    const panel = el.dataset.panel;
+    const routePanels = activeRoute?.optionPanels || [];
+    const fallbackShow = panel === "edit" && kind.value === "pdf_edit"
+      || panel === "translate" && kind.value === "pdf_translate"
+      || panel === "ocr" && kind.value === "ocr"
+      || panel === "ocr" && activeRoute?.ocrFallback;
+    const routeShow = routePanels.length ? routePanels.includes(panel) : fallbackShow;
+    const isAdvancedControl = Boolean(el.closest("#advanced"));
+    const show = routeShow && (!isAdvancedControl || !advancedCollapsed);
     el.dataset.hidden = show ? "false" : "true";
   });
+  if (advancedToggle) {
+    const hasAdvanced = routeHasAdvancedOptions();
+    advancedToggle.hidden = !hasAdvanced;
+    advancedToggle.textContent = advancedCollapsed ? "显示高级选项" : "隐藏高级选项";
+    advancedToggle.setAttribute("aria-expanded", advancedCollapsed ? "false" : "true");
+  }
 
   updateRouteUi();
   updateFileUi();
+}
+
+function routeHasAdvancedOptions() {
+  if (!activeRoute?.enabled) return false;
+  if (activeRoute.optionPanels?.includes("advanced")) return true;
+  return ["pdf_edit", "pdf_translate", "ocr"].includes(kind.value) || Boolean(activeRoute?.ocrFallback);
 }
 
 function routeAvailabilityForCandidate(candidate) {
@@ -295,12 +336,12 @@ function updateRouteUi() {
     routeStatus.textContent = "等待选择";
     routeStatus.className = "";
     routeKind.textContent = "未定";
-    routeInput.textContent = sourceFormat ? formats[sourceFormat].detail : "选择源格式后显示";
+    routeInput.textContent = sourceFormat ? capabilityFormats?.[sourceFormat]?.detail || formats[sourceFormat].detail : "选择源格式后显示";
     routeOutput.textContent = "选择目标格式后显示";
     formTitle.textContent = "选择路径后上传";
     coreStatus.textContent = sourceFormat ? "继续选择" : "";
     submitButton.disabled = true;
-    filesInput.accept = sourceFormat ? formats[sourceFormat].input : "";
+    filesInput.accept = sourceFormat ? capabilityFormats?.[sourceFormat]?.input || formats[sourceFormat].input : "";
     renderDiagnostics();
     return;
   }
@@ -315,7 +356,11 @@ function updateRouteUi() {
   routeOutput.textContent = activeRoute.output;
   formTitle.textContent = activeRoute.enabled ? activeRoute.kindLabel : "路径未接入";
   coreStatus.textContent = activeRoute.kindLabel;
-  const canSubmit = activeRoute.enabled && !isSubmitting && missingRequiredDependencies().length === 0;
+  const canSubmit = activeRoute.enabled
+    && filesInput.files.length > 0
+    && !isSubmitting
+    && missingRequiredDependencies().length === 0
+    && preflightBlockingIssues().length === 0;
   submitButton.disabled = !canSubmit;
   filesInput.accept = activeRoute.accept;
   renderDiagnostics();
@@ -329,6 +374,16 @@ function updateRouteUi() {
 
 function dependenciesForRoute(route = activeRoute) {
   if (!route || !route.enabled) return [];
+  if (Array.isArray(route.requirements) && route.requirements.length) {
+    if (route.kind === "pdf_translate") {
+      const selectedProvider = value("#provider") || "deepseek";
+      return [
+        { name: selectedProvider, required: true },
+        ...route.requirements.filter((item) => !["deepseek", "openai"].includes(item.name)),
+      ];
+    }
+    return route.requirements;
+  }
   if (route.kind === "convert") {
     if (["word", "ppt", "excel"].includes(sourceFormat)) return [{ name: "libreoffice", required: true }];
     if (["md", "html", "data"].includes(sourceFormat)) return [{ name: "playwright", required: true }];
@@ -366,13 +421,20 @@ function missingRequiredDependencies() {
   return missing;
 }
 
+function preflightBlockingIssues() {
+  return preflightResult?.blocking_issues || [];
+}
+
 function renderDiagnostics() {
   if (!diagnosticsList) return;
   diagnosticsList.innerHTML = "";
   if (!activeRoute || !activeRoute.enabled) return;
   const requirements = dependenciesForRoute();
   if (!requirements.length) {
-    diagnosticsList.textContent = "该路径不需要额外外部引擎。";
+    const note = document.createElement("div");
+    note.textContent = "该路径不需要额外外部引擎。";
+    diagnosticsList.appendChild(note);
+    renderPreflight();
     return;
   }
   if (!diagnosticsReady) {
@@ -389,6 +451,22 @@ function renderDiagnostics() {
       <strong>${dependency.label || requirement.name}</strong>
       <span>${status}</span>
       <small>${available ? dependency.detail || "" : dependency.install_hint || "请安装对应依赖"}</small>
+    `;
+    diagnosticsList.appendChild(item);
+  });
+  renderPreflight();
+}
+
+function renderPreflight() {
+  if (!diagnosticsList || !preflightResult) return;
+  [...(preflightResult.blocking_issues || []), ...(preflightResult.warnings || [])].forEach((issue) => {
+    const item = document.createElement("div");
+    const isWarning = !preflightResult.blocking_issues?.includes(issue);
+    item.className = `diagnostic-item ${isWarning ? "is-optional" : "is-missing"}`;
+    item.innerHTML = `
+      <strong>${issue.message || issue.code}</strong>
+      <span>${isWarning ? "提醒" : "阻止"}</span>
+      <small>${issue.hint || issue.dependency || ""}</small>
     `;
     diagnosticsList.appendChild(item);
   });
@@ -431,6 +509,21 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
 }
 
+async function loadCapabilities() {
+  try {
+    const res = await fetch("/api/capabilities");
+    const data = await res.json();
+    capabilityFormats = data.formats || null;
+    capabilityRoutes = data.routes || [];
+    capabilitiesReady = true;
+  } catch (error) {
+    capabilityFormats = null;
+    capabilityRoutes = [];
+    capabilitiesReady = false;
+  }
+  refreshControls();
+}
+
 async function loadProviders() {
   const res = await fetch("/api/config/providers");
   const data = await res.json();
@@ -453,6 +546,55 @@ async function loadDiagnostics() {
   refreshControls();
 }
 
+function requestPreflight() {
+  window.clearTimeout(preflightTimer);
+  preflightTimer = window.setTimeout(() => {
+    runPreflight();
+  }, 180);
+}
+
+async function runPreflight() {
+  const requestId = ++preflightRequestId;
+  if (!activeRoute?.enabled || !filesInput.files.length) {
+    preflightResult = null;
+    renderDiagnostics();
+    updateRouteUi();
+    return null;
+  }
+  const payload = {
+    source_format: sourceFormat,
+    target_format: targetFormat,
+    kind: kind.value,
+    files: [...filesInput.files].map((file) => ({ name: file.name, size: file.size })),
+    options: optionsForKind(),
+  };
+  try {
+    const res = await fetch("/api/preflight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (requestId !== preflightRequestId) return preflightResult;
+    preflightResult = data;
+  } catch (error) {
+    if (requestId !== preflightRequestId) return preflightResult;
+    preflightResult = {
+      ok: false,
+      blocking_issues: [{
+        code: "preflight_unavailable",
+        message: "预检失败",
+        hint: "无法连接本地预检接口。",
+      }],
+      warnings: [],
+      requirements: [],
+    };
+  }
+  renderDiagnostics();
+  updateRouteUi();
+  return preflightResult;
+}
+
 async function submitJob(event) {
   event.preventDefault();
   if (!activeRoute || !activeRoute.enabled) {
@@ -461,6 +603,12 @@ async function submitJob(event) {
   }
   if (!filesInput.files.length) {
     log.textContent = "请选择文件。";
+    return;
+  }
+  const checked = await runPreflight();
+  if (checked && checked.blocking_issues?.length) {
+    log.textContent = checked.blocking_issues.map((issue) => `${issue.message || issue.code}：${issue.hint || ""}`).join("\n");
+    refreshControls();
     return;
   }
 
@@ -492,6 +640,7 @@ async function submitJob(event) {
     return;
   }
   renderJob(job);
+  localStorage.setItem(LAST_JOB_STORAGE_KEY, job.id);
   pollJob(job.id);
 }
 
@@ -511,14 +660,43 @@ async function pollJob(jobId) {
 }
 
 function renderJob(job) {
-  jobState.textContent = job.status;
+  jobState.textContent = job.message || job.stage || job.status;
   jobState.className = `job-state ${job.status === "done" ? "is-ready" : ""} ${job.status === "failed" ? "is-error" : ""}`;
-  log.textContent = [...(job.logs || []), job.error ? `ERROR: ${job.error}` : ""].filter(Boolean).join("\n") || "任务运行中。";
+  log.textContent = [
+    job.stage ? `阶段: ${job.stage}` : "",
+    job.message ? `状态: ${job.message}` : "",
+    ...(job.logs || []),
+    job.error ? `ERROR: ${job.error}` : "",
+    job.error_hint ? `建议: ${job.error_hint}` : "",
+  ].filter(Boolean).join("\n") || "任务运行中。";
   if (job.output && job.status === "done") {
     download.href = `/api/jobs/${job.id}/download`;
     download.hidden = false;
     emptyOutput.hidden = true;
     loadPreview(job.id);
+  }
+}
+
+async function restoreLastJob() {
+  const jobId = localStorage.getItem(LAST_JOB_STORAGE_KEY);
+  if (!jobId) return;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    if (res.status === 404) {
+      localStorage.removeItem(LAST_JOB_STORAGE_KEY);
+      return;
+    }
+    if (!res.ok) return;
+    const job = await res.json();
+    currentJob = job.id;
+    renderJob(job);
+    if (!["done", "failed"].includes(job.status)) {
+      isSubmitting = true;
+      submitButton.textContent = "运行中";
+      pollJob(job.id);
+    }
+  } catch (error) {
+    localStorage.removeItem(LAST_JOB_STORAGE_KEY);
   }
 }
 
@@ -588,6 +766,7 @@ function returnToHomeState() {
 
 function finalizeRouteSelection() {
   refreshControls();
+  requestPreflight();
   if (sourceFormat && targetFormat) {
     enterRoutePage();
   } else if (hasOpenedRoutePage) {
@@ -957,9 +1136,26 @@ routeSlots.forEach((slot) => {
   });
 });
 
-filesInput.addEventListener("change", updateFileUi);
-document.querySelector("#provider")?.addEventListener("change", refreshControls);
-document.querySelector("#ocrLanguage")?.addEventListener("input", refreshControls);
+filesInput.addEventListener("change", () => {
+  updateFileUi();
+  requestPreflight();
+  updateRouteUi();
+});
+document.querySelector("#provider")?.addEventListener("change", () => {
+  refreshControls();
+  requestPreflight();
+});
+document.querySelector("#outputMode")?.addEventListener("change", requestPreflight);
+document.querySelector("#ocrLanguage")?.addEventListener("input", () => {
+  refreshControls();
+  requestPreflight();
+});
+document.querySelector("#ocrOutputFormat")?.addEventListener("change", requestPreflight);
+document.querySelector("#editAction")?.addEventListener("change", requestPreflight);
+advancedToggle?.addEventListener("click", () => {
+  advancedCollapsed = !advancedCollapsed;
+  refreshControls();
+});
 
 dropzone.addEventListener("dragenter", () => dropzone.classList.add("is-dragging"));
 dropzone.addEventListener("dragover", (event) => {
@@ -973,6 +1169,8 @@ dropzone.addEventListener("drop", (event) => {
   if (event.dataTransfer?.files?.length) {
     filesInput.files = event.dataTransfer.files;
     updateFileUi();
+    requestPreflight();
+    updateRouteUi();
   }
 });
 
@@ -1001,5 +1199,7 @@ function saveStoredGlossary() {
 glossaryInput?.addEventListener("input", saveStoredGlossary);
 loadStoredGlossary();
 refreshControls();
+loadCapabilities();
 loadProviders();
 loadDiagnostics();
+restoreLastJob();

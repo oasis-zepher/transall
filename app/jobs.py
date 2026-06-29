@@ -25,6 +25,11 @@ class Job:
     options: dict[str, Any] = field(default_factory=dict)
     output: str | None = None
     error: str | None = None
+    stage: str = "queued"
+    message: str = "等待运行"
+    error_code: str | None = None
+    error_hint: str | None = None
+    retryable: bool = False
     logs: list[str] = field(default_factory=list)
 
     def public(self) -> dict[str, Any]:
@@ -74,14 +79,43 @@ class JobStore:
         job.logs.append(message)
         self.save(job)
 
-    def set_status(self, job: Job, status: str, error: str | None = None) -> None:
+    def set_status(
+        self,
+        job: Job,
+        status: str,
+        error: str | None = None,
+        *,
+        stage: str | None = None,
+        message: str | None = None,
+        error_code: str | None = None,
+        error_hint: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
         job.status = status
         job.error = error
+        if stage is not None:
+            job.stage = stage
+        elif status in {"queued", "running", "done", "failed"}:
+            job.stage = status
+        if message is not None:
+            job.message = message
+        if error_code is not None:
+            job.error_code = error_code
+        if error_hint is not None:
+            job.error_hint = error_hint
+        if retryable is not None:
+            job.retryable = retryable
         self.save(job)
 
     def set_output(self, job: Job, output: Path) -> None:
         job.output = str(output)
         job.status = "done"
+        job.stage = "done"
+        job.message = "任务完成"
+        job.error = None
+        job.error_code = None
+        job.error_hint = None
+        job.retryable = False
         self.save(job)
 
     def delete(self, job_id: str) -> None:

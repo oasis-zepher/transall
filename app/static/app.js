@@ -52,7 +52,7 @@ let diagnosticsByName = {};
 let diagnosticsReady = false;
 let capabilityFormats = null;
 let capabilityRoutes = [];
-let capabilitiesReady = false;
+let capabilitiesLoadFailed = false;
 let preflightResult = null;
 let preflightRequestId = 0;
 let preflightTimer = null;
@@ -68,144 +68,26 @@ const LEGACY_GLOSSARY_STORAGE_KEY = "proteuswitch.translate.glossary";
 const LAST_JOB_STORAGE_KEY = "transall.lastJobId";
 const TEXT_SELECTION_CLASS = "is-format-dragging";
 
-const formats = {
-  pdf: { label: "PDF", input: ".pdf", detail: "PDF 文档" },
-  word: { label: "Word", input: ".doc,.docx", detail: "Word 文档" },
-  ppt: { label: "PPT", input: ".ppt,.pptx", detail: "PowerPoint 幻灯片" },
-  excel: { label: "Excel", input: ".xls,.xlsx", detail: "Excel 表格" },
-  md: { label: "Markdown", input: ".md,.markdown", detail: "Markdown 文本" },
-  html: { label: "HTML", input: ".html,.htm", detail: "HTML 页面" },
-  image: { label: "Image", input: ".png,.jpg,.jpeg,.webp,.tif,.tiff", detail: "图片文件" },
-  data: {
-    label: "Data",
-    input: ".txt,.text,.csv,.json,.xml,.yaml,.yml,.zip,.epub",
-    pdfInput: ".txt,.text,.csv,.json,.xml,.yaml,.yml",
-    detail: "文本、表格、结构化数据或归档文件",
-  },
-  translated_pdf: { label: "中文PDF", input: ".pdf", detail: "翻译后的 PDF" },
-  ocr: { label: "OCR", input: ".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff", detail: "OCR 结果" },
-};
-
-const routeCopy = {
-  convert: {
-    kindLabel: "转 PDF",
-    output: "输出为 PDF，可下载并预览前 12 页。",
-    summary: "使用本地转换引擎生成 PDF。Office 走 LibreOffice，图片走本地合成，Markdown/HTML/文本数据走 Playwright 排版。",
-  },
-  extract_markdown: {
-    kindLabel: "转 Markdown",
-    output: "输出为 Markdown，目标是结构化文本，不承诺版式保真。",
-    summary: "使用 MarkItDown 插件化抽取文档结构，适合知识库、摘要和后续文本处理。",
-  },
-  pdf_edit: {
-    kindLabel: "PDF 修改",
-    output: "输出为新的 PDF，原文件不会被覆盖。",
-    summary: "支持合并、删除页、旋转、水印和文字查找替换。内容级编辑不是 Word 式自由编辑。",
-  },
-  pdf_translate: {
-    kindLabel: "PDF 翻译",
-    output: "输出为纯译文 PDF 或双语对照 PDF。",
-    summary: "优先使用 BabelDOC 做版式保真翻译，失败后回退到 pdf2zh，再回退到基础文本重建。扫描件请先走 OCR。",
-  },
-  ocr: {
-    kindLabel: "OCR",
-    output: "输出为可搜索 PDF 或纯文本。",
-    summary: "使用本机 Tesseract 识别 PDF 或图片中的文字。适合扫描件、截图和图片型 PDF。",
-  },
-};
-
 function formatLabel(format) {
-  return capabilityFormats?.[format]?.label || formats[format]?.label || format || "";
+  return capabilityFormats?.[format]?.label || format || "";
 }
 
 function resolveRoute(source, target) {
   if (!source || !target) return null;
-  if (capabilityRoutes.length) {
-    const route = capabilityRoutes.find((item) => item.source === source && item.target === target);
-    if (route) return route;
-    return {
-      kind: "convert",
-      title: `${formatLabel(source)} → ${formatLabel(target)}`,
-      enabled: false,
-      accept: capabilityFormats?.[source]?.input || formats[source]?.input || "",
-      input: capabilityFormats?.[source]?.detail || formats[source]?.detail || "未知格式",
-      output: "该路径第一版未接入。",
-      summary: "当前支持：常见文档/图片/文本数据转 PDF，常见文档/数据转 Markdown，PDF 修改，PDF 翻译为中文PDF，PDF/图片 OCR。",
-      kindLabel: "未接入",
-      requirements: [],
-      optionPanels: [],
-    };
-  }
-  if (source === "pdf" && target === "translated_pdf") {
-    return {
-      kind: "pdf_translate",
-      title: "PDF → 中文PDF",
-      enabled: true,
-      accept: formats.pdf.input,
-      input: formats.pdf.detail,
-      ...routeCopy.pdf_translate,
-    };
-  }
-  if (target === "ocr" && ["pdf", "image"].includes(source)) {
-    return {
-      kind: "ocr",
-      title: `${formatLabel(source)} → OCR`,
-      enabled: true,
-      accept: formats[source].input,
-      input: formats[source].detail,
-      ...routeCopy.ocr,
-    };
-  }
-  if (target === "md" && ["pdf", "image"].includes(source)) {
-    return {
-      kind: "extract_markdown",
-      title: `${formatLabel(source)} → Markdown`,
-      enabled: true,
-      accept: formats[source].input,
-      input: formats[source].detail,
-      ocrFallback: true,
-      ...routeCopy.extract_markdown,
-    };
-  }
-  if (target === "pdf" && source !== "pdf") {
-    return {
-      kind: "convert",
-      title: `${formatLabel(source)} → PDF`,
-      enabled: true,
-      accept: formats[source].pdfInput || formats[source].input,
-      input: formats[source].detail,
-      ...routeCopy.convert,
-    };
-  }
-  if (target === "md" && source !== "md") {
-    return {
-      kind: "extract_markdown",
-      title: `${formatLabel(source)} → Markdown`,
-      enabled: true,
-      accept: formats[source].input,
-      input: formats[source].detail,
-      ...routeCopy.extract_markdown,
-    };
-  }
-  if (source === "pdf" && target === "pdf") {
-    return {
-      kind: "pdf_edit",
-      title: "PDF → PDF",
-      enabled: true,
-      accept: formats.pdf.input,
-      input: formats.pdf.detail,
-      ...routeCopy.pdf_edit,
-    };
-  }
+  const targetKey = `${source}->${target}`;
+  const route = capabilityRoutes.find((item) => `${item.source}->${item.target}` === targetKey);
+  if (route) return route;
   return {
     kind: "convert",
     title: `${formatLabel(source)} → ${formatLabel(target)}`,
     enabled: false,
-    accept: formats[source]?.input || "",
-    input: formats[source]?.detail || "未知格式",
+    accept: capabilityFormats?.[source]?.input || "",
+    input: capabilityFormats?.[source]?.detail || "未知格式",
     output: "该路径第一版未接入。",
     summary: "当前支持：常见文档/图片/文本数据转 PDF，常见文档/数据转 Markdown，PDF 修改，PDF 翻译为中文PDF，PDF/图片 OCR。",
     kindLabel: "未接入",
+    requirements: [],
+    optionPanels: [],
   };
 }
 
@@ -249,7 +131,26 @@ function value(selector) {
   return document.querySelector(selector)?.value?.trim() || "";
 }
 
+function renderCapabilitiesFailure() {
+  routeLine.textContent = "能力加载失败";
+  routeTitle.textContent = "能力加载失败";
+  routeSummary.textContent = "无法读取本机能力表，请刷新页面或重启服务。";
+  routeStatus.textContent = "不可用";
+  routeStatus.className = "is-error";
+  routeKind.textContent = "未加载";
+  routeInput.textContent = "能力表不可用";
+  routeOutput.textContent = "能力表不可用";
+  formTitle.textContent = "能力加载失败";
+  coreStatus.textContent = "不可用";
+  submitButton.disabled = true;
+  filesInput.accept = "";
+}
+
 function refreshControls() {
+  if (capabilitiesLoadFailed) {
+    renderCapabilitiesFailure();
+    return;
+  }
   activeRoute = resolveRoute(sourceFormat, targetFormat);
   if (activeRoute) {
     kind.value = activeRoute.kind;
@@ -258,11 +159,7 @@ function refreshControls() {
   document.querySelectorAll("[data-panel]").forEach((el) => {
     const panel = el.dataset.panel;
     const routePanels = activeRoute?.optionPanels || [];
-    const fallbackShow = panel === "edit" && kind.value === "pdf_edit"
-      || panel === "translate" && kind.value === "pdf_translate"
-      || panel === "ocr" && kind.value === "ocr"
-      || panel === "ocr" && activeRoute?.ocrFallback;
-    const routeShow = routePanels.length ? routePanels.includes(panel) : fallbackShow;
+    const routeShow = routePanels.includes(panel);
     const isAdvancedControl = Boolean(el.closest("#advanced"));
     const show = routeShow && (!isAdvancedControl || !advancedCollapsed);
     el.dataset.hidden = show ? "false" : "true";
@@ -280,8 +177,7 @@ function refreshControls() {
 
 function routeHasAdvancedOptions() {
   if (!activeRoute?.enabled) return false;
-  if (activeRoute.optionPanels?.includes("advanced")) return true;
-  return ["pdf_edit", "pdf_translate", "ocr"].includes(kind.value) || Boolean(activeRoute?.ocrFallback);
+  return activeRoute.optionPanels?.includes("advanced") === true;
 }
 
 function routeAvailabilityForCandidate(candidate) {
@@ -336,12 +232,12 @@ function updateRouteUi() {
     routeStatus.textContent = "等待选择";
     routeStatus.className = "";
     routeKind.textContent = "未定";
-    routeInput.textContent = sourceFormat ? capabilityFormats?.[sourceFormat]?.detail || formats[sourceFormat].detail : "选择源格式后显示";
+    routeInput.textContent = sourceFormat ? capabilityFormats?.[sourceFormat]?.detail || "未知格式" : "选择源格式后显示";
     routeOutput.textContent = "选择目标格式后显示";
     formTitle.textContent = "选择路径后上传";
     coreStatus.textContent = sourceFormat ? "继续选择" : "";
     submitButton.disabled = true;
-    filesInput.accept = sourceFormat ? capabilityFormats?.[sourceFormat]?.input || formats[sourceFormat].input : "";
+    filesInput.accept = sourceFormat ? capabilityFormats?.[sourceFormat]?.input || "" : "";
     renderDiagnostics();
     return;
   }
@@ -374,40 +270,13 @@ function updateRouteUi() {
 
 function dependenciesForRoute(route = activeRoute) {
   if (!route || !route.enabled) return [];
-  if (Array.isArray(route.requirements) && route.requirements.length) {
-    if (route.kind === "pdf_translate") {
-      const selectedProvider = value("#provider") || "deepseek";
-      return [
-        { name: selectedProvider, required: true },
-        ...route.requirements.filter((item) => !["deepseek", "openai"].includes(item.name)),
-      ];
-    }
-    return route.requirements;
-  }
-  if (route.kind === "convert") {
-    if (["word", "ppt", "excel"].includes(sourceFormat)) return [{ name: "libreoffice", required: true }];
-    if (["md", "html", "data"].includes(sourceFormat)) return [{ name: "playwright", required: true }];
-    return [];
-  }
-  if (route.kind === "extract_markdown") {
-    if (sourceFormat === "image") return [{ name: "tesseract", required: true }];
-    if (sourceFormat === "pdf") {
-      return [
-        { name: "markitdown", required: "one-of-markdown" },
-        { name: "tesseract", required: "one-of-markdown" },
-      ];
-    }
-    return [{ name: "markitdown", required: true }];
-  }
-  if (route.kind === "ocr") return [{ name: "tesseract", required: true }];
   if (route.kind === "pdf_translate") {
     return [
       { name: value("#provider") || "deepseek", required: true },
-      { name: "babeldoc", required: false },
-      { name: "pdf2zh", required: false },
+      ...(route.requirements || []).filter((item) => !["deepseek", "openai"].includes(item.name)),
     ];
   }
-  return [];
+  return route.requirements || [];
 }
 
 function missingRequiredDependencies() {
@@ -512,14 +381,17 @@ function formatBytes(bytes) {
 async function loadCapabilities() {
   try {
     const res = await fetch("/api/capabilities");
+    if (!res.ok) throw new Error("Capabilities request failed");
     const data = await res.json();
     capabilityFormats = data.formats || null;
     capabilityRoutes = data.routes || [];
-    capabilitiesReady = true;
+    capabilitiesLoadFailed = false;
   } catch (error) {
     capabilityFormats = null;
     capabilityRoutes = [];
-    capabilitiesReady = false;
+    capabilitiesLoadFailed = true;
+    renderCapabilitiesFailure();
+    return;
   }
   refreshControls();
 }
@@ -775,7 +647,7 @@ function finalizeRouteSelection() {
 }
 
 function assignFormatToSlot(slotName, selected) {
-  if (!selected || !formats[selected]) return;
+  if (!selected || !capabilityFormats?.[selected]) return;
   if (!hasOpenedRoutePage && !targetFormat && slotName === "source") {
     returnToHomeState();
   }

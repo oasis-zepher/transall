@@ -202,12 +202,11 @@ class FrontendTransitionTests(unittest.TestCase):
 
         self.assertIn('data-format="translated_pdf"', html)
         self.assertIn("中文PDF", html)
-        self.assertIn("translated_pdf", js)
         self.assertIn("pdf_translate", js)
-        self.assertIn('source === "pdf" && target === "translated_pdf"', js)
-        self.assertIn("routeCopy.pdf_translate", js)
-        self.assertIn('accept: formats.pdf.input', js)
-        self.assertIn('kindLabel: "PDF 翻译"', js)
+        self.assertIn("capabilityRoutes.find", js)
+        self.assertNotIn('source === "pdf" && target === "translated_pdf"', js)
+        self.assertNotIn("routeCopy.pdf_translate", js)
+        self.assertNotIn('accept: formats.pdf.input', js)
 
     def test_pdf_and_image_to_ocr_route_is_available(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -215,12 +214,11 @@ class FrontendTransitionTests(unittest.TestCase):
 
         self.assertIn('data-format="ocr"', html)
         self.assertIn("ocr", js)
-        self.assertIn('kind: "ocr"', js)
-        self.assertIn('target === "ocr"', js)
-        self.assertIn('["pdf", "image"].includes(source)', js)
-        self.assertIn('panel === "ocr" && kind.value === "ocr"', js)
         self.assertIn("routePanels.includes(panel)", js)
         self.assertIn('option value="ocr"', html)
+        self.assertNotIn('target === "ocr"', js)
+        self.assertNotIn('["pdf", "image"].includes(source)', js)
+        self.assertNotIn('panel === "ocr" && kind.value === "ocr"', js)
 
     def test_data_format_node_routes_to_markdown_and_pdf(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -228,9 +226,8 @@ class FrontendTransitionTests(unittest.TestCase):
 
         self.assertIn('data-format="data"', html)
         self.assertIn("Data", html)
-        self.assertIn("data:", js)
-        self.assertIn(".csv,.json,.xml", js)
-        self.assertIn("文本、表格、结构化数据或归档文件", js)
+        self.assertIn("capabilityFormats", js)
+        self.assertNotIn("data:", js)
 
     def test_translation_defaults_and_panels_remain_wired(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -240,8 +237,8 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn('<option value="translated">纯译文 PDF</option>', html)
         self.assertIn('<input id="sourceLang" value="en" />', html)
         self.assertIn('<input id="targetLang" value="zh" />', html)
-        self.assertIn('panel === "translate" && kind.value === "pdf_translate"', js)
         self.assertIn("routePanels.includes(panel)", js)
+        self.assertNotIn('panel === "translate" && kind.value === "pdf_translate"', js)
         self.assertNotIn('id="pages"', html)
         self.assertNotIn('pages: value("#pages")', js)
 
@@ -254,8 +251,8 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn('id="glossary"', html[html.index('<div class="topbar-right">'):html.index("</header>")])
         self.assertNotIn('id="glossary"', html[html.index('<form id="jobForm"'):html.index("</form>")])
         self.assertNotIn('id="providerStatus"', html)
-        self.assertIn(".translation-glossary", css)
         self.assertIn(".topbar-glossary", css)
+        self.assertNotIn(".control-strip .translation-glossary", css)
         self.assertIn("position: absolute", css[css.index(".topbar-glossary:focus-within textarea"):css.index(".route-reset")])
         self.assertIn("providerStatus) {", js)
         self.assertIn("GLOSSARY_STORAGE_KEY", js)
@@ -291,6 +288,10 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("capabilityRoutes", js)
         self.assertIn("capabilityFormats", js)
         self.assertIn("loadCapabilities", js)
+        self.assertNotIn("const formats =", js)
+        self.assertNotIn("const routeCopy =", js)
+        self.assertNotIn("capabilitiesReady", js)
+        self.assertIn("能力加载失败", js)
 
     def test_frontend_preflight_blocks_submit_with_server_issues(self):
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
@@ -319,10 +320,11 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_pdf_and_image_to_markdown_send_ocr_fallback_options(self):
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
-        self.assertIn('target === "md" && ["pdf", "image"].includes(source)', js)
         self.assertIn("ocrFallback", js)
         self.assertIn("ocr_fallback", js)
         self.assertIn("ocr_language", js)
+        self.assertIn("activeRoute?.ocrFallback", js)
+        self.assertNotIn('target === "md" && ["pdf", "image"].includes(source)', js)
 
     def test_conversion_page_uses_precision_deck_structure(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")

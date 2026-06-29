@@ -523,11 +523,6 @@ h3 {
   line-height: 1;
 }
 
-.node-kind {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .route-slots {
   position: absolute;
   left: 50%;
@@ -892,15 +887,6 @@ h3 {
   margin-top: 14px;
 }
 
-.control-strip .translation-glossary {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-}
-
-.control-strip .translation-glossary textarea {
-  min-height: 112px;
-}
-
 label {
   display: grid;
   gap: 6px;
@@ -931,10 +917,6 @@ select:focus,
 textarea:focus {
   border-color: var(--target);
   box-shadow: 0 0 0 3px rgba(34, 62, 92, 0.13);
-}
-
-.wide {
-  grid-column: 1 / -1;
 }
 
 .actions {
@@ -1180,16 +1162,16 @@ pre {
   line-height: 1.32;
 }
 
-.diagnostics-list {
+.precision-rail .diagnostics-list {
   border-top: 0;
   padding-top: 0;
 }
 
-.diagnostics-list:empty {
+.precision-rail .diagnostics-list:empty {
   display: none;
 }
 
-.diagnostic-item {
+.precision-rail .diagnostic-item {
   grid-template-columns: minmax(76px, 1fr) auto;
   border-left-width: 4px;
   background:
@@ -1199,7 +1181,7 @@ pre {
   padding: 7px 8px;
 }
 
-.diagnostic-item small {
+.precision-rail .diagnostic-item small {
   display: none;
 }
 
@@ -1366,12 +1348,12 @@ pre {
   min-height: 0;
 }
 
-.preview {
+.filmstrip-pane .preview {
   grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
   gap: 8px;
 }
 
-.preview:empty {
+.filmstrip-pane .preview:empty {
   min-height: 100%;
   border: 1px dashed color-mix(in srgb, var(--line-strong), transparent 12%);
   background:
@@ -1381,7 +1363,7 @@ pre {
   background-size: 20px 20px;
 }
 
-.preview img {
+.filmstrip-pane .preview img {
   border-color: color-mix(in srgb, var(--line), var(--ink) 10%);
   box-shadow: 0 8px 18px rgba(32, 37, 34, 0.1);
 }
@@ -1499,11 +1481,6 @@ pre {
   .route-stats,
   .settings-grid {
     grid-template-columns: 1fr;
-  }
-
-  .control-strip .translation-glossary {
-    grid-column: 1;
-    grid-row: auto;
   }
 
   .topbar-glossary {

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
-import zipfile
 from pathlib import Path
 from typing import Annotated
 
@@ -10,13 +8,14 @@ from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, U
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .artifacts import run_many
 from .capabilities import capabilities_payload, preflight as run_preflight
 from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_UPLOAD_BYTES
 from .conversion import convert_to_pdf, extract_markdown
 from .diagnostics import collect_diagnostics
 from .jobs import Job, JobStore
 from .ocr import ocr_document
-from .pdf_ops import PdfEditOptions, apply_pdf_edits, merge_pdfs, parse_page_spec, render_preview_pages
+from .pdf_ops import apply_pdf_edits, edit_options_from_request, merge_pdfs, pdf_page_count, render_preview_pages
 from .translation import load_provider_configs, translate_pdf
 
 
@@ -164,8 +163,7 @@ def run_job(store: JobStore, job_id: str) -> None:
 
         if job.kind == "convert":
             store.set_status(job, "running", stage="converting", message="正在转换文件")
-            outputs = [convert_to_pdf(path, output_dir) for path in inputs]
-            output = _single_or_zip(outputs, output_dir / "converted-files.zip")
+            output = run_many(inputs, lambda path: convert_to_pdf(path, output_dir), output_dir / "converted-files.zip")
         elif job.kind == "extract_markdown":
             store.set_status(job, "running", stage="extracting", message="正在提取 Markdown")
             output = _run_extract_markdown(job, inputs, output_dir)
@@ -247,16 +245,16 @@ def classify_error(exc: Exception) -> dict[str, object]:
 
 def _run_extract_markdown(job: Job, inputs: list[Path], output_dir: Path) -> Path:
     options = job.options
-    outputs = [
-        extract_markdown(
+    return run_many(
+        inputs,
+        lambda path: extract_markdown(
             path,
             output_dir / f"{path.stem}.md",
             ocr_fallback=bool(options.get("ocr_fallback", False)),
             ocr_language=str(options.get("ocr_language") or "chi_sim+eng"),
-        )
-        for path in inputs
-    ]
-    return _single_or_zip(outputs, output_dir / "markdown-files.zip")
+        ),
+        output_dir / "markdown-files.zip",
+    )
 
 
 def _run_pdf_edit(job: Job, inputs: list[Path], output_dir: Path) -> Path:
@@ -269,26 +267,7 @@ def _run_pdf_edit(job: Job, inputs: list[Path], output_dir: Path) -> Path:
         return merge_pdfs(pdfs, output_dir / "merged.pdf")
 
     source = pdfs[0]
-    with_source = __import__("fitz").open(source)
-    page_count = with_source.page_count
-    with_source.close()
-
-    delete_pages = parse_page_spec(options.get("delete_pages", ""), page_count) if options.get("delete_pages") else []
-    rotate_pages = {
-        page: int(options.get("rotate_degrees", 90))
-        for page in parse_page_spec(options.get("rotate_pages", ""), page_count)
-    }
-    reorder_pages = parse_page_spec(options.get("reorder_pages", ""), page_count) if options.get("reorder_pages") else []
-    replace_text = {}
-    if options.get("replace_find"):
-        replace_text[str(options["replace_find"])] = str(options.get("replace_with", ""))
-    edit_options = PdfEditOptions(
-        delete_pages=delete_pages,
-        rotate_pages=rotate_pages,
-        reorder_pages=reorder_pages,
-        replace_text=replace_text,
-        watermark=options.get("watermark") or None,
-    )
+    edit_options = edit_options_from_request(options, pdf_page_count(source))
     return apply_pdf_edits(source, output_dir / f"{source.stem}-edited.pdf", edit_options)
 
 
@@ -311,25 +290,16 @@ def _run_pdf_translate(job: Job, inputs: list[Path], output_dir: Path) -> Path:
 
 def _run_ocr(job: Job, inputs: list[Path], output_dir: Path) -> Path:
     options = job.options
-    outputs = [
-        ocr_document(
+    return run_many(
+        inputs,
+        lambda path: ocr_document(
             path,
             output_dir,
             language=options.get("language", "chi_sim+eng"),
             output_format=options.get("output_format", "searchable_pdf"),
-        )
-        for path in inputs
-    ]
-    return _single_or_zip(outputs, output_dir / "ocr-files.zip")
-
-
-def _single_or_zip(paths: list[Path], zip_path: Path) -> Path:
-    if len(paths) == 1:
-        return paths[0]
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in paths:
-            archive.write(path, arcname=path.name)
-    return zip_path
+        ),
+        output_dir / "ocr-files.zip",
+    )
 
 
 def _get_job_or_404(store: JobStore, job_id: str) -> Job:

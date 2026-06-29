@@ -33,12 +33,77 @@ class ApiContractTests(unittest.TestCase):
         routes = {(route["source"], route["target"]): route for route in payload["routes"]}
 
         self.assertIn("formats", payload)
+        self.assertEqual(len(payload["routes"]), 18)
+        for route in payload["routes"]:
+            self.assertIn("engine", route)
+            self.assertIn("fallbackEngines", route)
+            self.assertIn("dependencyProfile", route)
+            self.assertIn("licenseNote", route)
         self.assertEqual(routes[("pdf", "translated_pdf")]["kind"], "pdf_translate")
+        self.assertEqual(routes[("pdf", "translated_pdf")]["engine"], "babeldoc")
+        self.assertEqual(routes[("pdf", "translated_pdf")]["fallbackEngines"], ["pdf2zh", "builtin_pdf_translate"])
         self.assertEqual(routes[("pdf", "ocr")]["kind"], "ocr")
         self.assertEqual(routes[("image", "ocr")]["kind"], "ocr")
         self.assertEqual(routes[("pdf", "pdf")]["kind"], "pdf_edit")
         self.assertEqual(routes[("word", "pdf")]["kind"], "convert")
         self.assertEqual(routes[("data", "md")]["kind"], "extract_markdown")
+        self.assertEqual(routes[("image", "pdf")]["engine"], "transall_image_pdf")
+        self.assertEqual(routes[("data", "pdf")]["engine"], "transall_browser_pdf")
+        self.assertEqual(routes[("word", "pdf")]["engine"], "libreoffice_pdf")
+        self.assertEqual(routes[("pdf", "pdf")]["engine"], "pymupdf_pdf_edit")
+        self.assertIn("license_sensitive", {item["risk"] for item in routes[("pdf", "pdf")]["dependencyProfile"]})
+
+    def test_preflight_blocks_missing_libreoffice_for_office_pdf(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.diagnostics.command_available", return_value=False), patch(
+            "app.diagnostics.python_module_available", return_value=True
+        ):
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp)))
+            response = client.post(
+                "/api/preflight",
+                json={
+                    "source_format": "word",
+                    "target_format": "pdf",
+                    "kind": "convert",
+                    "files": [{"name": "report.docx", "size": 1024}],
+                    "options": {},
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["blocking_issues"][0]["code"], "missing_dependency")
+        self.assertEqual(payload["blocking_issues"][0]["dependency"], "libreoffice")
+
+    def test_preflight_blocks_missing_markitdown_for_non_ocr_markdown_route(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.diagnostics.command_available", return_value=True), patch(
+            "app.diagnostics.python_module_available", return_value=False
+        ):
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp)))
+            response = client.post(
+                "/api/preflight",
+                json={
+                    "source_format": "word",
+                    "target_format": "md",
+                    "kind": "extract_markdown",
+                    "files": [{"name": "report.docx", "size": 1024}],
+                    "options": {},
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["blocking_issues"][0]["code"], "missing_dependency")
+        self.assertEqual(payload["blocking_issues"][0]["dependency"], "markitdown")
 
     def test_preflight_blocks_missing_tesseract_for_ocr(self):
         from fastapi.testclient import TestClient
@@ -218,6 +283,11 @@ class ApiContractTests(unittest.TestCase):
         self.assertFalse(by_name["deepseek"]["available"])
         self.assertIn("Convert Office files to PDF", by_name["libreoffice"]["required_for"])
         self.assertIn("brew install libreoffice", by_name["libreoffice"]["install_hint"])
+        self.assertEqual(by_name["libreoffice"]["category"], "external_tool")
+        self.assertEqual(by_name["libreoffice"]["risk"], "heavy")
+        self.assertEqual(by_name["markitdown"]["category"], "optional")
+        self.assertEqual(by_name["pdf2zh"]["risk"], "license_sensitive")
+        self.assertEqual(by_name["pymupdf"]["risk"], "license_sensitive")
         self.assertNotIn("sk-secret", response.text)
 
     def test_job_endpoint_accepts_image_to_pdf_task(self):

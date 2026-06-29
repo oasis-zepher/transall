@@ -312,13 +312,25 @@ class CoreBehaviorTests(unittest.TestCase):
         layout_engines.assert_called_once()
 
     def test_readme_documents_ocr_and_enhanced_engines(self):
-        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+        optional_requirements = (root / "requirements-optional.txt").read_text(encoding="utf-8")
 
         self.assertNotIn("No OCR in v1", readme)
         self.assertIn("OCR", readme)
         self.assertIn("Playwright", readme)
         self.assertIn("pdf2zh", readme)
         self.assertIn("BabelDOC", readme)
+        self.assertIn("External Engine Policy", readme)
+        self.assertIn("AGPL", readme)
+        self.assertIn("requirements-optional.txt", readme)
+        self.assertNotIn("markitdown[all]", requirements)
+        self.assertNotIn("BabelDOC", requirements)
+        self.assertNotIn("pdf2zh", requirements)
+        self.assertIn("markitdown[all]", optional_requirements)
+        self.assertIn("BabelDOC", optional_requirements)
+        self.assertIn("pdf2zh==1.7.9", optional_requirements)
 
 
 if __name__ == "__main__":

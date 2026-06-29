@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import fitz
 
@@ -38,6 +39,30 @@ def parse_page_spec(spec: str | None, page_count: int) -> list[int]:
             if 1 <= page <= page_count:
                 pages.add(page)
     return sorted(pages)
+
+
+def pdf_page_count(source: Path) -> int:
+    with fitz.open(source) as doc:
+        return doc.page_count
+
+
+def edit_options_from_request(options: dict[str, Any], page_count: int) -> PdfEditOptions:
+    delete_pages = parse_page_spec(options.get("delete_pages", ""), page_count) if options.get("delete_pages") else []
+    rotate_pages = {
+        page: int(options.get("rotate_degrees", 90))
+        for page in parse_page_spec(options.get("rotate_pages", ""), page_count)
+    }
+    reorder_pages = parse_page_spec(options.get("reorder_pages", ""), page_count) if options.get("reorder_pages") else []
+    replace_text = {}
+    if options.get("replace_find"):
+        replace_text[str(options["replace_find"])] = str(options.get("replace_with", ""))
+    return PdfEditOptions(
+        delete_pages=delete_pages,
+        rotate_pages=rotate_pages,
+        reorder_pages=reorder_pages,
+        replace_text=replace_text,
+        watermark=options.get("watermark") or None,
+    )
 
 
 def apply_pdf_edits(source: Path, output: Path, options: PdfEditOptions) -> Path:

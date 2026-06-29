@@ -5,6 +5,7 @@ from typing import Any
 
 from .config import MAX_UPLOAD_BYTES
 from .diagnostics import collect_diagnostics
+from .engines import dependency_profile, route_engine_payload
 
 
 FORMAT_DEFINITIONS: dict[str, dict[str, Any]] = {
@@ -81,6 +82,10 @@ def resolve_route(source: str | None, target: str | None) -> dict[str, Any] | No
             "kindLabel": "未接入",
             "requirements": [],
             "optionPanels": [],
+            "engine": "",
+            "fallbackEngines": [],
+            "dependencyProfile": [],
+            "licenseNote": "",
         }
     return None
 
@@ -171,22 +176,24 @@ def preflight(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _supported_routes():
-    yield _route("pdf", "translated_pdf", "pdf_translate", requirements=[{"name": "deepseek", "required": True}, {"name": "babeldoc", "required": False}, {"name": "pdf2zh", "required": False}], option_panels=["translate", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
-    yield _route("pdf", "ocr", "ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
-    yield _route("image", "ocr", "ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["image"]["input"])
-    yield _route("pdf", "md", "extract_markdown", requirements=[{"name": "markitdown", "required": "one-of-markdown"}, {"name": "tesseract", "required": "one-of-markdown"}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"], ocrFallback=True)
-    yield _route("image", "md", "extract_markdown", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["image"]["input"], ocrFallback=True)
-    yield _route("pdf", "pdf", "pdf_edit", requirements=[], option_panels=["edit", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
+    yield _route("pdf", "translated_pdf", "pdf_translate", engine="babeldoc", fallback_engines=["pdf2zh", "builtin_pdf_translate"], requirements=[{"name": "deepseek", "required": True}, {"name": "babeldoc", "required": False}, {"name": "pdf2zh", "required": False}], option_panels=["translate", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
+    yield _route("pdf", "ocr", "ocr", engine="tesseract_ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
+    yield _route("image", "ocr", "ocr", engine="tesseract_ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["image"]["input"])
+    yield _route("pdf", "md", "extract_markdown", engine="markitdown", fallback_engines=["tesseract_ocr"], requirements=[{"name": "markitdown", "required": "one-of-markdown"}, {"name": "tesseract", "required": "one-of-markdown"}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"], ocrFallback=True)
+    yield _route("image", "md", "extract_markdown", engine="tesseract_ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["image"]["input"], ocrFallback=True)
+    yield _route("pdf", "pdf", "pdf_edit", engine="pymupdf_pdf_edit", requirements=[], option_panels=["edit", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
     for source in ("word", "ppt", "excel", "md", "html", "image", "data"):
         requirements = []
+        engine = "transall_image_pdf" if source == "image" else "transall_browser_pdf"
         if source in {"word", "ppt", "excel"}:
+            engine = "libreoffice_pdf"
             requirements = [{"name": "libreoffice", "required": True}]
         elif source in {"md", "html", "data"}:
             requirements = [{"name": "playwright", "required": True}]
         accept = FORMAT_DEFINITIONS[source].get("pdf_input") or FORMAT_DEFINITIONS[source]["input"]
-        yield _route(source, "pdf", "convert", requirements=requirements, option_panels=[], accept=accept)
+        yield _route(source, "pdf", "convert", engine=engine, requirements=requirements, option_panels=[], accept=accept)
     for source in ("word", "ppt", "excel", "data", "html"):
-        yield _route(source, "md", "extract_markdown", requirements=[{"name": "markitdown", "required": True}], option_panels=[], accept=FORMAT_DEFINITIONS[source]["input"])
+        yield _route(source, "md", "extract_markdown", engine="markitdown", requirements=[{"name": "markitdown", "required": True}], option_panels=[], accept=FORMAT_DEFINITIONS[source]["input"])
 
 
 def _route(
@@ -194,12 +201,19 @@ def _route(
     target: str,
     kind: str,
     *,
+    engine: str,
     requirements: list[dict[str, Any]],
     option_panels: list[str],
     accept: str,
+    fallback_engines: list[str] | None = None,
     ocrFallback: bool = False,
 ) -> dict[str, Any]:
     copy = ROUTE_COPY[kind]
+    engine_payload = route_engine_payload(engine, fallback_engines)
+    profile_by_name = {item["name"]: item for item in engine_payload["dependencyProfile"]}
+    for item in dependency_profile([str(requirement["name"]) for requirement in requirements]):
+        profile_by_name.setdefault(item["name"], item)
+    engine_payload["dependencyProfile"] = list(profile_by_name.values())
     route: dict[str, Any] = {
         "source": source,
         "target": target,
@@ -211,6 +225,7 @@ def _route(
         "requirements": requirements,
         "optionPanels": option_panels,
         **copy,
+        **engine_payload,
     }
     if ocrFallback:
         route["ocrFallback"] = True

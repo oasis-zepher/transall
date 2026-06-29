@@ -4,6 +4,7 @@ import importlib.util
 import shutil
 from typing import Any
 
+from .engines import DEPENDENCY_DEFINITIONS
 from .translation import load_provider_configs
 
 
@@ -17,70 +18,30 @@ def python_module_available(module: str) -> bool:
 
 def collect_diagnostics() -> dict[str, list[dict[str, Any]]]:
     providers = {provider["name"]: provider for provider in load_provider_configs(include_secrets=False)}
-    dependencies = [
-        {
-            "name": "libreoffice",
-            "label": "LibreOffice",
-            "available": command_available("soffice"),
-            "required_for": ["Convert Office files to PDF"],
-            "detail": "Office documents are converted through the `soffice` command.",
-            "install_hint": "brew install libreoffice 或 brew install --cask libreoffice",
-        },
-        {
-            "name": "playwright",
-            "label": "Playwright Chromium",
-            "available": python_module_available("playwright"),
-            "required_for": ["Convert Markdown, HTML, and data files to PDF"],
-            "detail": "Browser-rendered PDFs need the Playwright Python package and installed Chromium browser.",
-            "install_hint": "python -m pip install -r requirements.txt && python -m playwright install chromium",
-        },
-        {
-            "name": "markitdown",
-            "label": "MarkItDown",
-            "available": python_module_available("markitdown"),
-            "required_for": ["Extract Markdown from documents"],
-            "detail": "Structured Markdown extraction uses MarkItDown with plugins enabled.",
-            "install_hint": "python -m pip install -r requirements.txt",
-        },
-        {
-            "name": "tesseract",
-            "label": "Tesseract",
-            "available": command_available("tesseract"),
-            "required_for": ["OCR", "OCR fallback for PDF/Image to Markdown"],
-            "detail": "OCR uses the local Tesseract command through pytesseract.",
-            "install_hint": "brew install tesseract tesseract-lang && python -m pip install -r requirements.txt",
-        },
-        {
-            "name": "babeldoc",
-            "label": "BabelDOC",
-            "available": command_available("babeldoc"),
-            "required_for": ["Layout-preserving PDF translation"],
-            "detail": "Preferred layout-preserving translation engine.",
-            "install_hint": "python -m pip install -r requirements.txt",
-        },
-        {
-            "name": "pdf2zh",
-            "label": "pdf2zh",
-            "available": command_available("pdf2zh"),
-            "required_for": ["PDF translation fallback"],
-            "detail": "Secondary layout-preserving translation engine when BabelDOC is unavailable.",
-            "install_hint": "python -m pip install -r requirements.txt",
-        },
-        {
-            "name": "deepseek",
-            "label": "DeepSeek",
-            "available": bool(providers.get("deepseek", {}).get("configured")),
-            "required_for": ["PDF translation"],
-            "detail": "OpenAI-compatible translation provider.",
-            "install_hint": "export DEEPSEEK_API_KEY=...",
-        },
-        {
-            "name": "openai",
-            "label": "OpenAI",
-            "available": bool(providers.get("openai", {}).get("configured")),
-            "required_for": ["PDF translation"],
-            "detail": "OpenAI-compatible translation provider.",
-            "install_hint": "export OPENAI_API_KEY=...",
-        },
-    ]
+    dependencies = []
+    for name, definition in DEPENDENCY_DEFINITIONS.items():
+        availability = definition["availability"]
+        availability_type = availability["type"]
+        availability_name = availability["name"]
+        if availability_type == "command":
+            available = command_available(str(availability_name))
+        elif availability_type == "python":
+            available = python_module_available(str(availability_name))
+        elif availability_type == "provider":
+            available = bool(providers.get(str(availability_name), {}).get("configured"))
+        else:
+            available = False
+        dependencies.append(
+            {
+                "name": name,
+                "label": definition["label"],
+                "available": available,
+                "required_for": definition["required_for"],
+                "detail": definition["detail"],
+                "install_hint": definition["install_hint"],
+                "category": definition["category"],
+                "risk": definition["risk"],
+                "license_note": definition.get("license_note", ""),
+            }
+        )
     return {"dependencies": dependencies}

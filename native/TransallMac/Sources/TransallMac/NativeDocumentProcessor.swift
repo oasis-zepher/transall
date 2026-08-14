@@ -112,7 +112,10 @@ enum NativeDocumentProcessor {
       try await extractMarkdown(inputs: inputs, options: options, outputURL: outputURL)
       return Result(outputURL: outputURL, logs: ["文字已提取为 Markdown。"])
     case "pdf_translate":
-      guard let apiKey, !apiKey.isEmpty else {
+      guard ["deepseek", "openai"].contains(options.provider) else {
+        throw NativeDocumentError.invalidOption("翻译服务无效，请重新选择 DeepSeek 或 OpenAI。")
+      }
+      guard let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
         throw NativeDocumentError.provider("所选翻译服务尚未配置 API Key。")
       }
       try await translatePDF(
@@ -236,12 +239,12 @@ enum NativeDocumentProcessor {
   }
 
   private static func imagesToPDF(inputs: [URL], outputURL: URL) throws {
-    let images = try inputs.map(loadImage)
-    guard !images.isEmpty else { throw NativeDocumentError.invalidFile("没有可用图片。") }
+    guard !inputs.isEmpty else { throw NativeDocumentError.invalidFile("没有可用图片。") }
     let pageBox = CGRect(x: 0, y: 0, width: 595, height: 842)
     try withPDFContext(outputURL: outputURL, mediaBox: pageBox) { context in
-      for image in images {
+      for input in inputs {
         try Task.checkCancellation()
+        let image = try loadImage(input)
         context.beginPDFPage(nil)
         context.setFillColor(NSColor.white.cgColor)
         context.fill(pageBox)

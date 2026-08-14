@@ -162,6 +162,100 @@ struct ModelsTests {
   }
 
   @Test
+  func failedResultSavingPreservesExistingFile() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-save-failure-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let missingSource = temporary.appendingPathComponent("missing.pdf")
+    let destination = temporary.appendingPathComponent("destination.pdf")
+    try Data("existing result".utf8).write(to: destination)
+
+    #expect(throws: Error.self) {
+      try AtomicResultSaver.copyReplacing(source: missingSource, destination: destination)
+    }
+
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "existing result")
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+    #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
+  }
+
+  @Test @MainActor
+  func failedImportRemovesIncompleteJobDirectory() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-job-failure-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let readable = temporary.appendingPathComponent("readable.png")
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    try Data("not needed for the copy test".utf8).write(to: readable)
+    let missing = temporary.appendingPathComponent("missing.png")
+    let engine = NativeDocumentEngine(dataDirectoryOverride: temporary.appendingPathComponent("Data"))
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    do {
+      _ = try await engine.createJob(
+        route: route,
+        files: [
+          SelectedDocument(url: readable, size: 1),
+          SelectedDocument(url: missing, size: 1),
+        ],
+        options: JobOptions())
+      Issue.record("Missing second input should fail the import")
+    } catch {
+      #expect(error.localizedDescription.contains("missing.png"))
+    }
+
+    let jobsDirectory = temporary.appendingPathComponent("Data/Jobs")
+    let remaining = try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path)
+    #expect(remaining.isEmpty)
+  }
+
+  @Test
+  func imageToPDFProcessesEveryInputPage() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-image-pdf-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let first = temporary.appendingPathComponent("first.png")
+    let second = temporary.appendingPathComponent("second.png")
+    try writeTestImage(to: first, color: CGColor(red: 0.8, green: 0.2, blue: 0.1, alpha: 1))
+    try writeTestImage(to: second, color: CGColor(red: 0.1, green: 0.4, blue: 0.8, alpha: 1))
+    let output = temporary.appendingPathComponent("images.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [first, second], options: JobOptions(), outputURL: output,
+      apiKey: nil)
+
+    let document = try #require(PDFDocument(url: output))
+    #expect(document.pageCount == 2)
+  }
+
+  @Test
+  func invalidTranslationProviderIsRejectedBeforeProcessing() async throws {
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    var options = JobOptions()
+    options.provider = "unknown"
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: route, inputs: [URL(fileURLWithPath: "/tmp/missing.pdf")], options: options,
+        outputURL: URL(fileURLWithPath: "/tmp/unused.pdf"), apiKey: "unused")
+      Issue.record("Unknown translation providers should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_option")
+      #expect(error.errorDescription?.contains("翻译服务无效") == true)
+    }
+  }
+
+  @Test
   func imageLoadingAppliesOrientationMetadata() throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-orientation-test-\(UUID().uuidString).jpg")
@@ -250,5 +344,20 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.errorDescription?.contains("每一页") == true)
     }
+  }
+
+  private func writeTestImage(to url: URL, color: CGColor) throws {
+    let context = try #require(
+      CGContext(
+        data: nil, width: 32, height: 24, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(color)
+    context.fill(CGRect(x: 0, y: 0, width: 32, height: 24))
+    let image = try #require(context.makeImage())
+    let destination = try #require(
+      CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
   }
 }

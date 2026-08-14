@@ -23,7 +23,12 @@ final class NativeDocumentEngine: ObservableObject {
   private var jobs: [String: JobResponse] = [:]
   private var tasks: [String: Task<Void, Never>] = [:]
   private var dataDirectory: URL?
+  private let dataDirectoryOverride: URL?
   private var isTerminating = false
+
+  init(dataDirectoryOverride: URL? = nil) {
+    self.dataDirectoryOverride = dataDirectoryOverride
+  }
 
   func start() async {
     state = .starting
@@ -131,34 +136,42 @@ final class NativeDocumentEngine: ObservableObject {
     let id = UUID().uuidString.lowercased()
     let directory = dataDirectory.appendingPathComponent("Jobs/\(id)", isDirectory: true)
     let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
-    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
-    var copiedInputs: [URL] = []
-    for (index, document) in files.enumerated() {
-      let safeName = "\(index + 1)-\(document.name.replacingOccurrences(of: "/", with: "-"))"
-      let destination = inputDirectory.appendingPathComponent(safeName)
-      let accessing = document.url.startAccessingSecurityScopedResource()
-      defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
-      do {
-        try FileManager.default.copyItem(at: document.url, to: destination)
-      } catch {
-        throw NativeDocumentError.invalidFile("无法读取 \(document.name)：\(error.localizedDescription)")
+    do {
+      try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+      var copiedInputs: [URL] = []
+      for (index, document) in files.enumerated() {
+        let safeName = "\(index + 1)-\(document.name.replacingOccurrences(of: "/", with: "-"))"
+        let destination = inputDirectory.appendingPathComponent(safeName)
+        let accessing = document.url.startAccessingSecurityScopedResource()
+        defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
+        do {
+          try FileManager.default.copyItem(at: document.url, to: destination)
+        } catch {
+          throw NativeDocumentError.invalidFile("无法读取 \(document.name)：\(error.localizedDescription)")
+        }
+        copiedInputs.append(destination)
       }
-      copiedInputs.append(destination)
-    }
 
-    let now = ISO8601DateFormatter().string(from: Date())
-    let job = JobResponse(
-      id: id, kind: route.kind, status: "queued", inputs: files.map(\.name), createdAt: now,
-      updatedAt: now, output: nil, error: nil, stage: "queued", message: "任务已进入队列。",
-      errorCode: nil, errorHint: nil, retryable: false, progress: 0,
-      cancelRequested: false, logs: ["已将输入副本保存到应用沙盒。"])
-    let metadata = NativeJobMetadata(
-      route: route, options: options, inputNames: copiedInputs.map(\.lastPathComponent))
-    jobs[id] = job
-    try persist(job, in: directory)
-    try persist(metadata, in: directory)
-    launch(jobID: id, metadata: metadata, directory: directory)
-    return job
+      let now = ISO8601DateFormatter().string(from: Date())
+      let job = JobResponse(
+        id: id, kind: route.kind, status: "queued", inputs: files.map(\.name), createdAt: now,
+        updatedAt: now, output: nil, error: nil, stage: "queued", message: "任务已进入队列。",
+        errorCode: nil, errorHint: nil, retryable: false, progress: 0,
+        cancelRequested: false, logs: ["已将输入副本保存到应用沙盒。"])
+      let metadata = NativeJobMetadata(
+        route: route, options: options, inputNames: copiedInputs.map(\.lastPathComponent))
+      jobs[id] = job
+      try persist(job, in: directory)
+      try persist(metadata, in: directory)
+      launch(jobID: id, metadata: metadata, directory: directory)
+      return job
+    } catch {
+      jobs[id] = nil
+      tasks[id]?.cancel()
+      tasks[id] = nil
+      try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
   }
 
   func job(id: String) throws -> JobResponse {
@@ -353,9 +366,14 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func applicationDataDirectory() throws -> URL {
-    let base = try FileManager.default.url(
-      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-    let directory = base.appendingPathComponent("Transall", isDirectory: true)
+    let directory: URL
+    if let dataDirectoryOverride {
+      directory = dataDirectoryOverride
+    } else {
+      let base = try FileManager.default.url(
+        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+      directory = base.appendingPathComponent("Transall", isDirectory: true)
+    }
     try FileManager.default.createDirectory(
       at: directory.appendingPathComponent("Jobs", isDirectory: true),
       withIntermediateDirectories: true)
@@ -370,12 +388,16 @@ final class NativeDocumentEngine: ObservableObject {
       includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
       options: [.skipsHiddenFiles])
     for directory in directories {
-      let values = try directory.resourceValues(
-        forKeys: [.contentModificationDateKey, .isDirectoryKey])
-      guard values.isDirectory == true, let modified = values.contentModificationDate,
-        now.timeIntervalSince(modified) > 24 * 60 * 60
-      else { continue }
-      try FileManager.default.removeItem(at: directory)
+      do {
+        let values = try directory.resourceValues(
+          forKeys: [.contentModificationDateKey, .isDirectoryKey])
+        guard values.isDirectory == true, let modified = values.contentModificationDate,
+          now.timeIntervalSince(modified) > 24 * 60 * 60
+        else { continue }
+        try FileManager.default.removeItem(at: directory)
+      } catch {
+        appendLog("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
+      }
     }
   }
 

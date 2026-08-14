@@ -6,7 +6,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 product-quality findings from the baseline audit are resolved. The remaining work is account-holder work: accept the production Xcode license, activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 product-quality findings from the baseline audit are resolved. Xcode 26.6 production-toolchain verification also passes. The remaining work is account-holder work: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Health score
 
@@ -43,22 +43,21 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 27 beta | 13/13 passed |
-| Xcode scheme tests with Xcode 27 beta | Passed |
-| Xcode static analyzer with Xcode 27 beta | Passed with no code findings |
-| Unsigned Release archive with Xcode 27 beta | Passed; universal `arm64` + `x86_64` executable |
+| Swift package tests with Xcode 26.6 | 13/13 passed |
+| Xcode scheme tests with Xcode 26.6 | Passed |
+| Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
+| Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
 | Archive resources | AppIcon and `PrivacyInfo.xcprivacy` present; privacy manifest passes `plutil` |
 | Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, and Keychain settings verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
 | Support website | ESLint passed; production build passed; 4/4 rendered HTML tests passed |
-| Xcode 26.6 production verification | Blocked before compilation with exit code 69 because the account holder has not accepted the Xcode license |
+| Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
 ## Submission blockers outside the repository
 
-- Accept the Xcode 26.6 and Apple SDK license as the Mac administrator, then rerun package tests, scheme tests, analysis, and archive under `/Applications/Xcode.app`.
 - Activate the individual Apple Developer membership and finish identity verification.
 - Register the final unique bundle identifier; `com.transall.mac` remains provisional.
 - Create the Mac App Distribution and installer signing assets and validate a signed archive in Organizer.

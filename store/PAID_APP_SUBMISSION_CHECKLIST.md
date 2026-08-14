@@ -45,12 +45,12 @@ Why the privacy label is conservative: Apple defines collection as data transmit
 
 ## 4. Build and signing
 
-- [ ] Install an Apple-supported release version of Xcode; do not upload from a beta-only toolchain unless Apple explicitly accepts it.
+- [x] Install and accept the license for Apple-supported Xcode 26.6; tests, analysis, and the unsigned archive pass with this toolchain.
 - [ ] Set the individual's Apple Developer Team and final bundle identifier in Xcode.
 - [ ] Create or allow Xcode to manage the Mac App Distribution certificate and Mac Installer Distribution certificate/profile required by the current workflow.
-- [ ] Archive Release with App Sandbox enabled.
+- [ ] Archive a distribution-signed Release with App Sandbox enabled; the unsigned universal preflight archive already passes.
 - [ ] Validate the archive in Organizer.
-- [ ] Confirm the archive has no Python, Homebrew paths, local server, prohibited private frameworks, or unsigned nested executables.
+- [x] Confirm the unsigned preflight archive has no Python, Homebrew paths, local server, prohibited private frameworks, or nested executables.
 - [ ] Upload the archive and wait for processing before attaching it to version 1.0.0.
 
 ## 5. Product page and review

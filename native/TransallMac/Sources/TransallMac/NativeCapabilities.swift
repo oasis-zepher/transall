@@ -32,7 +32,7 @@ enum NativeCapabilities {
       panels: ["edit", "advanced"]),
     route(
       "pdf", "translated_pdf", "pdf_translate", "翻译 PDF", "PDF 翻译", "PDF 文档", "译文 PDF",
-      "逐页提取文字并通过所选服务翻译，结果不会覆盖原文件。", "PDFKit / URLSession",
+      "先在本机提取并检查全文，再通过所选服务翻译，结果不会覆盖原文件。", "PDFKit / URLSession",
       requirements: [RouteRequirement(name: "deepseek", required: .required(true))],
       panels: ["translate", "advanced"]),
     route(

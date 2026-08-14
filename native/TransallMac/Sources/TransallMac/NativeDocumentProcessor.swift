@@ -10,12 +10,15 @@ enum NativeDocumentError: LocalizedError {
   case invalidFile(String)
   case invalidOption(String)
   case processing(String)
+  case processingLimit(String, recoverySuggestion: String)
   case provider(String)
 
   var errorDescription: String? {
     switch self {
     case .invalidFile(let message), .invalidOption(let message), .processing(let message),
       .provider(let message):
+      message
+    case .processingLimit(let message, _):
       message
     }
   }
@@ -25,6 +28,7 @@ enum NativeDocumentError: LocalizedError {
     case .invalidFile: "invalid_file"
     case .invalidOption: "invalid_option"
     case .processing: "native_processing_failed"
+    case .processingLimit: "processing_limit_exceeded"
     case .provider: "translation_provider_failed"
     }
   }
@@ -34,6 +38,7 @@ enum NativeDocumentError: LocalizedError {
     case .invalidFile: "确认文件没有损坏，并与所选输入格式一致。"
     case .invalidOption: "修改任务参数后重新运行。"
     case .processing: "检查输入文件后重试；问题持续时可保留日志用于反馈。"
+    case .processingLimit(_, let recoverySuggestion): recoverySuggestion
     case .provider: "检查网络、API Key、服务余额和服务商状态后重试。"
     }
   }
@@ -289,6 +294,29 @@ enum JobOptionValidator {
   }
 }
 
+enum PDFTranslationPolicy {
+  static let maximumPages = 200
+  static let maximumCharacters = 200_000
+
+  static func validate(pageCount: Int) throws {
+    guard pageCount <= maximumPages else {
+      throw NativeDocumentError.processingLimit(
+        "PDF 翻译单次最多支持 \(maximumPages) 页；当前文档有 \(pageCount) 页。",
+        recoverySuggestion: "请拆分 PDF 后分批翻译。")
+    }
+  }
+
+  static func totalCharacters(afterAdding pageCharacters: Int, to currentTotal: Int) throws -> Int {
+    let addition = currentTotal.addingReportingOverflow(pageCharacters)
+    guard !addition.overflow, addition.partialValue <= maximumCharacters else {
+      throw NativeDocumentError.processingLimit(
+        "PDF 翻译单次最多支持 \(maximumCharacters.formatted()) 个待翻译字符。",
+        recoverySuggestion: "请拆分 PDF 或先删除不需要翻译的页面后重试。")
+    }
+    return addition.partialValue
+  }
+}
+
 enum NativeDocumentProcessor {
   static let maximumPDFImageDimension = 3_508
   static let maximumOCRImageDimension = 2_400
@@ -332,11 +360,14 @@ enum NativeDocumentProcessor {
       try await extractMarkdown(inputs: inputs, options: options, outputURL: outputURL)
       return Result(outputURL: outputURL, logs: ["文字已提取为 Markdown。"])
     case "pdf_translate":
+      guard inputs.count == 1, let input = inputs.first else {
+        throw NativeDocumentError.invalidFile("PDF 翻译每次只能使用一个文件。")
+      }
       guard let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
         throw NativeDocumentError.provider("所选翻译服务尚未配置 API Key。")
       }
       try await translatePDF(
-        input: inputs[0], options: options, outputURL: outputURL, apiKey: apiKey)
+        input: input, options: options, outputURL: outputURL, apiKey: apiKey)
       return Result(
         outputURL: outputURL,
         logs: ["文档文字已发送给 \(options.provider == "openai" ? "OpenAI" : "DeepSeek") 并生成译文 PDF。"])
@@ -626,22 +657,13 @@ enum NativeDocumentProcessor {
     guard let rasterDocument = CGPDFDocument(input as CFURL) else {
       throw NativeDocumentError.invalidFile("无法打开 PDF 图像内容。")
     }
+    let sourcePages = try translationSourcePages(
+      document: document, rasterDocument: rasterDocument, options: options)
     let translator = TranslationService(provider: options.provider, apiKey: apiKey)
     var pages: [String] = []
-    for index in 0..<document.pageCount {
+    pages.reserveCapacity(sourcePages.count)
+    for (index, sourceText) in sourcePages.enumerated() {
       try Task.checkCancellation()
-      var sourceText =
-        document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      if sourceText.isEmpty {
-        guard let page = rasterDocument.page(at: index + 1),
-          let image = render(page: page, maximumDimension: 2400)
-        else {
-          throw NativeDocumentError.processing("无法渲染 PDF 的第 \(index + 1) 页。")
-        }
-        sourceText = try recognize(
-          image, languages: recognitionLanguages(options.ocrLanguage)
-        ).map(\.text).joined(separator: "\n")
-      }
       guard !sourceText.isEmpty else {
         pages.append("第 \(index + 1) 页没有可提取的文字。")
         continue
@@ -656,6 +678,34 @@ enum NativeDocumentProcessor {
       }
     }
     try writeTextPDF(pages.joined(separator: "\n\n────────\n\n"), to: outputURL)
+  }
+
+  private static func translationSourcePages(
+    document: PDFDocument, rasterDocument: CGPDFDocument, options: JobOptions
+  ) throws -> [String] {
+    try PDFTranslationPolicy.validate(pageCount: document.pageCount)
+    var pages: [String] = []
+    pages.reserveCapacity(document.pageCount)
+    var totalCharacters = 0
+    for index in 0..<document.pageCount {
+      try Task.checkCancellation()
+      var sourceText =
+        document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if sourceText.isEmpty {
+        guard let page = rasterDocument.page(at: index + 1),
+          let image = render(page: page, maximumDimension: 2400)
+        else {
+          throw NativeDocumentError.processing("无法渲染 PDF 的第 \(index + 1) 页。")
+        }
+        sourceText = try recognize(
+          image, languages: recognitionLanguages(options.ocrLanguage)
+        ).map(\.text).joined(separator: "\n")
+      }
+      totalCharacters = try PDFTranslationPolicy.totalCharacters(
+        afterAdding: sourceText.count, to: totalCharacters)
+      pages.append(sourceText)
+    }
+    return pages
   }
 
   private static func forEachRasterPage(

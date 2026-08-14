@@ -78,6 +78,34 @@ struct ModelsTests {
     #expect(configuration.urlCredentialStorage == nil)
   }
 
+  @Test
+  func pdfTranslationPolicyBoundsPaidWork() throws {
+    try PDFTranslationPolicy.validate(pageCount: PDFTranslationPolicy.maximumPages)
+    #expect(
+      try PDFTranslationPolicy.totalCharacters(
+        afterAdding: 1, to: PDFTranslationPolicy.maximumCharacters - 1)
+        == PDFTranslationPolicy.maximumCharacters)
+
+    do {
+      try PDFTranslationPolicy.validate(pageCount: PDFTranslationPolicy.maximumPages + 1)
+      Issue.record("Oversized PDF translation page counts should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "processing_limit_exceeded")
+      #expect(error.errorDescription?.contains("最多支持") == true)
+      #expect(error.recoverySuggestion.contains("拆分 PDF"))
+    }
+
+    do {
+      _ = try PDFTranslationPolicy.totalCharacters(
+        afterAdding: 1, to: PDFTranslationPolicy.maximumCharacters)
+      Issue.record("Oversized PDF translation text should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "processing_limit_exceeded")
+      #expect(error.errorDescription?.contains("待翻译字符") == true)
+      #expect(error.recoverySuggestion.contains("删除不需要翻译的页面"))
+    }
+  }
+
   @Test @MainActor
   func importingDocumentsAppendsAndDeduplicatesFiles() async throws {
     let temporary = FileManager.default.temporaryDirectory
@@ -2091,6 +2119,26 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.code == "invalid_option")
       #expect(error.errorDescription?.contains("翻译服务无效") == true)
+    }
+  }
+
+  @Test
+  func pdfTranslationProcessorRejectsMultipleInputs() async throws {
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let inputs = [
+      URL(fileURLWithPath: "/tmp/first.pdf"),
+      URL(fileURLWithPath: "/tmp/second.pdf"),
+    ]
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: route, inputs: inputs, options: JobOptions(),
+        outputURL: URL(fileURLWithPath: "/tmp/unused.pdf"), apiKey: nil)
+      Issue.record("PDF translation must reject multiple inputs at the processor boundary")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(error.errorDescription?.contains("只能使用一个文件") == true)
     }
   }
 

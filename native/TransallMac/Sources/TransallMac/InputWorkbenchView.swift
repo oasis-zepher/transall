@@ -207,7 +207,9 @@ struct InputWorkbenchView: View {
       }
 
       Label {
-        Text("翻译内容会发送给所选服务商（DeepSeek 或 OpenAI）；任务文件和结果保存在本机。")
+        Text(
+          "提取文字会发送给所选服务商；任务文件和结果保存在本机。单次最多 \(PDFTranslationPolicy.maximumPages) 页、\(PDFTranslationPolicy.maximumCharacters.formatted()) 个字符，全文检查通过后才开始请求。"
+        )
       } icon: {
         Image(systemName: "network")
       }

@@ -1303,6 +1303,68 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func runtimeCleanupRemovesExpiredCurrentJobButKeepsRunningWork() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-runtime-cleanup-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    let expiredID = UUID().uuidString.lowercased()
+    let runningID = UUID().uuidString.lowercased()
+    let expiredDirectory = jobsDirectory.appendingPathComponent(expiredID, isDirectory: true)
+    let runningDirectory = jobsDirectory.appendingPathComponent(runningID, isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: expiredDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: runningDirectory, withIntermediateDirectories: true)
+
+    let now = Date()
+    let createdAt = ISO8601DateFormatter().string(from: now.addingTimeInterval(-25 * 60 * 60))
+    let expiredJob = JobResponse(
+      id: expiredID, kind: "text_to_pdf", status: "done", inputs: ["old.txt"],
+      createdAt: createdAt, updatedAt: createdAt, output: "old.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let runningJob = JobResponse(
+      id: runningID, kind: route.kind, status: "running", inputs: ["input.png"],
+      createdAt: createdAt, updatedAt: createdAt, output: nil, error: nil,
+      stage: "processing", message: "原生引擎正在处理。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 12, cancelRequested: false, logs: [])
+    try persistTestJob(expiredJob, in: expiredDirectory)
+    try persistTestJob(runningJob, in: runningDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(route: route, options: JobOptions(), inputNames: ["1-input.png"])
+    ).write(to: runningDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let lastJobKey = "transall.native.lastJobId"
+    UserDefaults.standard.set(expiredID, forKey: lastJobKey)
+    defer { UserDefaults.standard.removeObject(forKey: lastJobKey) }
+    let model = AppModel(backend: engine)
+    model.currentJob = expiredJob
+    model.previewPages = [PreviewPage(page: 1, url: "preview.png")]
+    model.previewError = "旧预览错误"
+    model.preflightWarnings = [
+      PreflightIssue(code: "old_warning", dependency: nil, message: "旧警告", hint: nil)
+    ]
+
+    await model.cleanupExpiredJobs(now: now)
+
+    #expect(!FileManager.default.fileExists(atPath: expiredDirectory.path))
+    #expect(FileManager.default.fileExists(atPath: runningDirectory.path))
+    #expect(model.currentJob == nil)
+    #expect(model.previewPages.isEmpty)
+    #expect(model.previewError == nil)
+    #expect(model.preflightWarnings.isEmpty)
+    #expect(UserDefaults.standard.string(forKey: lastJobKey) == nil)
+  }
+
+  @Test @MainActor
   func deletingCurrentJobClearsItsResultState() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-delete-state-test-\(UUID().uuidString)", isDirectory: true)

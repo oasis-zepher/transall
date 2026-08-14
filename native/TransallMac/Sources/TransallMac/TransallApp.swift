@@ -17,7 +17,7 @@ struct TransallApp: App {
         .onReceive(
           NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
         ) { _ in
-          model.backend.prepareForTermination()
+          model.prepareForTermination()
         }
     }
     .windowStyle(.hiddenTitleBar)

@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
 
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
+  private var retentionCleanupTask: Task<Void, Never>?
   private let lastJobKey = "transall.native.lastJobId"
 
   init() {
@@ -97,6 +98,7 @@ final class AppModel: ObservableObject {
     guard case .running = backend.state else { return }
     await reloadEnvironment()
     await restoreLastJob()
+    beginRetentionCleanup()
   }
 
   func reloadEnvironment() async {
@@ -327,19 +329,23 @@ final class AppModel: ObservableObject {
     defer { isDeletingJob = false }
     do {
       try await backend.deleteJob(id: jobID)
-      if UserDefaults.standard.string(forKey: lastJobKey) == jobID {
-        UserDefaults.standard.removeObject(forKey: lastJobKey)
-      }
-      if currentJob?.id == jobID {
-        currentJob = nil
-        previewPages = []
-        previewError = nil
-        isLoadingPreview = false
-        preflightWarnings = []
-      }
+      clearJobState(id: jobID)
     } catch {
       errorMessage = error.localizedDescription
     }
+  }
+
+  func cleanupExpiredJobs(now: Date = Date()) async {
+    let removed = await backend.cleanupExpiredJobs(now: now)
+    guard let currentJob, removed.contains(currentJob.id) else { return }
+    pollingTask?.cancel()
+    clearJobState(id: currentJob.id)
+  }
+
+  func prepareForTermination() {
+    pollingTask?.cancel()
+    retentionCleanupTask?.cancel()
+    backend.prepareForTermination()
   }
 
   func diagnostic(for requirement: RouteRequirement) -> DiagnosticDefinition? {
@@ -369,6 +375,33 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .milliseconds(900))
       }
     }
+  }
+
+  private func beginRetentionCleanup() {
+    retentionCleanupTask?.cancel()
+    retentionCleanupTask = Task { [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(for: .seconds(60 * 60))
+        } catch {
+          return
+        }
+        guard let self else { return }
+        await cleanupExpiredJobs()
+      }
+    }
+  }
+
+  private func clearJobState(id: String) {
+    if UserDefaults.standard.string(forKey: lastJobKey) == id {
+      UserDefaults.standard.removeObject(forKey: lastJobKey)
+    }
+    guard currentJob?.id == id else { return }
+    currentJob = nil
+    previewPages = []
+    previewError = nil
+    isLoadingPreview = false
+    preflightWarnings = []
   }
 
   private func loadPreview(jobID: String) async {

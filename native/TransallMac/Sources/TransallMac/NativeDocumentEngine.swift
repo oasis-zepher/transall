@@ -15,6 +15,11 @@ final class NativeDocumentEngine: ObservableObject {
     let task: Task<[URL], Error>
   }
 
+  private struct CleanupScan: Sendable {
+    let directories: [URL]
+    let warnings: [String]
+  }
+
   enum State: Equatable {
     case starting
     case running
@@ -360,6 +365,47 @@ final class NativeDocumentEngine: ObservableObject {
     jobs[id] = nil
   }
 
+  func cleanupExpiredJobs(now: Date = Date()) async -> Set<String> {
+    guard state == .running, let dataDirectory else { return [] }
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    let scanTask = Task.detached(priority: .utility) {
+      try Self.expiredJobDirectories(in: jobsDirectory, now: now)
+    }
+    let scan: CleanupScan
+    do {
+      scan = try await withTaskCancellationHandler(
+        operation: { try await scanTask.value },
+        onCancel: { scanTask.cancel() })
+    } catch is CancellationError {
+      return []
+    } catch {
+      appendLog("无法检查过期任务：\(error.localizedDescription)")
+      return []
+    }
+    scan.warnings.forEach(appendLog)
+
+    var removed: Set<String> = []
+    for directory in scan.directories {
+      guard !Task.isCancelled else { return removed }
+      let id = directory.lastPathComponent
+      guard UUID(uuidString: id)?.uuidString.lowercased() == id else {
+        appendLog("过期任务目录编号无效，已留待下次启动清理：\(id)")
+        continue
+      }
+      guard jobs[id]?.isRunning != true else { continue }
+      do {
+        try await deleteJob(id: id)
+        removed.insert(id)
+      } catch {
+        appendLog("未能清理过期任务 \(id.prefix(8))：\(error.localizedDescription)")
+      }
+    }
+    if !removed.isEmpty {
+      appendLog("已自动清理 \(removed.count) 个超过 24 小时的本地任务。")
+    }
+    return removed
+  }
+
   func download(jobID: String, to destination: URL) async throws {
     let job = try job(id: jobID)
     guard job.status == "done", let output = job.output else {
@@ -693,6 +739,22 @@ final class NativeDocumentEngine: ObservableObject {
       at: directory.appendingPathComponent("Jobs", isDirectory: true),
       withIntermediateDirectories: true)
     let jobsDirectory = directory.appendingPathComponent("Jobs", isDirectory: true)
+    let scan = try expiredJobDirectories(in: jobsDirectory, now: Date())
+    var warnings = scan.warnings
+    for directory in scan.directories {
+      try Task.checkCancellation()
+      do {
+        try FileManager.default.removeItem(at: directory)
+      } catch {
+        warnings.append("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
+      }
+    }
+    return (directory, warnings)
+  }
+
+  private nonisolated static func expiredJobDirectories(
+    in jobsDirectory: URL, now: Date
+  ) throws -> CleanupScan {
     try validateDirectory(jobsDirectory, description: "任务数据目录")
     let directories = try FileManager.default.contentsOfDirectory(
       at: jobsDirectory,
@@ -700,8 +762,8 @@ final class NativeDocumentEngine: ObservableObject {
         .contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey,
       ],
       options: [.skipsHiddenFiles])
-    let now = Date()
     let dateFormatter = ISO8601DateFormatter()
+    var expired: [URL] = []
     var warnings: [String] = []
     for directory in directories {
       try Task.checkCancellation()
@@ -714,12 +776,12 @@ final class NativeDocumentEngine: ObservableObject {
         let referenceDate = cleanupReferenceDate(
           in: directory, fallback: modified, now: now, dateFormatter: dateFormatter)
         guard now.timeIntervalSince(referenceDate) >= 24 * 60 * 60 else { continue }
-        try FileManager.default.removeItem(at: directory)
+        expired.append(directory)
       } catch {
-        warnings.append("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
+        warnings.append("无法检查任务 \(directory.lastPathComponent) 的保留期：\(error.localizedDescription)")
       }
     }
-    return (directory, warnings)
+    return CleanupScan(directories: expired, warnings: warnings)
   }
 
   private nonisolated static func cleanupReferenceDate(

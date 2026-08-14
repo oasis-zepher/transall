@@ -366,7 +366,7 @@ enum NativeDocumentProcessor {
 
   private static func editPDF(inputs: [URL], options: JobOptions, outputURL: URL) throws {
     guard !inputs.isEmpty else { throw NativeDocumentError.invalidFile("没有可处理的 PDF。") }
-    let document = PDFDocument()
+    var document = PDFDocument()
     for input in inputs {
       try Task.checkCancellation()
       guard let source = PDFDocument(url: input) else {
@@ -415,12 +415,7 @@ enum NativeDocumentProcessor {
           }
           reordered.insert(page, at: reordered.pageCount)
         }
-        while document.pageCount > 0 { document.removePage(at: 0) }
-        for index in 0..<reordered.pageCount {
-          if let page = reordered.page(at: index)?.copy() as? PDFPage {
-            document.insert(page, at: document.pageCount)
-          }
-        }
+        document = reordered
       }
 
       let crop = try PageSelectionParser.indexes(options.cropPages, pageCount: document.pageCount)

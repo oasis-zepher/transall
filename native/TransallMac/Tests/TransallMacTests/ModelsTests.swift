@@ -2020,6 +2020,46 @@ struct ModelsTests {
   }
 
   @Test
+  func nativePDFEditReordersPagesWithoutLoss() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-reorder-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let editRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    var pagePDFs: [URL] = []
+    for (index, marker) in ["FIRST-PAGE-MARKER", "SECOND-PAGE-MARKER"].enumerated() {
+      let text = temporary.appendingPathComponent("page-\(index + 1).txt")
+      let pdf = temporary.appendingPathComponent("page-\(index + 1).pdf")
+      try Data(marker.utf8).write(to: text, options: .atomic)
+      _ = try await NativeDocumentProcessor.process(
+        route: textRoute, inputs: [text], options: JobOptions(), outputURL: pdf, apiKey: nil)
+      pagePDFs.append(pdf)
+    }
+
+    var mergeOptions = JobOptions()
+    mergeOptions.editAction = "merge"
+    let merged = temporary.appendingPathComponent("merged.pdf")
+    _ = try await NativeDocumentProcessor.process(
+      route: editRoute, inputs: pagePDFs, options: mergeOptions, outputURL: merged, apiKey: nil)
+
+    var reorderOptions = JobOptions()
+    reorderOptions.reorderPages = "2,1"
+    let reordered = temporary.appendingPathComponent("reordered.pdf")
+    _ = try await NativeDocumentProcessor.process(
+      route: editRoute, inputs: [merged], options: reorderOptions, outputURL: reordered,
+      apiKey: nil)
+
+    let document = try #require(PDFDocument(url: reordered))
+    #expect(document.pageCount == 2)
+    #expect(document.page(at: 0)?.string?.contains("SECOND-PAGE-MARKER") == true)
+    #expect(document.page(at: 1)?.string?.contains("FIRST-PAGE-MARKER") == true)
+  }
+
+  @Test
   func nativePDFEditDeletesAndRotatesPages() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-native-test-\(UUID().uuidString)", isDirectory: true)

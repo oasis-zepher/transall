@@ -218,7 +218,7 @@ struct ResultWorkbenchView: View {
     switch model.currentJob?.status {
     case "failed": "任务失败，详情见运行日志。"
     case "cancelled": "任务已取消，没有可保存的结果。"
-    default: "完成后可在这里保存，不会覆盖原文件。"
+    default: "完成后可另存结果；处理过程不会修改原文件。"
     }
   }
 

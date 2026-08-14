@@ -211,7 +211,7 @@ struct SettingsView: View {
           Label(
             "任务数据超过 24 小时后，会在启动时及运行期间定期自动清理；也可以在结果区立即删除。",
             systemImage: "clock.arrow.circlepath")
-          Label("原始文件不会被删除或覆盖。", systemImage: "checkmark.shield")
+          Label("处理过程不会删除或修改原始文件；保存结果时由你选择目标位置。", systemImage: "checkmark.shield")
         }
         .font(.caption)
         .foregroundStyle(TransallTheme.inkSoft)

@@ -738,6 +738,54 @@ struct ModelsTests {
     #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
   }
 
+  @Test
+  func resultSavingRejectsOriginalFileAndItsLinks() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-original-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let original = temporary.appendingPathComponent("original.pdf")
+    let symbolicLink = temporary.appendingPathComponent("symbolic.pdf")
+    let hardLink = temporary.appendingPathComponent("hard.pdf")
+    try Data("original".utf8).write(to: original)
+    try FileManager.default.createSymbolicLink(at: symbolicLink, withDestinationURL: original)
+    try FileManager.default.linkItem(at: original, to: hardLink)
+    let document = SelectedDocument(url: original, size: 8)
+
+    for destination in [original, symbolicLink, hardLink] {
+      do {
+        try ResultSavePolicy.validate(
+          destination: destination, originalDocuments: [document])
+        Issue.record("Saving to an original file reference should be rejected")
+      } catch let error as ResultSaveError {
+        #expect(error.errorDescription?.contains("不能覆盖本次任务的原始文件") == true)
+      }
+    }
+  }
+
+  @Test
+  func resultSavingAllowsNewAndUnrelatedDestinations() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-destination-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let original = temporary.appendingPathComponent("original.pdf")
+    let existing = temporary.appendingPathComponent("existing.pdf")
+    let newDestination = temporary.appendingPathComponent("new.pdf")
+    try Data("original".utf8).write(to: original)
+    try Data("existing".utf8).write(to: existing)
+    let document = SelectedDocument(url: original, size: 8)
+
+    try ResultSavePolicy.validate(
+      destination: existing, originalDocuments: [document])
+    try ResultSavePolicy.validate(
+      destination: newDestination, originalDocuments: [document])
+  }
+
   @Test @MainActor
   func failedImportRemovesIncompleteJobDirectory() async throws {
     let temporary = FileManager.default.temporaryDirectory

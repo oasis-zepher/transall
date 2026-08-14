@@ -1104,6 +1104,49 @@ enum AtomicResultSaver {
   }
 }
 
+enum ResultSavePolicy {
+  static let panelMessage =
+    "处理过程不会修改原始文件；不能把结果存回本次任务的原文件。替换其他已有文件时，macOS 会先要求确认。"
+
+  static func validate(destination: URL, originalDocuments: [SelectedDocument]) throws {
+    guard destination.isFileURL else {
+      throw ResultSaveError.invalidDestination
+    }
+    for document in originalDocuments where refersToSameFile(destination, document.url) {
+      throw ResultSaveError.originalFile
+    }
+  }
+
+  private static func refersToSameFile(_ first: URL, _ second: URL) -> Bool {
+    let firstResolved = first.standardizedFileURL.resolvingSymlinksInPath()
+    let secondResolved = second.standardizedFileURL.resolvingSymlinksInPath()
+    if firstResolved.path == secondResolved.path { return true }
+
+    let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+    guard
+      let firstIdentifier = try? firstResolved.resourceValues(forKeys: keys)
+        .fileResourceIdentifier as? AnyHashable,
+      let secondIdentifier = try? secondResolved.resourceValues(forKeys: keys)
+        .fileResourceIdentifier as? AnyHashable
+    else { return false }
+    return firstIdentifier == secondIdentifier
+  }
+}
+
+enum ResultSaveError: LocalizedError {
+  case invalidDestination
+  case originalFile
+
+  var errorDescription: String? {
+    switch self {
+    case .invalidDestination:
+      "只能把结果保存为本机文件。"
+    case .originalFile:
+      "不能覆盖本次任务的原始文件。请选择其他位置或文件名。"
+    }
+  }
+}
+
 enum OutputFileNamer {
   static func name(
     for route: RouteDefinition, options: JobOptions, inputNames: [String]

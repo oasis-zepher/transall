@@ -330,11 +330,14 @@ final class AppModel: ObservableObject {
     let panel = NSSavePanel()
     panel.nameFieldStringValue = output
     panel.canCreateDirectories = true
+    panel.message = ResultSavePolicy.panelMessage
     guard panel.runModal() == .OK, let destination = panel.url else { return }
 
     isSaving = true
     defer { isSaving = false }
     do {
+      try ResultSavePolicy.validate(
+        destination: destination, originalDocuments: documents)
       try await backend.download(jobID: job.id, to: destination)
       NSWorkspace.shared.activateFileViewerSelecting([destination])
     } catch {

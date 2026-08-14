@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import shutil
+from pathlib import Path
 from typing import Any
 
 from .engines import DEPENDENCY_DEFINITIONS
@@ -16,6 +17,18 @@ def python_module_available(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 
 
+def playwright_chromium_available() -> bool:
+    if not python_module_available("playwright"):
+        return False
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            return Path(playwright.chromium.executable_path).is_file()
+    except Exception:
+        return False
+
+
 def collect_diagnostics() -> dict[str, list[dict[str, Any]]]:
     providers = {provider["name"]: provider for provider in load_provider_configs(include_secrets=False)}
     dependencies = []
@@ -27,6 +40,8 @@ def collect_diagnostics() -> dict[str, list[dict[str, Any]]]:
             available = command_available(str(availability_name))
         elif availability_type == "python":
             available = python_module_available(str(availability_name))
+        elif availability_type == "playwright_chromium":
+            available = playwright_chromium_available()
         elif availability_type == "provider":
             available = bool(providers.get(str(availability_name), {}).get("configured"))
         else:

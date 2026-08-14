@@ -59,6 +59,38 @@ class CoreBehaviorTests(unittest.TestCase):
             self.assertTrue(job.path.is_dir())
             self.assertEqual(job.inputs, ["report.docx"])
 
+    def test_job_store_recovers_interrupted_jobs(self):
+        from app.jobs import JobStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = JobStore(root, ttl_hours=24)
+            job = store.create("convert", ["report.docx"])
+            store.set_status(job, "running", stage="converting", progress=40)
+
+            recovered = JobStore(root, ttl_hours=24).recover_interrupted()
+            current = store.get(job.id)
+
+        self.assertEqual(recovered, 1)
+        self.assertEqual(current.status, "failed")
+        self.assertEqual(current.error_code, "interrupted")
+        self.assertTrue(current.retryable)
+
+    def test_job_store_public_payload_hides_filesystem_paths(self):
+        from app.jobs import JobStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JobStore(Path(tmp), ttl_hours=24)
+            job = store.create("convert", ["report.docx"])
+            output = job.path / "outputs" / "report.pdf"
+            output.parent.mkdir()
+            output.write_bytes(b"%PDF-1.7\n")
+            store.set_output(job, output)
+            payload = job.public()
+
+        self.assertNotIn("path", payload)
+        self.assertEqual(payload["output"], "report.pdf")
+
     def test_pdf_edit_can_delete_rotate_and_replace_text(self):
         from app.pdf_ops import PdfEditOptions, apply_pdf_edits
 

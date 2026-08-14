@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import asyncio
+import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -8,12 +11,12 @@ from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, U
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .artifacts import run_many
+from .artifacts import single_or_zip
 from .capabilities import capabilities_payload, preflight as run_preflight
 from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_UPLOAD_BYTES
 from .conversion import convert_to_pdf, extract_markdown
 from .diagnostics import collect_diagnostics
-from .jobs import Job, JobStore
+from .jobs import Job, JobCancelled, JobStore
 from .ocr import ocr_document
 from .pdf_ops import apply_pdf_edits, edit_options_from_request, merge_pdfs, pdf_page_count, render_preview_pages
 from .translation import load_provider_configs, translate_pdf
@@ -21,7 +24,27 @@ from .translation import load_provider_configs, translate_pdf
 
 def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -> FastAPI:
     store = JobStore(data_dir, ttl_hours=JOB_TTL_HOURS)
-    app = FastAPI(title="transall")
+    store.recover_interrupted()
+    store.cleanup_expired()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        async def cleanup_loop() -> None:
+            while True:
+                await asyncio.sleep(3600)
+                await asyncio.to_thread(store.cleanup_expired)
+
+        task = asyncio.create_task(cleanup_loop())
+        try:
+            yield
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    app = FastAPI(title="transall", lifespan=lifespan)
     static_dir = APP_ROOT / "app" / "static"
 
     if static_dir.exists():
@@ -65,30 +88,30 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="options must be valid JSON") from exc
 
-        job = store.create(kind, [file.filename or "upload" for file in files], parsed_options)
+        original_names = [Path(file.filename or "upload").name for file in files]
+        job = store.create(kind, original_names, parsed_options)
         store.set_status(job, "queued", stage="uploading", message="正在上传文件")
         upload_dir = job.path / "uploads"
         upload_dir.mkdir(exist_ok=True)
         total = 0
-        for file in files:
-            safe_name = Path(file.filename or "upload").name
-            target = upload_dir / safe_name
-            with target.open("wb") as handle:
-                while chunk := await file.read(1024 * 1024):
-                    total += len(chunk)
-                    if total > MAX_UPLOAD_BYTES:
-                        store.set_status(
-                            job,
-                            "failed",
-                            "Upload exceeds 200 MB limit",
-                            stage="failed",
-                            message="上传文件超过限制",
-                            error_code="upload_too_large",
-                            error_hint="减少文件数量或压缩文件后重试。",
-                            retryable=False,
-                        )
-                        raise HTTPException(status_code=413, detail="Upload exceeds 200 MB limit")
-                    handle.write(chunk)
+        try:
+            used_names: set[str] = set()
+            stored_names: list[str] = []
+            for file in files:
+                safe_name = _unique_upload_name(Path(file.filename or "upload").name, used_names)
+                stored_names.append(safe_name)
+                target = upload_dir / safe_name
+                with target.open("wb") as handle:
+                    while chunk := await file.read(1024 * 1024):
+                        total += len(chunk)
+                        if total > MAX_UPLOAD_BYTES:
+                            raise HTTPException(status_code=413, detail="Upload exceeds 200 MB limit")
+                        handle.write(chunk)
+            job.inputs = stored_names
+            store.set_status(job, "queued", stage="queued", message="等待运行", progress=5)
+        except Exception:
+            store.delete(job.id)
+            raise
 
         if run_background_inline:
             run_job(store, job.id)
@@ -120,7 +143,9 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
         if source is None:
             raise HTTPException(status_code=400, detail="No PDF available for preview")
         preview_dir = job.path / "preview"
-        pages = render_preview_pages(source, preview_dir)
+        pages = sorted(preview_dir.glob("page-*.png"))
+        if not pages:
+            pages = render_preview_pages(source, preview_dir)
         return {
             "pages": [
                 {"page": index + 1, "url": f"/api/jobs/{job.id}/preview/{path.name}"}
@@ -141,6 +166,13 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
         store.delete(job_id)
         return {"deleted": True}
 
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str) -> dict[str, object]:
+        try:
+            return store.request_cancel(job_id).public()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+
     @app.post("/api/cleanup")
     def cleanup() -> dict[str, object]:
         return {"removed": store.cleanup_expired()}
@@ -150,8 +182,11 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
 def run_job(store: JobStore, job_id: str) -> None:
     job = store.get(job_id)
-    store.set_status(job, "running", stage="starting", message="任务启动中")
+    if job.status == "cancelled":
+        return
+    store.set_status(job, "running", stage="starting", message="任务启动中", progress=10)
     try:
+        store.raise_if_cancelled(job)
         upload_dir = job.path / "uploads"
         output_dir = job.path / "outputs"
         output_dir.mkdir(exist_ok=True)
@@ -162,25 +197,30 @@ def run_job(store: JobStore, job_id: str) -> None:
         store.log(job, f"Inputs: {', '.join(path.name for path in inputs)}")
 
         if job.kind == "convert":
-            store.set_status(job, "running", stage="converting", message="正在转换文件")
-            output = run_many(inputs, lambda path: convert_to_pdf(path, output_dir), output_dir / "converted-files.zip")
+            store.set_progress(job, 20, stage="converting", message="正在转换文件")
+            output = _run_many_with_progress(store, job, inputs, lambda path: convert_to_pdf(path, output_dir), output_dir / "converted-files.zip")
         elif job.kind == "extract_markdown":
-            store.set_status(job, "running", stage="extracting", message="正在提取 Markdown")
-            output = _run_extract_markdown(job, inputs, output_dir)
+            store.set_progress(job, 20, stage="extracting", message="正在提取 Markdown")
+            output = _run_extract_markdown(store, job, inputs, output_dir)
         elif job.kind == "pdf_edit":
-            store.set_status(job, "running", stage="editing", message="正在修改 PDF")
+            store.set_progress(job, 25, stage="editing", message="正在修改 PDF")
             output = _run_pdf_edit(job, inputs, output_dir)
         elif job.kind == "pdf_translate":
-            store.set_status(job, "running", stage="translating", message="正在翻译 PDF")
+            store.set_progress(job, 20, stage="translating", message="正在翻译 PDF")
             output = _run_pdf_translate(job, inputs, output_dir)
         elif job.kind == "ocr":
-            store.set_status(job, "running", stage="ocr", message="正在执行 OCR")
-            output = _run_ocr(job, inputs, output_dir)
+            store.set_progress(job, 20, stage="ocr", message="正在执行 OCR")
+            output = _run_ocr(store, job, inputs, output_dir)
         else:
             raise ValueError(f"Unsupported job kind: {job.kind}")
 
+        store.raise_if_cancelled(job)
+        store.set_progress(job, 95, stage="finalizing", message="正在整理结果")
         store.set_output(job, output)
         store.log(job, f"Output written: {output.name}")
+    except JobCancelled:
+        shutil.rmtree(job.path / "outputs", ignore_errors=True)
+        store.set_status(job, "cancelled", stage="cancelled", message="任务已取消", progress=job.progress)
     except Exception as exc:
         store.log(job, f"Failed stage: {job.kind}")
         store.log(job, f"Failure detail: {exc}")
@@ -243,9 +283,11 @@ def classify_error(exc: Exception) -> dict[str, object]:
     }
 
 
-def _run_extract_markdown(job: Job, inputs: list[Path], output_dir: Path) -> Path:
+def _run_extract_markdown(store: JobStore, job: Job, inputs: list[Path], output_dir: Path) -> Path:
     options = job.options
-    return run_many(
+    return _run_many_with_progress(
+        store,
+        job,
         inputs,
         lambda path: extract_markdown(
             path,
@@ -288,9 +330,11 @@ def _run_pdf_translate(job: Job, inputs: list[Path], output_dir: Path) -> Path:
     )
 
 
-def _run_ocr(job: Job, inputs: list[Path], output_dir: Path) -> Path:
+def _run_ocr(store: JobStore, job: Job, inputs: list[Path], output_dir: Path) -> Path:
     options = job.options
-    return run_many(
+    return _run_many_with_progress(
+        store,
+        job,
         inputs,
         lambda path: ocr_document(
             path,
@@ -318,6 +362,28 @@ def _job_pdf_for_preview(job: Job) -> Path | None:
         if path.exists() and path.suffix.lower() == ".pdf":
             return path
     return None
+
+
+def _unique_upload_name(name: str, used: set[str]) -> str:
+    safe = Path(name).name or "upload"
+    candidate = safe
+    index = 2
+    while candidate.casefold() in used:
+        path = Path(safe)
+        candidate = f"{path.stem}-{index}{path.suffix}"
+        index += 1
+    used.add(candidate.casefold())
+    return candidate
+
+
+def _run_many_with_progress(store: JobStore, job: Job, inputs: list[Path], processor, zip_path: Path) -> Path:
+    outputs: list[Path] = []
+    total = len(inputs)
+    for index, path in enumerate(inputs, start=1):
+        store.raise_if_cancelled(job)
+        outputs.append(processor(path))
+        store.set_progress(job, 20 + round(70 * index / total), message=f"已处理 {index}/{total} 个文件")
+    return single_or_zip(outputs, zip_path)
 
 
 app = create_app()

@@ -1,4 +1,5 @@
 import os
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,81 @@ from PIL import Image
 
 
 class ApiContractTests(unittest.TestCase):
+    def test_job_response_hides_absolute_storage_paths(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.run_job"):
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp), run_background_inline=True))
+            response = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "{}"},
+                files={"files": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("path", response.json())
+        self.assertNotIn(tmp, response.text)
+
+    def test_duplicate_upload_names_are_preserved_with_unique_names(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.run_job"):
+            from app.main import create_app
+
+            root = Path(tmp)
+            client = TestClient(create_app(data_dir=root, run_background_inline=True))
+            response = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "{}"},
+                files=[
+                    ("files", ("same.txt", io.BytesIO(b"first"), "text/plain")),
+                    ("files", ("same.txt", io.BytesIO(b"second"), "text/plain")),
+                ],
+            )
+            job = response.json()
+            uploads = root / job["id"] / "uploads"
+
+            self.assertEqual(job["inputs"], ["same.txt", "same-2.txt"])
+            self.assertEqual((uploads / "same.txt").read_bytes(), b"first")
+            self.assertEqual((uploads / "same-2.txt").read_bytes(), b"second")
+
+    def test_oversized_upload_removes_partial_job_directory(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.MAX_UPLOAD_BYTES", 4):
+            from app.main import create_app
+
+            root = Path(tmp)
+            client = TestClient(create_app(data_dir=root, run_background_inline=True))
+            response = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "{}"},
+                files={"files": ("large.txt", io.BytesIO(b"12345"), "text/plain")},
+            )
+
+            self.assertEqual(response.status_code, 413)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_queued_job_can_be_cancelled(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.run_job"):
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp), run_background_inline=True))
+            created = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "{}"},
+                files={"files": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
+            ).json()
+            response = client.post(f"/api/jobs/{created['id']}/cancel")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "cancelled")
+        self.assertTrue(response.json()["cancel_requested"])
+
     def test_favicon_request_does_not_log_browser_404(self):
         from fastapi.testclient import TestClient
 

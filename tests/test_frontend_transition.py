@@ -137,7 +137,7 @@ class FrontendTransitionTests(unittest.TestCase):
 
     def test_format_nodes_do_not_animate_orbit_transform_while_selecting(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
-        format_node_block = css[css.index(".format-node {"):css.index(".format-node::before")]
+        format_node_block = css[css.index("\n.format-node {"):css.index("\n.format-node::before")]
         settling_block = css[css.index(".format-node.is-settling"):css.index(".node-code")]
 
         self.assertNotIn("transform", format_node_block[format_node_block.index("transition:"):])
@@ -263,8 +263,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=stability-1", html)
-        self.assertIn("/static/app.js?v=stability-1", html)
+        self.assertIn("/static/styles.css?v=workbench-3", html)
+        self.assertIn("/static/app.js?v=workbench-3", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -343,8 +343,17 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=stability-1", html)
-        self.assertIn("/static/app.js?v=stability-1", html)
+        self.assertIn("/static/styles.css?v=workbench-3", html)
+        self.assertIn("/static/app.js?v=workbench-3", html)
+
+    def test_document_workbench_tokens_exist(self):
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("--paper: #f4f6f3", css)
+        self.assertIn("--panel: #fbfcf9", css)
+        self.assertIn("--accent: #b3482d", css)
+        self.assertIn("--radius: 6px", css)
+        self.assertIn("background-size: 32px 32px", css)
 
     def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -363,6 +372,13 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("position: sticky", active_orbit_block)
         self.assertIn("top: clamp", active_orbit_block)
         self.assertIn("align-self: start", active_orbit_block)
+
+    def test_route_entry_uses_original_orbit_transition(self):
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("ROUTE_ENTER_DELAY_MS = 180", js)
+        self.assertIn("ROUTE_ANIMATION_MS = 900", js)
+        self.assertNotIn("routeMorphProxy", js)
 
     def test_active_conversion_deck_is_compact_enough_for_first_viewport(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")

@@ -6,6 +6,7 @@ const download = document.querySelector("#download");
 const preview = document.querySelector("#preview");
 const providerStatus = document.querySelector("#providerStatus");
 const refreshPreview = document.querySelector("#refreshPreview");
+const cancelButton = document.querySelector("#cancelButton");
 const submitButton = document.querySelector("#submitButton");
 const routeLine = document.querySelector("#routeLine");
 const routeTitle = document.querySelector("#routeTitle");
@@ -35,6 +36,8 @@ const glossaryInput = document.querySelector("#glossary");
 const advancedToggle = document.querySelector("#advancedToggle");
 
 let currentJob = null;
+let previewedJob = null;
+let pollGeneration = 0;
 let sourceFormat = null;
 let targetFormat = null;
 let activeRoute = null;
@@ -498,6 +501,7 @@ async function submitJob(event) {
   download.hidden = true;
   emptyOutput.hidden = false;
   preview.innerHTML = "";
+  previewedJob = null;
 
   const res = await fetch("/api/jobs", { method: "POST", body: data });
   const job = await res.json();
@@ -517,24 +521,45 @@ async function submitJob(event) {
 }
 
 async function pollJob(jobId) {
+  const generation = ++pollGeneration;
+  let failures = 0;
   for (;;) {
-    const res = await fetch(`/api/jobs/${jobId}`);
-    const job = await res.json();
-    renderJob(job);
-    if (["done", "failed"].includes(job.status)) {
-      isSubmitting = false;
-      submitButton.textContent = "开始任务";
-      refreshControls();
-      break;
+    if (generation !== pollGeneration || jobId !== currentJob) return;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const job = await res.json();
+      failures = 0;
+      renderJob(job);
+      if (["done", "failed", "cancelled"].includes(job.status)) {
+        isSubmitting = false;
+        submitButton.textContent = "开始任务";
+        refreshControls();
+        return;
+      }
+    } catch (error) {
+      failures += 1;
+      if (failures >= 5) {
+        isSubmitting = false;
+        cancelButton.hidden = true;
+        submitButton.textContent = "开始任务";
+        refreshControls();
+        jobState.textContent = "连接中断";
+        jobState.className = "job-state is-error";
+        log.textContent = "连续 5 次无法读取任务状态，请刷新页面后重试。";
+        return;
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    await new Promise((resolve) => setTimeout(resolve, Math.min(900 * 2 ** failures, 7200)));
   }
 }
 
 function renderJob(job) {
   jobState.textContent = job.message || job.stage || job.status;
-  jobState.className = `job-state ${job.status === "done" ? "is-ready" : ""} ${job.status === "failed" ? "is-error" : ""}`;
+  jobState.className = `job-state ${job.status === "done" ? "is-ready" : ""} ${["failed", "cancelled"].includes(job.status) ? "is-error" : ""}`;
+  cancelButton.hidden = !["queued", "running"].includes(job.status);
   log.textContent = [
+    Number.isFinite(job.progress) ? `进度: ${job.progress}%` : "",
     job.stage ? `阶段: ${job.stage}` : "",
     job.message ? `状态: ${job.message}` : "",
     ...(job.logs || []),
@@ -545,7 +570,10 @@ function renderJob(job) {
     download.href = `/api/jobs/${job.id}/download`;
     download.hidden = false;
     emptyOutput.hidden = true;
-    loadPreview(job.id);
+    if (previewedJob !== job.id) {
+      previewedJob = job.id;
+      loadPreview(job.id);
+    }
   }
 }
 
@@ -562,7 +590,7 @@ async function restoreLastJob() {
     const job = await res.json();
     currentJob = job.id;
     renderJob(job);
-    if (!["done", "failed"].includes(job.status)) {
+    if (!["done", "failed", "cancelled"].includes(job.status)) {
       isSubmitting = true;
       submitButton.textContent = "运行中";
       pollJob(job.id);
@@ -583,6 +611,20 @@ async function loadPreview(jobId) {
     img.src = `${page.url}?t=${Date.now()}`;
     preview.appendChild(img);
   });
+}
+
+async function cancelCurrentJob() {
+  if (!currentJob) return;
+  cancelButton.disabled = true;
+  try {
+    const res = await fetch(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    renderJob(await res.json());
+  } catch (error) {
+    log.textContent = "取消请求失败，请重试。";
+  } finally {
+    cancelButton.disabled = false;
+  }
 }
 
 function clearRouteTimers() {
@@ -1048,6 +1090,7 @@ dropzone.addEventListener("drop", (event) => {
 
 form.addEventListener("submit", submitJob);
 refreshPreview.addEventListener("click", () => currentJob && loadPreview(currentJob));
+cancelButton.addEventListener("click", cancelCurrentJob);
 
 function loadStoredGlossary() {
   if (!glossaryInput) return;

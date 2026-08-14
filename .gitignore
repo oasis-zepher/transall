@@ -5,3 +5,6 @@ work/
 outputs/
 .env
 *.log
+.uvicorn.pid
+.superpowers/
+.playwright-cli/

@@ -3,10 +3,14 @@ from __future__ import annotations
 import csv
 import html
 import json
+import threading
 from pathlib import Path
 from xml.dom import minidom
 
 from .config import HTML_EXTENSIONS, MARKDOWN_EXTENSIONS
+
+
+_BROWSER_SLOTS = threading.BoundedSemaphore(2)
 
 
 def render_browser_pdf(source: Path, output: Path) -> Path:
@@ -15,19 +19,31 @@ def render_browser_pdf(source: Path, output: Path) -> Path:
     except Exception as exc:
         raise RuntimeError("Playwright is not installed. Run: pip install -r requirements.txt && python -m playwright install chromium") from exc
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
-        page.set_content(document_html(source), wait_until="networkidle")
-        page.pdf(
-            path=str(output),
-            format="A4",
-            print_background=True,
-            prefer_css_page_size=True,
-            margin={"top": "16mm", "right": "14mm", "bottom": "16mm", "left": "14mm"},
-        )
-        browser.close()
+    if not _BROWSER_SLOTS.acquire(timeout=120):
+        raise RuntimeError("Browser PDF queue timed out after 2 minutes")
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch()
+            except Exception as exc:
+                raise RuntimeError("Playwright Chromium is not installed. Run: python -m playwright install chromium") from exc
+            try:
+                context = browser.new_context(java_script_enabled=False, service_workers="block")
+                page = context.new_page()
+                page.route("**/*", lambda route: route.abort())
+                page.set_content(document_html(source), wait_until="domcontentloaded", timeout=30_000)
+                page.pdf(
+                    path=str(output),
+                    format="A4",
+                    print_background=True,
+                    prefer_css_page_size=True,
+                    margin={"top": "16mm", "right": "14mm", "bottom": "16mm", "left": "14mm"},
+                )
+            finally:
+                browser.close()
+    finally:
+        _BROWSER_SLOTS.release()
     return output
 
 

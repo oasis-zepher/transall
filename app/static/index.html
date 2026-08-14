@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>transall</title>
-    <link rel="stylesheet" href="/static/styles.css?v=stability-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=workbench-3" />
   </head>
   <body>
     <main class="shell">
@@ -30,34 +30,34 @@
           <div class="orbit-axis axis-x"></div>
           <div class="orbit-axis axis-y"></div>
 
-          <button type="button" class="format-node" data-format="pdf" draggable="false" style="--angle: -90deg; --node-color: #b3482d">
+          <button type="button" class="format-node" data-format="pdf" draggable="false" style="--angle: -90deg; --x: 0; --y: -1; --node-color: #b3482d">
             <span class="node-code">PDF</span>
           </button>
-          <button type="button" class="format-node" data-format="word" draggable="false" style="--angle: -54deg; --node-color: #315f9f">
+          <button type="button" class="format-node" data-format="word" draggable="false" style="--angle: -54deg; --x: 0.588; --y: -0.809; --node-color: #315f9f">
             <span class="node-code">Word</span>
           </button>
-          <button type="button" class="format-node" data-format="translated_pdf" draggable="false" style="--angle: -18deg; --node-color: #223e5c">
+          <button type="button" class="format-node" data-format="translated_pdf" draggable="false" style="--angle: -18deg; --x: 0.951; --y: -0.309; --node-color: #223e5c">
             <span class="node-code">中文PDF</span>
           </button>
-          <button type="button" class="format-node" data-format="ocr" draggable="false" style="--angle: 18deg; --node-color: #6a4a8b">
+          <button type="button" class="format-node" data-format="ocr" draggable="false" style="--angle: 18deg; --x: 0.951; --y: 0.309; --node-color: #6a4a8b">
             <span class="node-code">OCR</span>
           </button>
-          <button type="button" class="format-node" data-format="ppt" draggable="false" style="--angle: 54deg; --node-color: #a6532f">
+          <button type="button" class="format-node" data-format="ppt" draggable="false" style="--angle: 54deg; --x: 0.588; --y: 0.809; --node-color: #a6532f">
             <span class="node-code">PPT</span>
           </button>
-          <button type="button" class="format-node" data-format="excel" draggable="false" style="--angle: 90deg; --node-color: #2f7357">
+          <button type="button" class="format-node" data-format="excel" draggable="false" style="--angle: 90deg; --x: 0; --y: 1; --node-color: #2f7357">
             <span class="node-code">Excel</span>
           </button>
-          <button type="button" class="format-node" data-format="md" draggable="false" style="--angle: 126deg; --node-color: #4a5e72">
+          <button type="button" class="format-node" data-format="md" draggable="false" style="--angle: 126deg; --x: -0.588; --y: 0.809; --node-color: #4a5e72">
             <span class="node-code">MD</span>
           </button>
-          <button type="button" class="format-node" data-format="html" draggable="false" style="--angle: 162deg; --node-color: #76623c">
+          <button type="button" class="format-node" data-format="html" draggable="false" style="--angle: 162deg; --x: -0.951; --y: 0.309; --node-color: #76623c">
             <span class="node-code">HTML</span>
           </button>
-          <button type="button" class="format-node" data-format="image" draggable="false" style="--angle: 198deg; --node-color: #7a4e66">
+          <button type="button" class="format-node" data-format="image" draggable="false" style="--angle: 198deg; --x: -0.951; --y: -0.309; --node-color: #7a4e66">
             <span class="node-code">Image</span>
           </button>
-          <button type="button" class="format-node" data-format="data" draggable="false" style="--angle: 234deg; --node-color: #5f6b35">
+          <button type="button" class="format-node" data-format="data" draggable="false" style="--angle: 234deg; --x: -0.588; --y: -0.809; --node-color: #5f6b35">
             <span class="node-code">Data</span>
           </button>
 
@@ -111,7 +111,7 @@
             <div class="diagnostics-list" id="diagnosticsList" aria-live="polite"></div>
           </aside>
 
-          <section class="workspace">
+          <section class="workspace workbench">
             <form id="jobForm" class="panel input-panel command-deck">
               <div class="panel-head">
                 <div>
@@ -138,7 +138,7 @@
                 <option value="ocr">OCR</option>
               </select>
 
-              <div class="settings-grid control-strip">
+              <div class="settings-grid control-strip parameter-strip">
                 <label data-panel="translate">
                   翻译服务
                   <select id="provider">
@@ -163,7 +163,7 @@
               </div>
 
               <button type="button" id="advancedToggle" class="quiet-button advanced-toggle" hidden>高级选项</button>
-              <div class="settings-grid advanced control-strip" id="advanced">
+              <div class="settings-grid advanced control-strip parameter-strip" id="advanced">
                 <label data-panel="edit">
                   删除页
                   <input id="deletePages" placeholder="如 2,4-6" />
@@ -211,6 +211,7 @@
 
               <div class="actions">
                 <button type="submit" id="submitButton" disabled>开始任务</button>
+                <button type="button" id="cancelButton" class="quiet-button" hidden>取消任务</button>
                 <button type="button" id="refreshPreview" class="quiet-button">刷新预览</button>
               </div>
             </form>
@@ -221,7 +222,7 @@
                   <p class="eyebrow">Output</p>
                   <h2>任务输出</h2>
                 </div>
-                <span id="jobState" class="job-state">未开始</span>
+                <span id="jobState" class="job-state" aria-live="polite">未开始</span>
               </div>
 
               <div class="output-grid execution-grid">
@@ -248,6 +249,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=stability-1"></script>
+    <script src="/static/app.js?v=workbench-3"></script>
   </body>
 </html>

@@ -34,11 +34,11 @@ DEPENDENCY_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "playwright": {
         "label": "Playwright Chromium",
-        "availability": {"type": "python", "name": "playwright"},
+        "availability": {"type": "playwright_chromium", "name": "chromium"},
         "category": "external_tool",
         "risk": "heavy",
         "required_for": ["Convert Markdown, HTML, and data files to PDF"],
-        "detail": "transall owns the document renderer and uses installed Playwright Chromium only for PDF printing.",
+        "detail": "transall uses installed Chromium with JavaScript, service workers, and external network requests disabled.",
         "install_hint": "python -m pip install -r requirements.txt && python -m playwright install chromium",
     },
     "markitdown": {

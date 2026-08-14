@@ -391,26 +391,46 @@ enum NativeDocumentProcessor {
 
   private static func editPDF(inputs: [URL], options: JobOptions, outputURL: URL) throws {
     guard !inputs.isEmpty else { throw NativeDocumentError.invalidFile("没有可处理的 PDF。") }
-    var document = PDFDocument()
-    for input in inputs {
+    var document: PDFDocument
+    if options.editAction == "merge" {
+      guard inputs.count >= 2 else {
+        throw NativeDocumentError.invalidFile("合并 PDF 至少需要两个文件。")
+      }
+      let merged = PDFDocument()
+      for input in inputs {
+        try Task.checkCancellation()
+        guard let source = PDFDocument(url: input) else {
+          throw NativeDocumentError.invalidFile("无法打开 \(input.lastPathComponent)。")
+        }
+        for index in 0..<source.pageCount {
+          try Task.checkCancellation()
+          guard let page = source.page(at: index)?.copy() as? PDFPage else {
+            throw NativeDocumentError.invalidFile(
+              "无法读取 \(input.lastPathComponent) 的第 \(index + 1) 页。")
+          }
+          merged.insert(page, at: merged.pageCount)
+        }
+      }
+      document = merged
+    } else {
+      guard inputs.count == 1, let input = inputs.first else {
+        throw NativeDocumentError.invalidFile("编辑单个 PDF 时只能使用一个文件。")
+      }
       try Task.checkCancellation()
       guard let source = PDFDocument(url: input) else {
         throw NativeDocumentError.invalidFile("无法打开 \(input.lastPathComponent)。")
       }
-      for index in 0..<source.pageCount {
-        guard let page = source.page(at: index)?.copy() as? PDFPage else {
-          throw NativeDocumentError.invalidFile(
-            "无法读取 \(input.lastPathComponent) 的第 \(index + 1) 页。")
-        }
-        document.insert(page, at: document.pageCount)
-      }
+      document = source
     }
     guard document.pageCount > 0 else { throw NativeDocumentError.invalidFile("PDF 没有可用页面。") }
 
     if options.editAction != "merge" {
       let delete = try PageSelectionParser.indexes(
         options.deletePages, pageCount: document.pageCount)
-      for index in Set(delete).sorted(by: >) { document.removePage(at: index) }
+      for index in Set(delete).sorted(by: >) {
+        try Task.checkCancellation()
+        document.removePage(at: index)
+      }
       guard document.pageCount > 0 else {
         throw NativeDocumentError.invalidOption("不能删除全部页面。")
       }
@@ -421,9 +441,11 @@ enum NativeDocumentProcessor {
         throw NativeDocumentError.invalidOption("旋转角度必须是 90、180 或 270。")
       }
       for index in Set(rotate) {
-        if let page = document.page(at: index) {
-          page.rotation = normalizedRotation(page.rotation + options.rotateDegrees)
+        try Task.checkCancellation()
+        guard let page = document.page(at: index) else {
+          throw NativeDocumentError.processing("无法读取第 \(index + 1) 页以旋转。")
         }
+        page.rotation = normalizedRotation(page.rotation + options.rotateDegrees)
       }
 
       let reorder = try PageSelectionParser.indexes(
@@ -435,6 +457,7 @@ enum NativeDocumentProcessor {
         }
         let reordered = PDFDocument()
         for index in reorder {
+          try Task.checkCancellation()
           guard let page = document.page(at: index)?.copy() as? PDFPage else {
             throw NativeDocumentError.processing("无法复制第 \(index + 1) 页以调整顺序。")
           }
@@ -447,13 +470,18 @@ enum NativeDocumentProcessor {
       if !crop.isEmpty {
         let box = try JobOptionValidator.parseCropBox(options.cropBox)
         for index in Set(crop) {
-          document.page(at: index)?.setBounds(box, for: .cropBox)
+          try Task.checkCancellation()
+          guard let page = document.page(at: index) else {
+            throw NativeDocumentError.processing("无法读取第 \(index + 1) 页以裁剪。")
+          }
+          page.setBounds(box, for: .cropBox)
         }
       }
 
       let watermark = options.watermark.trimmingCharacters(in: .whitespacesAndNewlines)
       if !watermark.isEmpty {
         for index in 0..<document.pageCount {
+          try Task.checkCancellation()
           guard let page = document.page(at: index) else {
             throw NativeDocumentError.processing("无法读取第 \(index + 1) 页以添加水印。")
           }
@@ -473,9 +501,11 @@ enum NativeDocumentProcessor {
       }
     }
 
+    try Task.checkCancellation()
     guard document.write(to: outputURL) else {
       throw NativeDocumentError.processing("无法写入 PDF 结果。")
     }
+    try Task.checkCancellation()
   }
 
   private static func imagesToPDF(inputs: [URL], outputURL: URL) throws {

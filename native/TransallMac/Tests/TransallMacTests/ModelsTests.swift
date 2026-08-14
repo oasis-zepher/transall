@@ -2431,6 +2431,9 @@ struct ModelsTests {
     let document = try #require(PDFDocument(url: output))
     #expect(document.pageCount == 1)
     #expect(document.page(at: 0)?.rotation == 90)
+    let unchangedSource = try #require(PDFDocument(url: source))
+    #expect(unchangedSource.pageCount == 2)
+    #expect(unchangedSource.page(at: 0)?.rotation == 0)
 
     var invalidReorder = JobOptions()
     invalidReorder.reorderPages = "1"
@@ -2441,6 +2444,48 @@ struct ModelsTests {
       Issue.record("Incomplete page order should be rejected")
     } catch let error as NativeDocumentError {
       #expect(error.errorDescription?.contains("每一页") == true)
+    }
+  }
+
+  @Test
+  func pdfEditProcessorRejectsInvalidInputCounts() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-edit-count-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let editRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    var inputs: [URL] = []
+    for index in 1...2 {
+      let text = temporary.appendingPathComponent("source-\(index).txt")
+      let pdf = temporary.appendingPathComponent("source-\(index).pdf")
+      try Data("page \(index)".utf8).write(to: text, options: .atomic)
+      _ = try await NativeDocumentProcessor.process(
+        route: textRoute, inputs: [text], options: JobOptions(), outputURL: pdf, apiKey: nil)
+      inputs.append(pdf)
+    }
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: editRoute, inputs: inputs, options: JobOptions(),
+        outputURL: temporary.appendingPathComponent("invalid-edit.pdf"), apiKey: nil)
+      Issue.record("Single-document editing must reject multiple inputs")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("只能使用一个文件") == true)
+    }
+
+    var mergeOptions = JobOptions()
+    mergeOptions.editAction = "merge"
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: editRoute, inputs: [inputs[0]], options: mergeOptions,
+        outputURL: temporary.appendingPathComponent("invalid-merge.pdf"), apiKey: nil)
+      Issue.record("PDF merging must reject a single input")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("至少需要两个文件") == true)
     }
   }
 

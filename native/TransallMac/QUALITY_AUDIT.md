@@ -56,6 +56,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - On launch and once per hour while the app remains open, retention checks remove task directories more than 24 hours after their persisted creation time on a utility-priority task. Runtime checks keep active processing, and removal of an expired current result also clears its preview, warnings, and restoration key. Later preview generation cannot extend retention, recent tasks are not removed because of an older directory timestamp, and orphaned directories fall back to their filesystem timestamp. Manual deletion exposes a busy state, cancels and awaits any in-flight preview, and blocks conflicting result operations until removal finishes. A late preview write cannot recreate deleted task data.
 - Cancelled processing tasks remain tracked until they actually exit. Deleting a cancelled task cancels and awaits the processor before directory removal, preventing a late output write from rebuilding deleted task data.
 - Translation retries temporary network failures and selected transient HTTP responses at most twice, honors bounded `Retry-After` values, remains cancellable during backoff, and fails authentication errors immediately.
+- Translation rejects provider responses over 2 MB and translated chunks that exceed the bounded 4,000-character minimum allowance, eight-times-source expansion, or 100,000-character ceiling. Provider error details are normalized and capped at 1,000 characters before persistence, preventing abnormal remote output from inflating page buffers, PDF layout, logs, or task state.
 - Translation requests use a dedicated ephemeral `URLSession`; URL caching, cookies, and shared URL credential storage are disabled so provider traffic is not retained by those stores.
 - PDF translation extracts and validates all source pages locally before constructing any provider request. It rejects documents over 200 pages or 200,000 source characters with an actionable split-document error, and the processor independently rejects every input count other than one. The workbench discloses these limits next to the provider privacy notice.
 - Job-state persistence failures are surfaced for start, completion, processing failure, and cancellation. Work cannot begin before its running state is saved, complete outputs recover without reprocessing, and interrupted translation jobs never auto-resubmit a paid provider request.
@@ -79,8 +80,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 89/89 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 89/89 passed |
+| Swift package tests with Xcode 26.6 | 92/92 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 92/92 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; 5.4 MB universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

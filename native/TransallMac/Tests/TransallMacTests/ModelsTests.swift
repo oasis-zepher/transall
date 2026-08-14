@@ -787,6 +787,40 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func resultSavingKeepsSubmittedOriginalsAfterInputSelectionChanges() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-result-source-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("source.txt")
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    try Data("source document".utf8).write(to: input)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let suiteName = "transall-result-source-preferences-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    let model = AppModel(backend: engine, preferences: preferences)
+    defer { model.prepareForTermination() }
+    await engine.start()
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    let document = SelectedDocument(url: input, size: 15)
+    model.documents = [document]
+
+    await model.runJob()
+    model.documents = []
+
+    #expect(model.resultOriginalDocuments == [document])
+    #expect(throws: ResultSaveError.self) {
+      try ResultSavePolicy.validate(
+        destination: input, originalDocuments: model.resultOriginalDocuments)
+    }
+  }
+
+  @Test @MainActor
   func failedImportRemovesIncompleteJobDirectory() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-job-failure-test-\(UUID().uuidString)", isDirectory: true)

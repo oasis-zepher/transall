@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
   @Published var isDeletingJob = false
   @Published var isLoadingPreview = false
   @Published var showAdvanced = false
+  private(set) var resultOriginalDocuments: [SelectedDocument] = []
 
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
@@ -170,6 +171,7 @@ final class AppModel: ObservableObject {
       selection.clear()
       documents = []
       currentJob = nil
+      resultOriginalDocuments = []
       previewPages = []
       previewError = nil
       isLoadingPreview = false
@@ -286,6 +288,7 @@ final class AppModel: ObservableObject {
 
   func runJob() async {
     guard canRun, let route else { return }
+    let submittedDocuments = documents
     isSubmitting = true
     errorMessage = nil
     previewPages = []
@@ -305,6 +308,7 @@ final class AppModel: ObservableObject {
 
       let job = try await backend.createJob(route: route, files: documents, options: options)
       currentJob = job
+      resultOriginalDocuments = submittedDocuments
       preferences.set(job.id, forKey: lastJobKey)
       isSubmitting = false
       beginPolling(jobID: job.id)
@@ -337,7 +341,7 @@ final class AppModel: ObservableObject {
     defer { isSaving = false }
     do {
       try ResultSavePolicy.validate(
-        destination: destination, originalDocuments: documents)
+        destination: destination, originalDocuments: resultOriginalDocuments)
       try await backend.download(jobID: job.id, to: destination)
       NSWorkspace.shared.activateFileViewerSelecting([destination])
     } catch {
@@ -426,6 +430,7 @@ final class AppModel: ObservableObject {
     }
     guard currentJob?.id == id else { return }
     currentJob = nil
+    resultOriginalDocuments = []
     previewPages = []
     previewError = nil
     isLoadingPreview = false

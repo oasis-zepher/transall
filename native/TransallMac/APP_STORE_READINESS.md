@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 45 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 46 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -52,6 +52,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Launch and quit leave no Transall process and no TCP listener on port 8765.
 - The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
 - Image-to-PDF conversion decodes one input at a time, failed imports remove incomplete task directories, and the processor rejects unknown translation providers before network work.
+- Image decoding is bounded to 3,508 pixels for PDF generation and 2,400 pixels for OCR/Markdown extraction, preserving practical output resolution without fully materializing oversized source images.
 - Incomplete or corrupt preview caches are regenerated, and corrupt task metadata no longer prevents the user from deleting local task data.
 - Scanned-PDF Markdown extraction and translation open each PDF once for raster access instead of reopening it for every page; damaged or empty PDFs fail with a file-specific error.
 - Translation glossaries are limited to 20,000 characters in both preflight and the processing layer, and multiple text inputs are combined without retaining a second array of document contents.

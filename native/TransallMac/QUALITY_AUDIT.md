@@ -13,7 +13,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Support-site and native state text reach WCAG AA contrast; navigation targets are at least 44 px, and native controls expose labels, values, focus, reduced-motion behavior, and preview-error announcements. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input, and large file transfers, PDF previews, startup cleanup, and task deletion run outside the main actor. |
+| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one bounded raster page at a time; oversized images are downsampled for their target use, scanned-PDF routes reuse one raster document handle per input, and large file transfers, PDF previews, startup cleanup, and task deletion run outside the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
@@ -53,13 +53,14 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Job-state persistence failures are surfaced for start, completion, processing failure, and cancellation. Work cannot begin before its running state is saved, complete outputs recover without reprocessing, and interrupted translation jobs never auto-resubmit a paid provider request.
 - Completed-result recovery now requires both a valid output and a post-processing completion receipt, preventing a readable partial PDF from being misclassified as finished after a failed state write.
 - Keychain read failures disable credential editing until a successful reload, and a partial multi-provider save is rolled back. Local-only jobs no longer read translation credentials; translation jobs report Keychain access errors before network work.
+- Image-to-PDF conversion caps decoded images at 3,508 pixels, while OCR and image-to-Markdown cap them at 2,400 pixels; EXIF orientation remains applied during thumbnail decoding.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 45/45 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 45/45 passed |
+| Swift package tests with Xcode 26.6 | 46/46 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 46/46 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
@@ -71,7 +72,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Persistence fault injection covers running, completion, failure, and cancellation state writes; restart coverage verifies receipt-backed complete-output recovery, rejection of readable partial PDFs without a receipt, local-task resumption, and suppression of automatic translation retries. Credential fault injection verifies load-failure write blocking, partial-save rollback, preflight error classification, no credential access for local jobs, and clear translation failure before network work. Translation coverage verifies `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, oversized images are downsampled with their aspect ratio intact, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Persistence fault injection covers running, completion, failure, and cancellation state writes; restart coverage verifies receipt-backed complete-output recovery, rejection of readable partial PDFs without a receipt, local-task resumption, and suppression of automatic translation retries. Credential fault injection verifies load-failure write blocking, partial-save rollback, preflight error classification, no credential access for local jobs, and clear translation failure before network work. Translation coverage verifies `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
 
 ## Submission blockers outside the repository
 

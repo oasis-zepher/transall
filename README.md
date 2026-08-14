@@ -1,8 +1,19 @@
 # transall
 
-macOS local web service for document conversion, PDF edits, Markdown extraction, PDF translation, and OCR.
+Native macOS document workbench for conversion, PDF edits, Markdown extraction, PDF translation, and OCR. The SwiftUI app talks to the existing FastAPI/Python engine through localhost, so the browser UI remains available while the native app is developed.
 
-## Start
+## Native macOS App
+
+Requirements: macOS 14+, Swift 6, `uv`, and the dependencies in `requirements.lock`.
+
+```bash
+cd native/TransallMac
+swift run TransallMac
+```
+
+The app starts the Python engine automatically in a source checkout. Set `TRANSALL_PROJECT_ROOT` or `TRANSALL_UV_EXECUTABLE` when the project or `uv` cannot be discovered. See [`native/TransallMac/README.md`](native/TransallMac/README.md) for build, test, and packaging details.
+
+## Browser UI
 
 ```bash
 python -m pip install -r requirements.txt

@@ -22,6 +22,7 @@ final class NativeDocumentEngine: ObservableObject {
 
   private var jobs: [String: JobResponse] = [:]
   private var tasks: [String: Task<Void, Never>] = [:]
+  private var deletingJobs: Set<String> = []
   private var dataDirectory: URL?
   private let dataDirectoryOverride: URL?
   private var isTerminating = false
@@ -33,10 +34,19 @@ final class NativeDocumentEngine: ObservableObject {
   func start() async {
     state = .starting
     do {
-      dataDirectory = try applicationDataDirectory()
-      try removeExpiredJobs()
+      let override = dataDirectoryOverride
+      let preparation = Task.detached(priority: .utility) {
+        try Self.prepareDataDirectory(override: override)
+      }
+      let prepared = try await withTaskCancellationHandler(
+        operation: { try await preparation.value },
+        onCancel: { preparation.cancel() })
+      dataDirectory = prepared.directory
+      prepared.warnings.forEach(appendLog)
       state = .running
       appendLog("PDFKit、Core Graphics 和 Vision 已就绪。")
+    } catch is CancellationError {
+      return
     } catch {
       state = .failed(error.localizedDescription)
       appendLog(error.localizedDescription)
@@ -196,7 +206,7 @@ final class NativeDocumentEngine: ObservableObject {
     return job
   }
 
-  func deleteJob(id: String) throws {
+  func deleteJob(id: String) async throws {
     let directory = try jobDirectory(id)
     if tasks[id] != nil || jobs[id]?.isRunning == true {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
@@ -206,12 +216,22 @@ final class NativeDocumentEngine: ObservableObject {
     {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
     }
-    tasks[id]?.cancel()
-    tasks[id] = nil
-    jobs[id] = nil
-    if FileManager.default.fileExists(atPath: directory.path) {
-      try FileManager.default.removeItem(at: directory)
+    guard deletingJobs.insert(id).inserted else {
+      throw NativeDocumentError.processing("任务数据正在删除。")
     }
+    defer { deletingJobs.remove(id) }
+
+    let deletion = Task.detached(priority: .utility) {
+      try Task.checkCancellation()
+      if FileManager.default.fileExists(atPath: directory.path) {
+        try FileManager.default.removeItem(at: directory)
+      }
+    }
+    try await withTaskCancellationHandler(
+      operation: { try await deletion.value },
+      onCancel: { deletion.cancel() })
+
+    jobs[id] = nil
   }
 
   func download(jobID: String, to destination: URL) async throws {
@@ -382,10 +402,12 @@ final class NativeDocumentEngine: ObservableObject {
     PreflightIssue(code: code, dependency: nil, message: message, hint: hint)
   }
 
-  private func applicationDataDirectory() throws -> URL {
+  private nonisolated static func prepareDataDirectory(override: URL?) throws -> (
+    directory: URL, warnings: [String]
+  ) {
     let directory: URL
-    if let dataDirectoryOverride {
-      directory = dataDirectoryOverride
+    if let override {
+      directory = override
     } else {
       let base = try FileManager.default.url(
         for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -394,28 +416,26 @@ final class NativeDocumentEngine: ObservableObject {
     try FileManager.default.createDirectory(
       at: directory.appendingPathComponent("Jobs", isDirectory: true),
       withIntermediateDirectories: true)
-    return directory
-  }
-
-  private func removeExpiredJobs(now: Date = Date()) throws {
-    guard let dataDirectory else { return }
-    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    let jobsDirectory = directory.appendingPathComponent("Jobs", isDirectory: true)
     let directories = try FileManager.default.contentsOfDirectory(
       at: jobsDirectory,
       includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
       options: [.skipsHiddenFiles])
+    var warnings: [String] = []
     for directory in directories {
+      try Task.checkCancellation()
       do {
         let values = try directory.resourceValues(
           forKeys: [.contentModificationDateKey, .isDirectoryKey])
         guard values.isDirectory == true, let modified = values.contentModificationDate,
-          now.timeIntervalSince(modified) > 24 * 60 * 60
+          Date().timeIntervalSince(modified) > 24 * 60 * 60
         else { continue }
         try FileManager.default.removeItem(at: directory)
       } catch {
-        appendLog("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
+        warnings.append("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
       }
     }
+    return (directory, warnings)
   }
 
   private func jobDirectory(_ id: String) throws -> URL {

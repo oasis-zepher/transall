@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
   @Published var errorMessage: String?
   @Published var isSubmitting = false
   @Published var isSaving = false
+  @Published var isDeletingJob = false
   @Published var isLoadingPreview = false
   @Published var showAdvanced = false
 
@@ -46,6 +47,7 @@ final class AppModel: ObservableObject {
     route?.enabled == true
       && !documents.isEmpty
       && !isSubmitting
+      && !isDeletingJob
       && currentJob?.isRunning != true
   }
 
@@ -182,7 +184,7 @@ final class AppModel: ObservableObject {
   }
 
   func runJob() async {
-    guard let route, route.enabled, !documents.isEmpty else { return }
+    guard canRun, let route else { return }
     isSubmitting = true
     errorMessage = nil
     previewPages = []
@@ -222,7 +224,8 @@ final class AppModel: ObservableObject {
   }
 
   func saveResult() async {
-    guard let job = currentJob, job.status == "done", let output = job.output else { return }
+    guard !isDeletingJob, let job = currentJob, job.status == "done", let output = job.output
+    else { return }
     let panel = NSSavePanel()
     panel.nameFieldStringValue = output
     panel.canCreateDirectories = true
@@ -239,20 +242,27 @@ final class AppModel: ObservableObject {
   }
 
   func refreshPreview() async {
-    guard let job = currentJob, hasPreviewableResult else { return }
+    guard !isDeletingJob, let job = currentJob, hasPreviewableResult else { return }
     await loadPreview(jobID: job.id)
   }
 
   func deleteCurrentJob() async {
-    guard let job = currentJob, !job.isRunning else { return }
+    guard let job = currentJob, !job.isRunning, !isSaving, !isDeletingJob else { return }
+    let jobID = job.id
+    isDeletingJob = true
+    defer { isDeletingJob = false }
     do {
-      try backend.deleteJob(id: job.id)
-      UserDefaults.standard.removeObject(forKey: lastJobKey)
-      currentJob = nil
-      previewPages = []
-      previewError = nil
-      isLoadingPreview = false
-      preflightWarnings = []
+      try await backend.deleteJob(id: jobID)
+      if UserDefaults.standard.string(forKey: lastJobKey) == jobID {
+        UserDefaults.standard.removeObject(forKey: lastJobKey)
+      }
+      if currentJob?.id == jobID {
+        currentJob = nil
+        previewPages = []
+        previewError = nil
+        isLoadingPreview = false
+        preflightWarnings = []
+      }
     } catch {
       errorMessage = error.localizedDescription
     }

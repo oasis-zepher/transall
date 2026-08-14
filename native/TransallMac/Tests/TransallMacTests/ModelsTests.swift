@@ -273,8 +273,67 @@ struct ModelsTests {
     try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
     try Data("not-json".utf8).write(to: jobDirectory.appendingPathComponent("job.json"))
 
-    try engine.deleteJob(id: jobID)
+    try await engine.deleteJob(id: jobID)
 
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
+  func startupRemovesOnlyExpiredJobDirectories() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-expired-job-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let jobsDirectory = temporary.appendingPathComponent("Data/Jobs", isDirectory: true)
+    let expired = jobsDirectory.appendingPathComponent("expired", isDirectory: true)
+    let recent = jobsDirectory.appendingPathComponent("recent", isDirectory: true)
+    try FileManager.default.createDirectory(at: expired, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: recent, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date().addingTimeInterval(-25 * 60 * 60)],
+      ofItemAtPath: expired.path)
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date().addingTimeInterval(-60 * 60)],
+      ofItemAtPath: recent.path)
+
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data", isDirectory: true))
+    await engine.start()
+
+    #expect(!FileManager.default.fileExists(atPath: expired.path))
+    #expect(FileManager.default.fileExists(atPath: recent.path))
+    #expect(engine.state == .running)
+  }
+
+  @Test @MainActor
+  func deletingCurrentJobClearsItsResultState() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-delete-state-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: "result.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try JSONEncoder().encode(job).write(
+      to: jobDirectory.appendingPathComponent("job.json"), options: .atomic)
+    let model = AppModel(backend: engine)
+    model.currentJob = job
+    model.previewError = "旧预览错误"
+
+    await model.deleteCurrentJob()
+
+    #expect(model.currentJob == nil)
+    #expect(model.previewError == nil)
+    #expect(!model.isDeletingJob)
     #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
   }
 

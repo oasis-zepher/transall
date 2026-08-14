@@ -146,22 +146,23 @@ struct ResultWorkbenchView: View {
           Task { await model.saveResult() }
         }
         .buttonStyle(PrimaryButtonStyle())
-        .disabled(model.isSaving)
+        .disabled(model.isSaving || model.isDeletingJob)
 
         if model.hasPreviewableResult {
           Button(previewButtonLabel) {
             Task { await model.refreshPreview() }
           }
           .buttonStyle(QuietButtonStyle())
-          .disabled(model.isLoadingPreview)
+          .disabled(model.isLoadingPreview || model.isDeletingJob)
         }
 
-        Button("删除任务数据", role: .destructive) {
+        Button(model.isDeletingJob ? "正在删除" : "删除任务数据", role: .destructive) {
           viewState.showDeleteConfirmation = true
         }
         .font(.caption2.weight(.medium))
         .buttonStyle(.plain)
         .foregroundStyle(TransallTheme.danger)
+        .disabled(model.isSaving || model.isDeletingJob)
       } else {
         Text("完成后可在这里保存，不会覆盖原文件。")
           .font(.caption2)

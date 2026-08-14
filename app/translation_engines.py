@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
+import json
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -20,7 +23,7 @@ class ProviderLike(Protocol):
 
 
 def babeldoc_available() -> bool:
-    return shutil.which("babeldoc") is not None
+    return importlib.util.find_spec("babeldoc") is not None
 
 
 def translate_with_layout_engines(
@@ -46,8 +49,9 @@ def translate_with_layout_engines(
                 output_mode=output_mode,
                 glossary=glossary,
             )
-        except Exception as exc:
-            errors.append(f"BabelDOC: {exc}")
+        # BabelDOC is an optional third-party adapter with several exception types.
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"BabelDOC: {_redact_secret(str(exc), provider.api_key)}")
 
     raise RuntimeError("; ".join(errors) or "No layout-preserving translation engine is available")
 
@@ -64,7 +68,9 @@ def translate_with_babeldoc(
 ) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        "babeldoc",
+        sys.executable,
+        "-m",
+        "app.babeldoc_runner",
         "--files",
         str(source.resolve()),
         "--output",
@@ -74,8 +80,6 @@ def translate_with_babeldoc(
         provider.model,
         "--openai-base-url",
         provider.base_url,
-        "--openai-api-key",
-        provider.api_key,
         "--lang-in",
         source_lang or "en",
         "--lang-out",
@@ -99,7 +103,13 @@ def translate_with_babeldoc(
 
     started = time.time()
     try:
-        run_tracked(command, 1800, check=True)
+        run_tracked(
+            command,
+            1800,
+            check=True,
+            stdin_text=json.dumps({"api_key": provider.api_key}),
+            sensitive_values=(provider.api_key,),
+        )
     finally:
         if glossary_path:
             glossary_path.unlink(missing_ok=True)
@@ -130,9 +140,8 @@ def _find_babeldoc_output(output_dir: Path, source_stem: str, output_mode: str, 
 
 
 def _write_glossary_csv(glossary: str) -> Path:
-    handle = tempfile.NamedTemporaryFile("w", suffix=".csv", encoding="utf-8", delete=False, newline="")
-    path = Path(handle.name)
-    with handle:
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", encoding="utf-8", delete=False, newline="") as handle:
+        path = Path(handle.name)
         writer = csv.writer(handle)
         writer.writerow(["source", "target"])
         for line in glossary.splitlines():
@@ -153,9 +162,12 @@ def _write_glossary_csv(glossary: str) -> Path:
 
 def _normalized_pdf_text(path: Path) -> str:
     try:
-        doc = fitz.open(path)
-        text = "\n".join(page.get_text("text") for page in doc)
-        doc.close()
-    except Exception:
+        with fitz.open(path) as doc:
+            text = "\n".join(page.get_text("text") for page in doc)
+    except (OSError, RuntimeError, ValueError):
         return ""
     return " ".join(text.split())
+
+
+def _redact_secret(text: str, secret: str) -> str:
+    return text.replace(secret, "[REDACTED]") if secret else text

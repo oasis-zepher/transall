@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import threading
@@ -9,6 +10,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
@@ -87,9 +90,10 @@ class JobStore:
             if target.exists():
                 try:
                     stored = json.loads(target.read_text(encoding="utf-8"))
-                    job.cancel_requested = job.cancel_requested or bool(stored.get("cancel_requested"))
-                except Exception:
-                    pass
+                    if isinstance(stored, dict):
+                        job.cancel_requested = job.cancel_requested or bool(stored.get("cancel_requested"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.warning("Unable to read existing job state %s: %s", target, exc)
             temporary = job.path / ".job.json.tmp"
             temporary.write_text(json.dumps(job.stored(), ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(temporary, target)
@@ -100,6 +104,8 @@ class JobStore:
             if not path.exists():
                 raise KeyError(job_id)
             data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise TypeError(f"Invalid job metadata: {path}")
             data["path"] = Path(data.get("path") or path.parent)
             return Job(**data)
 
@@ -196,7 +202,8 @@ class JobStore:
             try:
                 data = json.loads(job_file.read_text(encoding="utf-8"))
                 created = datetime.fromisoformat(data["created_at"])
-            except Exception:
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                logger.warning("Ignoring unreadable job metadata %s: %s", job_file, exc)
                 continue
             if created < cutoff:
                 shutil.rmtree(job_file.parent, ignore_errors=True)
@@ -208,7 +215,8 @@ class JobStore:
         for job_file in self.root.glob("*/job.json"):
             try:
                 job = self.get(job_file.parent.name)
-            except Exception:
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                logger.warning("Unable to recover job metadata %s: %s", job_file, exc)
                 continue
             if job.status not in {"queued", "running"}:
                 continue

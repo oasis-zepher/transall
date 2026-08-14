@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .config import MAX_UPLOAD_BYTES
+from .config import MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 from .diagnostics import collect_diagnostics
 from .engines import dependency_profile, route_engine_payload
-
 
 FORMAT_DEFINITIONS: dict[str, dict[str, Any]] = {
     "pdf": {"label": "PDF", "input": ".pdf", "detail": "PDF 文档"},
@@ -59,6 +58,7 @@ def capabilities_payload() -> dict[str, Any]:
     return {
         "formats": FORMAT_DEFINITIONS,
         "routes": list(_supported_routes()),
+        "limits": {"maxUploadBytes": MAX_UPLOAD_BYTES, "maxUploadMB": MAX_UPLOAD_MB},
     }
 
 
@@ -127,7 +127,7 @@ def preflight(payload: dict[str, Any]) -> dict[str, Any]:
         blocking.append(
             {
                 "code": "upload_too_large",
-                "message": "上传文件超过 200 MB 限制。",
+                "message": f"上传文件超过 {MAX_UPLOAD_MB} MB 限制。",
                 "hint": "减少文件数量或压缩文件后重试。",
                 "limit": MAX_UPLOAD_BYTES,
             }
@@ -268,7 +268,7 @@ def _missing_issue(name: str, dependency: dict[str, Any]) -> dict[str, Any]:
 def _file_size(file: Any) -> int:
     try:
         return int(file.get("size", 0))
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         return 0
 
 

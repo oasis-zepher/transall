@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import fitz
 
 from .errors import ProviderNotConfigured
 from .pdf_ops import parse_page_spec
 from .translation_engines import translate_with_layout_engines
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -127,7 +131,8 @@ def translate_pdf(
             output_mode=output_mode,
             glossary=glossary,
         )
-    except Exception as exc:
+    # Layout engines are optional adapters; any adapter failure uses the built-in renderer.
+    except Exception as exc:  # noqa: BLE001
         if on_layout_fallback is not None:
             on_layout_fallback(str(exc))
 
@@ -194,7 +199,8 @@ def _translate_page(
 ) -> tuple[str, bool]:
     try:
         return translate_text(provider, text, source_lang, target_lang, glossary), False
-    except Exception as exc:
+    # A failed page must not cancel translations already running in the worker pool.
+    except Exception as exc:  # noqa: BLE001
         return f"[Translation failed on page {page_number}: {exc}]", True
 
 
@@ -202,8 +208,8 @@ def _insert_cjk_font(page: fitz.Page) -> str:
     try:
         page.insert_font(fontname="china-ss")
         return "china-ss"
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Built-in CJK font unavailable: %s", exc)
     for font_file in (
         Path("/System/Library/Fonts/STHeiti Medium.ttc"),
         Path("/System/Library/Fonts/PingFang.ttc"),
@@ -214,6 +220,7 @@ def _insert_cjk_font(page: fitz.Page) -> str:
         try:
             page.insert_font(fontname="docwork-cjk", fontfile=str(font_file))
             return "docwork-cjk"
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Unable to load CJK font %s: %s", font_file, exc)
             continue
     return "helv"

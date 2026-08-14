@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 DEPENDENCY_DEFINITIONS: dict[str, dict[str, Any]] = {
     "pymupdf": {
         "label": "PyMuPDF",
@@ -71,7 +70,7 @@ DEPENDENCY_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "babeldoc": {
         "label": "BabelDOC",
-        "availability": {"type": "command", "name": "babeldoc"},
+        "availability": {"type": "python", "name": "babeldoc"},
         "category": "optional",
         "risk": "heavy",
         "required_for": ["Layout-preserving PDF translation"],

@@ -23,11 +23,12 @@ def playwright_chromium_available() -> bool:
     if not python_module_available("playwright"):
         return False
     try:
+        from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as playwright:
             return Path(playwright.chromium.executable_path).is_file()
-    except Exception:
+    except (OSError, PlaywrightError):
         return False
 
 

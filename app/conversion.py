@@ -5,8 +5,15 @@ from pathlib import Path
 
 from PIL import Image
 
-from .config import HTML_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, OFFICE_EXTENSIONS, PDF_EXTENSIONS, TEXT_EXTENSIONS
 from .browser_pdf import render_browser_pdf
+from .config import (
+    HTML_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    MARKDOWN_EXTENSIONS,
+    OFFICE_EXTENSIONS,
+    PDF_EXTENSIONS,
+    TEXT_EXTENSIONS,
+)
 from .ocr import ocr_to_markdown
 from .processes import run_tracked
 

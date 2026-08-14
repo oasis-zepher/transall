@@ -5,10 +5,17 @@ import html
 import json
 import threading
 from pathlib import Path
-from xml.dom import minidom
+from xml.parsers.expat import ExpatError
 
-from .config import HTML_EXTENSIONS, MARKDOWN_EXTENSIONS
+from defusedxml import minidom
+from defusedxml.common import DefusedXmlException
 
+from .config import (
+    HTML_EXTENSIONS,
+    MARKDOWN_EXTENSIONS,
+    MAX_BROWSER_TEXT_BYTES,
+    MAX_BROWSER_TEXT_MB,
+)
 
 _BROWSER_SLOTS = threading.BoundedSemaphore(2)
 
@@ -49,6 +56,8 @@ def render_browser_pdf(source: Path, output: Path) -> Path:
 
 def document_html(source: Path) -> str:
     ext = source.suffix.lower()
+    if source.stat().st_size > MAX_BROWSER_TEXT_BYTES:
+        raise ValueError(f"Text input exceeds the {MAX_BROWSER_TEXT_MB} MB renderer limit")
     text = source.read_text(encoding="utf-8", errors="replace")
     if ext in HTML_EXTENSIONS:
         body = _html_body(text)
@@ -160,7 +169,7 @@ def _html_body(text: str) -> str:
 def _markdown_to_html(text: str) -> str:
     try:
         import markdown
-    except Exception:
+    except ImportError:
         return _formatted_code(text, "markdown")
     return markdown.markdown(
         text,
@@ -185,14 +194,14 @@ def _delimited_to_table(text: str, delimiter: str) -> str:
 def _pretty_json(text: str) -> str:
     try:
         return json.dumps(json.loads(text), ensure_ascii=False, indent=2)
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         return text
 
 
 def _pretty_xml(text: str) -> str:
     try:
         return minidom.parseString(text.encode("utf-8")).toprettyxml(indent="  ")
-    except Exception:
+    except (DefusedXmlException, ExpatError, ValueError):
         return text
 
 

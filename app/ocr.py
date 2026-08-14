@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import fitz
 from PIL import Image
@@ -39,7 +39,7 @@ def ocr_document(
         try:
             _ocr_pdf_with_ocrmypdf(source, output, language)
             return output
-        except Exception:
+        except RuntimeError:
             if cancel_check is not None:
                 cancel_check()
     _ocr_to_searchable_pdf(source, output, language, cancel_check)
@@ -115,7 +115,7 @@ def _ocr_pdf_with_ocrmypdf(source: Path, output: Path, language: str) -> None:
         str(output),
     ]
     try:
-        run_tracked(command, 900, check=True)
+        run_tracked(command, timeout=900, check=True)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("OCRmyPDF timed out after 15 minutes") from exc
     except subprocess.CalledProcessError as exc:

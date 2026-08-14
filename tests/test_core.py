@@ -2,8 +2,8 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import fitz
 from PIL import Image
@@ -347,8 +347,8 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertEqual(rendered, [("payload.json", "payload.pdf")])
 
     def test_layout_engine_reports_unavailable_without_babeldoc(self):
-        from app.translation_engines import translate_with_layout_engines
         from app.translation import TranslationProvider
+        from app.translation_engines import translate_with_layout_engines
 
         with tempfile.TemporaryDirectory() as tmp, patch("app.translation_engines.babeldoc_available", return_value=False):
             source = Path(tmp) / "source.pdf"
@@ -364,8 +364,8 @@ class CoreBehaviorTests(unittest.TestCase):
                 )
 
     def test_translation_engine_uses_only_babeldoc(self):
-        from app.translation_engines import translate_with_layout_engines
         from app.translation import TranslationProvider
+        from app.translation_engines import translate_with_layout_engines
 
         calls = []
 
@@ -446,7 +446,13 @@ class CoreBehaviorTests(unittest.TestCase):
             self.assertEqual(merged_sources, ["b.pdf", "a.pdf", "c.pdf"])
 
     def test_error_classification_uses_exception_types(self):
-        from app.errors import MissingDependency, NoUploadedFiles, OcrInputRequired, PdfInputRequired, ProviderNotConfigured
+        from app.errors import (
+            MissingDependency,
+            NoUploadedFiles,
+            OcrInputRequired,
+            PdfInputRequired,
+            ProviderNotConfigured,
+        )
         from app.main import classify_error
 
         self.assertEqual(classify_error(PdfInputRequired("x"))["code"], "pdf_input_required")
@@ -459,6 +465,7 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertEqual(classify_error(RuntimeError("random"))["code"], "task_failed")
 
     def test_cancel_kills_tracked_subprocess(self):
+        import subprocess
         import threading
         import time
 
@@ -469,7 +476,7 @@ class CoreBehaviorTests(unittest.TestCase):
         def worker() -> None:
             try:
                 run_tracked(["sleep", "30"], timeout=60, check=True)
-            except Exception as exc:
+            except subprocess.SubprocessError as exc:
                 outcome["exc"] = exc
 
         thread = threading.Thread(target=worker)
@@ -481,6 +488,7 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertIn("exc", outcome)
 
     def test_cancel_running_job_kills_its_subprocess(self):
+        import subprocess
         import threading
         import time
 
@@ -492,7 +500,7 @@ class CoreBehaviorTests(unittest.TestCase):
         def worker() -> None:
             try:
                 run_tracked(["sleep", "30"], timeout=60, check=True)
-            except Exception as exc:
+            except subprocess.SubprocessError as exc:
                 outcome["exc"] = exc
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -507,6 +515,100 @@ class CoreBehaviorTests(unittest.TestCase):
             thread.join(timeout=5)
 
         self.assertIn("exc", outcome)
+
+    def test_tracked_process_redacts_sensitive_values_from_results_and_errors(self):
+        import subprocess
+        import sys
+
+        from app.processes import run_tracked
+
+        secret = "sk-secret-never-log"
+        command = [
+            sys.executable,
+            "-c",
+            "import sys; value=sys.stdin.read(); print(value); print(value, file=sys.stderr); raise SystemExit(2)",
+        ]
+        with self.assertRaises(subprocess.CalledProcessError) as caught:
+            run_tracked(command, timeout=5, check=True, stdin_text=secret, sensitive_values=(secret,))
+
+        error = caught.exception
+        self.assertNotIn(secret, str(error))
+        self.assertNotIn(secret, str(error.cmd))
+        self.assertNotIn(secret, error.stdout)
+        self.assertNotIn(secret, error.stderr)
+        self.assertIn("[REDACTED]", error.stdout)
+        self.assertIn("[REDACTED]", error.stderr)
+
+    def test_babeldoc_key_is_passed_through_stdin_not_process_arguments(self):
+        from app.translation import TranslationProvider
+        from app.translation_engines import translate_with_babeldoc
+
+        secret = "sk-layout-secret"
+        provider = TranslationProvider("deepseek", "https://api.deepseek.com/v1", secret, "deepseek-chat")
+        with tempfile.TemporaryDirectory() as tmp, patch("app.translation_engines.run_tracked") as run:
+            root = Path(tmp)
+            source = root / "report.pdf"
+            source.write_bytes(b"%PDF-1.7\n")
+            generated = root / "report-dual.pdf"
+            generated.write_bytes(b"%PDF-1.7\n")
+            output = root / "translated.pdf"
+
+            result = translate_with_babeldoc(source, output, provider, "en", "zh", output_mode="bilingual")
+
+        self.assertEqual(result, output)
+        command = run.call_args.args[0]
+        self.assertNotIn(secret, command)
+        self.assertNotIn("--openai-api-key", command)
+        self.assertIn(secret, run.call_args.kwargs["stdin_text"])
+        self.assertEqual(run.call_args.kwargs["sensitive_values"], (secret,))
+
+    def test_babeldoc_adapter_errors_do_not_expose_api_key(self):
+        from app.translation import TranslationProvider
+        from app.translation_engines import translate_with_layout_engines
+
+        secret = "sk-layout-secret"
+        provider = TranslationProvider("deepseek", "https://api.deepseek.com/v1", secret, "deepseek-chat")
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "app.translation_engines.babeldoc_available", return_value=True
+        ), patch("app.translation_engines.translate_with_babeldoc", side_effect=RuntimeError(f"failed with {secret}")):
+            source = Path(tmp) / "source.pdf"
+            source.write_bytes(b"%PDF-1.7\n")
+
+            with self.assertRaises(RuntimeError) as caught:
+                translate_with_layout_engines(source, Path(tmp) / "output.pdf", provider, "en", "zh")
+
+        self.assertNotIn(secret, str(caught.exception))
+        self.assertIn("[REDACTED]", str(caught.exception))
+
+    def test_browser_xml_renderer_does_not_expand_entities(self):
+        from app.browser_pdf import document_html
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            secret_file = root / "secret.txt"
+            secret_file.write_text("should-not-be-expanded", encoding="utf-8")
+            source = root / "payload.xml"
+            source.write_text(
+                f'<!DOCTYPE root [<!ENTITY xxe SYSTEM "{secret_file.as_uri()}">]><root>&xxe;</root>',
+                encoding="utf-8",
+            )
+
+            rendered = document_html(source)
+
+        self.assertNotIn("should-not-be-expanded", rendered)
+        self.assertIn("&amp;xxe;", rendered)
+
+    def test_browser_renderer_rejects_text_over_configured_limit(self):
+        from app.browser_pdf import document_html
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.browser_pdf.MAX_BROWSER_TEXT_BYTES", 4), patch(
+            "app.browser_pdf.MAX_BROWSER_TEXT_MB", 1
+        ):
+            source = Path(tmp) / "large.txt"
+            source.write_bytes(b"12345")
+
+            with self.assertRaisesRegex(ValueError, "1 MB renderer limit"):
+                document_html(source)
 
     def test_pdf_translation_fallback_translates_pages_concurrently(self):
         import threading

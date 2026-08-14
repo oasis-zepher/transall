@@ -1,5 +1,5 @@
-import os
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -66,12 +66,11 @@ class ApiContractTests(unittest.TestCase):
 
     def test_preview_pages_follow_natural_page_order(self):
         import fitz
-
         from fastapi.testclient import TestClient
 
         with tempfile.TemporaryDirectory() as tmp:
-            from app.main import create_app
             from app.jobs import JobStore
+            from app.main import create_app
 
             root = Path(tmp)
             client = TestClient(create_app(data_dir=root))
@@ -134,6 +133,47 @@ class ApiContractTests(unittest.TestCase):
             self.assertEqual((uploads / "same.txt").read_bytes(), b"first")
             self.assertEqual((uploads / "same-2.txt").read_bytes(), b"second")
 
+    def test_uploads_with_the_same_stem_get_distinct_output_stems(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.run_job"):
+            from app.main import create_app
+
+            root = Path(tmp)
+            client = TestClient(create_app(data_dir=root, run_background_inline=True))
+            response = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "{}"},
+                files=[
+                    ("files", ("report.doc", io.BytesIO(b"first"), "application/msword")),
+                    ("files", ("report.docx", io.BytesIO(b"second"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+                ],
+            )
+            job = response.json()
+            uploads = root / job["id"] / "uploads"
+
+            self.assertEqual(job["inputs"], ["report.doc", "report-2.docx"])
+            self.assertEqual((uploads / "report.doc").read_bytes(), b"first")
+            self.assertEqual((uploads / "report-2.docx").read_bytes(), b"second")
+
+    def test_job_options_must_be_a_json_object(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from app.main import create_app
+
+            root = Path(tmp)
+            client = TestClient(create_app(data_dir=root, run_background_inline=True))
+            response = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "[]"},
+                files={"files": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["detail"], "options must be a JSON object")
+            self.assertEqual(list(root.iterdir()), [])
+
     def test_oversized_upload_removes_partial_job_directory(self):
         from fastapi.testclient import TestClient
 
@@ -194,6 +234,8 @@ class ApiContractTests(unittest.TestCase):
         routes = {(route["source"], route["target"]): route for route in payload["routes"]}
 
         self.assertIn("formats", payload)
+        self.assertEqual(payload["limits"]["maxUploadMB"], 200)
+        self.assertEqual(payload["limits"]["maxUploadBytes"], 200 * 1024 * 1024)
         self.assertEqual(len(payload["routes"]), 18)
         for route in payload["routes"]:
             self.assertIn("engine", route)
@@ -302,7 +344,7 @@ class ApiContractTests(unittest.TestCase):
             {"DEEPSEEK_API_KEY": "", "OPENAI_API_KEY": ""},
             clear=False,
         ), patch("app.diagnostics.command_available", return_value=False), patch(
-            "app.diagnostics.python_module_available", return_value=True
+            "app.diagnostics.python_module_available", side_effect=lambda module: module != "babeldoc"
         ):
             from app.main import create_app
 
@@ -332,7 +374,7 @@ class ApiContractTests(unittest.TestCase):
             {"DEEPSEEK_API_KEY": "sk-test", "OPENAI_API_KEY": ""},
             clear=False,
         ), patch("app.diagnostics.command_available", return_value=False), patch(
-            "app.diagnostics.python_module_available", return_value=True
+            "app.diagnostics.python_module_available", side_effect=lambda module: module != "babeldoc"
         ):
             from app.main import create_app
 
@@ -426,8 +468,8 @@ class ApiContractTests(unittest.TestCase):
         ), patch("app.diagnostics.command_available") as command_available, patch(
             "app.diagnostics.python_module_available"
         ) as python_module_available:
-            command_available.side_effect = lambda command: command in {"soffice", "tesseract", "babeldoc", "ocrmypdf"}
-            python_module_available.side_effect = lambda module: module in {"markitdown", "playwright"}
+            command_available.side_effect = lambda command: command in {"soffice", "tesseract", "ocrmypdf"}
+            python_module_available.side_effect = lambda module: module in {"babeldoc", "markitdown", "playwright"}
 
             from app.main import create_app
 

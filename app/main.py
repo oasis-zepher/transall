@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 import shutil
 import threading
 from contextlib import asynccontextmanager
@@ -9,21 +9,49 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Body,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .artifacts import single_or_zip
-from .capabilities import capabilities_payload, preflight as run_preflight
-from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_CONCURRENT_JOBS, MAX_UPLOAD_BYTES
+from .capabilities import capabilities_payload
+from .capabilities import preflight as run_preflight
+from .config import (
+    APP_ROOT,
+    DATA_DIR,
+    JOB_TTL_HOURS,
+    MAX_CONCURRENT_JOBS,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_MB,
+)
 from .conversion import convert_to_pdf, extract_markdown
 from .diagnostics import collect_diagnostics
-from .errors import MissingDependency, NoUploadedFiles, OcrInputRequired, PdfInputRequired, ProviderNotConfigured
+from .errors import (
+    MissingDependency,
+    NoUploadedFiles,
+    OcrInputRequired,
+    PdfInputRequired,
+    ProviderNotConfigured,
+)
 from .jobs import Job, JobCancelled, JobStore
 from .ocr import ocr_document
-from .pdf_ops import apply_pdf_edits, edit_options_from_request, merge_pdfs, pdf_page_count, render_preview_pages
+from .pdf_ops import (
+    apply_pdf_edits,
+    edit_options_from_request,
+    merge_pdfs,
+    pdf_page_count,
+    render_preview_pages,
+)
 from .translation import load_provider_configs, translate_pdf
-
 
 LOCAL_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
 STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -103,6 +131,8 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
             parsed_options = json.loads(options or "{}")
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="options must be valid JSON") from exc
+        if not isinstance(parsed_options, dict):
+            raise HTTPException(status_code=400, detail="options must be a JSON object")
 
         job = store.create(kind, [], parsed_options)
         store.set_status(job, "queued", stage="uploading", message="正在上传文件")
@@ -111,16 +141,17 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
         total = 0
         try:
             used_names: set[str] = set()
+            used_stems: set[str] = set()
             stored_names: list[str] = []
             for file in files:
-                safe_name = _unique_upload_name(Path(file.filename or "upload").name, used_names)
+                safe_name = _unique_upload_name(Path(file.filename or "upload").name, used_names, used_stems)
                 stored_names.append(safe_name)
                 target = upload_dir / safe_name
                 with target.open("wb") as handle:
                     while chunk := await file.read(1024 * 1024):
                         total += len(chunk)
                         if total > MAX_UPLOAD_BYTES:
-                            raise HTTPException(status_code=413, detail="Upload exceeds 200 MB limit")
+                            raise HTTPException(status_code=413, detail=f"Upload exceeds {MAX_UPLOAD_MB} MB limit")
                         handle.write(chunk)
             job.inputs = stored_names
             store.set_status(job, "queued", stage="queued", message="等待运行", progress=5)
@@ -252,7 +283,8 @@ def _run_job_body(store: JobStore, job: Job) -> None:
     except JobCancelled:
         shutil.rmtree(job.path / "outputs", ignore_errors=True)
         store.set_status(job, "cancelled", stage="cancelled", message="任务已取消", progress=job.progress)
-    except Exception as exc:
+    # The worker boundary must turn every engine failure into a persisted job error.
+    except Exception as exc:  # noqa: BLE001
         try:
             store.raise_if_cancelled(job)
         except JobCancelled:
@@ -412,15 +444,17 @@ def _job_pdf_for_preview(job: Job) -> Path | None:
     return None
 
 
-def _unique_upload_name(name: str, used: set[str]) -> str:
+def _unique_upload_name(name: str, used: set[str], used_stems: set[str] | None = None) -> str:
     safe = Path(name).name or "upload"
+    stems = used_stems if used_stems is not None else set()
     candidate = safe
     index = 2
-    while candidate.casefold() in used:
+    while candidate.casefold() in used or Path(candidate).stem.casefold() in stems:
         path = Path(safe)
         candidate = f"{path.stem}-{index}{path.suffix}"
         index += 1
     used.add(candidate.casefold())
+    stems.add(Path(candidate).stem.casefold())
     return candidate
 
 

@@ -983,6 +983,11 @@ struct TranslationService {
   static let maximumGlossaryCharacters = 20_000
   static let maximumAttempts = 3
   static let maximumRetryDelay: TimeInterval = 30
+  static let maximumResponseBytes = 2 * 1_024 * 1_024
+  static let maximumTranslatedCharactersPerChunk = 100_000
+  static let minimumTranslatedCharactersPerChunk = 4_000
+  static let translatedCharacterExpansionFactor = 8
+  static let maximumProviderErrorCharacters = 1_000
 
   private static let requestSession = URLSession(configuration: sessionConfiguration())
 
@@ -1101,6 +1106,9 @@ struct TranslationService {
     else {
       throw NativeDocumentError.provider("翻译服务没有返回译文。")
     }
+    guard content.count <= Self.maximumTranslatedCharacters(for: text) else {
+      throw NativeDocumentError.provider("翻译服务返回的译文异常过长，已停止当前任务。")
+    }
     return content
   }
 
@@ -1109,6 +1117,13 @@ struct TranslationService {
       do {
         let (data, response) = try await requestSender(request)
         try Task.checkCancellation()
+        let expectedBytes = response.expectedContentLength
+        guard data.count <= Self.maximumResponseBytes,
+          expectedBytes < 0 || expectedBytes <= Int64(Self.maximumResponseBytes)
+        else {
+          throw NativeDocumentError.provider(
+            "翻译服务响应内容超过 \(Self.maximumResponseBytes / 1_024 / 1_024) MB，已停止当前任务。")
+        }
         guard let http = response as? HTTPURLResponse else {
           throw NativeDocumentError.provider("翻译服务返回了无效响应。")
         }
@@ -1178,9 +1193,20 @@ struct TranslationService {
 
   private static func errorMessage(_ data: Data) -> String? {
     guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let error = object["error"] as? [String: Any]
+      let error = object["error"] as? [String: Any], let message = error["message"] as? String
     else { return nil }
-    return error["message"] as? String
+    let normalized = message.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+    guard !normalized.isEmpty else { return nil }
+    if normalized.count <= maximumProviderErrorCharacters { return normalized }
+    return String(normalized.prefix(maximumProviderErrorCharacters)) + "…"
+  }
+
+  static func maximumTranslatedCharacters(for source: String) -> Int {
+    let expanded = source.count.multipliedReportingOverflow(by: translatedCharacterExpansionFactor)
+    let boundedExpansion = expanded.overflow ? Int.max : expanded.partialValue
+    return min(
+      maximumTranslatedCharactersPerChunk,
+      max(minimumTranslatedCharactersPerChunk, boundedExpansion))
   }
 
   static func providerError(for error: URLError) -> NativeDocumentError {

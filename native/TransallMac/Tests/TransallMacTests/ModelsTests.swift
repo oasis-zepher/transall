@@ -2560,6 +2560,79 @@ struct ModelsTests {
   }
 
   @Test
+  func translationRejectsOversizedProviderResponse() async throws {
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 200, headers: [:],
+        body: Data(repeating: 0x20, count: TranslationService.maximumResponseBytes + 1))
+    ])
+    let service = TranslationService(
+      provider: "openai", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    do {
+      _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+      Issue.record("Oversized provider responses should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("响应内容超过") == true)
+    }
+    let snapshot = await responses.snapshot()
+    #expect(snapshot.requestCount == 1)
+    #expect(snapshot.delays.isEmpty)
+  }
+
+  @Test
+  func translationRejectsPathologicallyExpandedContent() async throws {
+    let source = "short source"
+    let maximum = TranslationService.maximumTranslatedCharacters(for: source)
+    let body = try JSONSerialization.data(withJSONObject: [
+      "choices": [["message": ["content": String(repeating: "译", count: maximum + 1)]]]
+    ])
+    let responses = TranslationResponseSequence([
+      .http(status: 200, headers: [:], body: body)
+    ])
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    do {
+      _ = try await service.translate(source, source: "en", target: "zh", glossary: "")
+      Issue.record("Pathologically expanded translations should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("译文异常过长") == true)
+    }
+    #expect(await responses.snapshot().requestCount == 1)
+  }
+
+  @Test
+  func translationBoundsProviderErrorDetails() async throws {
+    let providerMessage = String(repeating: "provider failure detail ", count: 200)
+    let body = try JSONSerialization.data(withJSONObject: [
+      "error": ["message": providerMessage]
+    ])
+    let responses = TranslationResponseSequence([
+      .http(status: 400, headers: [:], body: body)
+    ])
+    let service = TranslationService(
+      provider: "openai", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    do {
+      _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+      Issue.record("Provider error details should remain bounded")
+    } catch let error as NativeDocumentError {
+      let message = try #require(error.errorDescription)
+      #expect(message.hasSuffix("…"))
+      #expect(message.count <= TranslationService.maximumProviderErrorCharacters + 20)
+      #expect(!message.contains(providerMessage))
+    }
+    #expect(await responses.snapshot().requestCount == 1)
+  }
+
+  @Test
   func translationStopsAfterBoundedNetworkRetries() async throws {
     let responses = TranslationResponseSequence([
       .network(.timedOut), .network(.timedOut), .network(.timedOut),

@@ -15,7 +15,7 @@ SwiftUI document workbench
 Requirements:
 
 - macOS 14 or newer
-- Xcode 27 or a compatible Swift toolchain
+- Xcode 26.6 or a compatible newer release toolchain
 
 Run from this directory:
 

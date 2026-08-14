@@ -21,11 +21,11 @@ Local task copies, previews, outputs, and logs are stored in the app container a
 
 1. Launch Transall. No sign-in is required.
 2. Select `PDF` as the source and `PDF` as the target.
-3. Add the provided sample PDFs and choose merge or edit.
+3. Add `output/pdf/review-samples/research-notes.pdf` and `appendix.pdf`, then choose merge or edit.
 4. Run the task, inspect the page preview and log, and save the result.
 5. Select the result panel's delete action to remove local task data.
-6. For OCR, select `PDF → OCR` or `图片 → OCR` and choose searchable PDF or text.
-7. For translation, open Transall Settings, enter the review key below, save it, then select `PDF → 译文 PDF`.
+6. For OCR, select `PDF → OCR`, add `scanned-page.pdf`, and choose searchable PDF or text.
+7. For translation, open Transall Settings, enter the review key below, save it, then select `PDF → 译文 PDF` and add `translation-sample.pdf`.
 
 ## Secure review-only values
 
@@ -33,7 +33,7 @@ Local task copies, previews, outputs, and logs are stored in the app container a
 Provider: [DeepSeek or OpenAI]
 API Key: [ENTER ONLY IN APP STORE CONNECT REVIEW INFORMATION]
 Usage limit / expiry: [DATE AND LIMIT]
-Support contact: [NAME, DOMAIN EMAIL, PHONE]
+Support contact: [NAME, SUPPORT EMAIL, PHONE]
 ```
 
 The review key must be newly issued, rate limited, monitored during review, and revoked after approval. Never reuse a production or personal unrestricted key.

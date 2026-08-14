@@ -10,6 +10,7 @@ This directory contains the non-code material required to move the native macOS 
 | `PAID_APP_SUBMISSION_CHECKLIST.md` | Agreements, banking, tax, pricing, compliance, and submission sequence | Prepared checklist |
 | `APP_REVIEW_NOTES.md` | Draft notes and test steps for App Review | Draft complete; review API key missing |
 | `SCREENSHOT_PLAN.md` | Required screenshot scenes, sizes, and privacy rules | Capture plan ready |
+| `../output/pdf/review-samples/` | Synthetic PDFs for screenshots and App Review | Generated and visually verified |
 | `support-site/` | Local support and privacy-policy website | Builds locally; not published |
 | `../native/TransallMac/APP_STORE_METADATA.md` | Product-page copy and privacy answers | Draft complete; publisher fields missing |
 | `../native/TransallMac/APP_STORE_READINESS.md` | Technical and account blockers | Current status |

@@ -24,7 +24,7 @@ Transall does not collect personal data for the developer. The app does not oper
 
 ## Contact
 
-Before App Store submission, publish `store/support-site/` at a stable HTTPS URL and replace its bracketed legal-publisher and domain-email placeholders.
+Before App Store submission, publish `store/support-site/` at a stable HTTPS URL and replace its bracketed legal-publisher and support-email placeholders.
 
 ---
 

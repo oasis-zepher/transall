@@ -4,7 +4,7 @@ Native macOS document workbench for PDF edits, Markdown extraction, PDF translat
 
 ## Native macOS App
 
-Requirements: macOS 14+ and Xcode 27 (or a compatible Swift toolchain). The native app does not require Python, `uv`, Homebrew, or external document tools.
+Requirements: macOS 14+ and Xcode 26.6 or a compatible newer release toolchain. The native app does not require Python, `uv`, Homebrew, or external document tools.
 
 ```bash
 cd native/TransallMac

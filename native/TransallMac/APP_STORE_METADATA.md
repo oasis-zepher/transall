@@ -29,7 +29,7 @@ Transall 是一款原生 macOS 文档工作台，适合处理研究资料、扫�
 - 为 PDF 添加文字水印并预览结果
 - 使用 Apple Vision 在本机进行 OCR
 - 将图片、Markdown、HTML 和文本数据生成 PDF
-- 从 PDF 或图片提取 Markdown
+- 从 PDF 或图片提取文字并保存为 Markdown
 - 使用用户自己的 DeepSeek 或 OpenAI API Key 翻译 PDF
 - 在任务运行前检查文件、参数和翻译服务配置
 - 支持任务取消、恢复、日志和本地任务数据删除
@@ -66,7 +66,7 @@ This draft deliberately does not claim “Data Not Collected”: Apple requires 
 4. Translation disclosure and provider selector.
 5. Keychain-backed provider settings.
 
-Use a currently accepted 16:10 macOS screenshot size without API keys, personal filenames, or third-party document content. Follow `store/SCREENSHOT_PLAN.md`.
+Use the synthetic files in `output/pdf/review-samples/` and a currently accepted 16:10 macOS screenshot size. Do not show API keys, personal filenames, or third-party document content. Follow `store/SCREENSHOT_PLAN.md`.
 
 ## Review information
 

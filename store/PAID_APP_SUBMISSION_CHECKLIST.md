@@ -36,6 +36,7 @@
 - [ ] App Privacy: Tracking = No.
 - [ ] Explain in review notes that PDF editing, OCR, extraction, and conversion remain on device; only extracted translation text leaves the device.
 - [ ] Confirm the PrivacyInfo.xcprivacy manifest still matches all Required Reason APIs at the time of submission.
+- [x] Declare UserDefaults (`CA92.1`) and app-container file timestamps (`C617.1`) in the current privacy manifest.
 - [ ] Encryption: verify the App Store Connect export-compliance answers for HTTPS through Apple frameworks; `ITSAppUsesNonExemptEncryption` is currently `false`.
 - [ ] Declare Digital Services Act trader status. An individual selling a paid app in the EU may be treated as a trader; if declared as a trader, prepare the address, phone number, and email Apple requires for verification and public display.
 - [ ] Confirm content rights for every sample document, icon, screenshot, and marketing image.
@@ -56,6 +57,7 @@ Why the privacy label is conservative: Apple defines collection as data transmit
 
 - [ ] Paste the final product copy from `native/TransallMac/APP_STORE_METADATA.md`.
 - [ ] Upload screenshots from the signed release candidate using `SCREENSHOT_PLAN.md`.
+- [x] Generate and visually verify synthetic screenshot and App Review files in `output/pdf/review-samples/`.
 - [ ] Enter the published support URL and privacy-policy URL.
 - [ ] Enter copyright using the verified individual rights-holder name.
 - [ ] Add App Review contact details and the notes from `APP_REVIEW_NOTES.md`.

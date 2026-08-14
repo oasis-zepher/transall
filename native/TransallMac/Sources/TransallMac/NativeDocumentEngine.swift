@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -627,7 +628,10 @@ final class NativeDocumentEngine: ObservableObject {
       for: metadata.route, options: metadata.options, inputNames: metadata.inputNames)
     let receipt: NativeJobCompletionReceipt? = try? load("completion.json", from: directory)
     let outputURL = directory.appendingPathComponent(expectedOutput)
-    if receipt?.output == expectedOutput, Self.isCompleteResult(outputURL) {
+    if let receipt,
+      Self.completionReceiptMatches(
+        receipt, expectedOutput: expectedOutput, outputURL: outputURL)
+    {
       appendLog("已从完整结果恢复任务 \(job.id.prefix(8))，未重新执行处理。")
       return replacing(
         job, status: "done", stage: "complete", message: "任务完成。", output: expectedOutput,
@@ -869,7 +873,12 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func persistCompletionReceipt(output: String, in directory: URL) throws {
-    let receipt = NativeJobCompletionReceipt(output: output)
+    let outputURL = try Self.validatedRegularFile(
+      named: output, in: directory, description: "任务结果")
+    let fingerprint = try Self.resultFingerprint(outputURL)
+    let receipt = NativeJobCompletionReceipt(
+      output: output, byteCount: fingerprint.byteCount,
+      sampleSHA256: fingerprint.sampleSHA256)
     let data = try JSONEncoder().encode(receipt)
     try data.write(to: directory.appendingPathComponent("completion.json"), options: .atomic)
   }
@@ -891,6 +900,53 @@ final class NativeDocumentEngine: ObservableObject {
       return ((try? NativeDocumentProcessor.previewPageCount(pdfURL: url, limit: 1)) ?? 0) > 0
     }
     return true
+  }
+
+  private nonisolated static func completionReceiptMatches(
+    _ receipt: NativeJobCompletionReceipt, expectedOutput: String, outputURL: URL
+  ) -> Bool {
+    guard receipt.output == expectedOutput, let expectedByteCount = receipt.byteCount,
+      let expectedSampleSHA256 = receipt.sampleSHA256, isCompleteResult(outputURL),
+      let fingerprint = try? resultFingerprint(outputURL)
+    else {
+      return false
+    }
+    return fingerprint.byteCount == expectedByteCount
+      && fingerprint.sampleSHA256 == expectedSampleSHA256
+  }
+
+  private nonisolated static func resultFingerprint(_ url: URL) throws -> (
+    byteCount: Int64, sampleSHA256: String
+  ) {
+    let values = try url.resourceValues(
+      forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
+    guard values.isSymbolicLink != true, values.isRegularFile == true,
+      let fileSize = values.fileSize, fileSize >= 0
+    else {
+      throw NativeDocumentError.processing("无法读取任务结果指纹。")
+    }
+
+    let sampleSize = 64 * 1_024
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    var sample = Data()
+    if fileSize <= sampleSize * 2 {
+      sample = try handle.readToEnd() ?? Data()
+      guard sample.count == fileSize else {
+        throw NativeDocumentError.processing("任务结果大小在验证期间发生变化。")
+      }
+    } else {
+      let prefix = try handle.read(upToCount: sampleSize) ?? Data()
+      try handle.seek(toOffset: UInt64(fileSize - sampleSize))
+      let suffix = try handle.read(upToCount: sampleSize) ?? Data()
+      guard prefix.count == sampleSize, suffix.count == sampleSize else {
+        throw NativeDocumentError.processing("任务结果大小在验证期间发生变化。")
+      }
+      sample.append(prefix)
+      sample.append(suffix)
+    }
+    let digest = SHA256.hash(data: sample).map { String(format: "%02x", $0) }.joined()
+    return (Int64(fileSize), digest)
   }
 
   private func load<T: Decodable>(_ name: String, from directory: URL) throws -> T {
@@ -1172,4 +1228,6 @@ private struct NativeJobMetadata: Codable {
 
 private struct NativeJobCompletionReceipt: Codable {
   let output: String
+  let byteCount: Int64?
+  let sampleSHA256: String?
 }

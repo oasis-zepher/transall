@@ -1361,7 +1361,7 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func validPDFWithoutCompletionReceiptIsNotRecoveredAsFinishedTranslation() async throws {
+  func legacyCompletionReceiptWithoutFingerprintDoesNotRecoverTranslation() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(
         "transall-partial-translation-test-\(UUID().uuidString)", isDirectory: true)
@@ -1398,6 +1398,8 @@ struct ModelsTests {
       PersistedJobMetadata(
         route: translationRoute, options: options, inputNames: ["1-source.pdf"])
     ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+    try Data(#"{"output":"source-translated.pdf"}"#.utf8).write(
+      to: jobDirectory.appendingPathComponent("completion.json"), options: .atomic)
 
     let restored = try engine.job(id: jobID)
 
@@ -1405,6 +1407,78 @@ struct ModelsTests {
     #expect(restored.errorCode == "task_interrupted")
     #expect(restored.output == nil)
     #expect(FileManager.default.fileExists(atPath: output.path))
+  }
+
+  @Test @MainActor
+  func replacedOutputDoesNotMatchCompletionReceiptAfterRestart() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-replaced-completion-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let translationRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let sourceText = temporary.appendingPathComponent("source.txt")
+    let sourcePDF = temporary.appendingPathComponent("source.pdf")
+    try Data("original completed output".utf8).write(to: sourceText, options: .atomic)
+    _ = try await NativeDocumentProcessor.process(
+      route: textRoute, inputs: [sourceText], options: JobOptions(), outputURL: sourcePDF,
+      apiKey: nil)
+    let sourceSize = try #require(
+      sourcePDF.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let credentialStore = TestCredentialStore(values: [.deepseek: "test-key"])
+    let firstEngine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobPersister: { job, directory in
+        if job.status == "done" { throw TestPersistenceError.unavailable }
+        try persistTestJob(job, in: directory)
+      }, credentialStore: credentialStore,
+      jobProcessor: { _, _, _, outputURL, _ in
+        try FileManager.default.copyItem(at: sourcePDF, to: outputURL)
+        return NativeDocumentProcessor.Result(outputURL: outputURL, logs: [])
+      })
+    await firstEngine.start()
+
+    var job = try await firstEngine.createJob(
+      route: translationRoute,
+      files: [SelectedDocument(url: sourcePDF, size: Int64(sourceSize))],
+      options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try firstEngine.job(id: job.id)
+    }
+    #expect(job.status == "done")
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
+    let output = jobDirectory.appendingPathComponent("source-translated.pdf")
+    #expect(FileManager.default.fileExists(atPath: output.path))
+    #expect(
+      FileManager.default.fileExists(
+        atPath: jobDirectory.appendingPathComponent("completion.json").path))
+    firstEngine.prepareForTermination()
+
+    var replacement = try Data(contentsOf: output)
+    let header = Data("%PDF-1.".utf8)
+    let headerRange = try #require(replacement.range(of: header))
+    let minorVersionIndex = headerRange.upperBound
+    replacement[minorVersionIndex] = replacement[minorVersionIndex] == 0x34 ? 0x35 : 0x34
+    try replacement.write(to: output, options: .atomic)
+    #expect(try output.resourceValues(forKeys: [.fileSizeKey]).fileSize == sourceSize)
+    #expect(PDFDocument(url: output)?.pageCount == 1)
+
+    let restoredEngine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory, credentialStore: credentialStore)
+    defer { restoredEngine.prepareForTermination() }
+    await restoredEngine.start()
+    let restored = try restoredEngine.job(id: job.id)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "task_interrupted")
+    #expect(restored.output == nil)
   }
 
   @Test @MainActor

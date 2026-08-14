@@ -51,13 +51,14 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Startup removes only task directories older than 24 hours on a utility-priority task; manual deletion exposes a busy state and blocks conflicting result operations until removal finishes.
 - Translation retries temporary network failures and selected transient HTTP responses at most twice, honors bounded `Retry-After` values, remains cancellable during backoff, and fails authentication errors immediately.
 - Job-state persistence failures are surfaced for start, completion, processing failure, and cancellation. Work cannot begin before its running state is saved, complete outputs recover without reprocessing, and interrupted translation jobs never auto-resubmit a paid provider request.
+- Keychain read failures disable credential editing until a successful reload, and a partial multi-provider save is rolled back. Local-only jobs no longer read translation credentials; translation jobs report Keychain access errors before network work.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 38/38 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 38/38 passed |
+| Swift package tests with Xcode 26.6 | 44/44 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 44/44 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
@@ -69,7 +70,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Persistence fault injection covers running, completion, failure, and cancellation state writes; restart coverage verifies complete-output recovery, local-task resumption, and suppression of automatic translation retries. Translation coverage verifies `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Persistence fault injection covers running, completion, failure, and cancellation state writes; restart coverage verifies complete-output recovery, local-task resumption, and suppression of automatic translation retries. Credential fault injection verifies load-failure write blocking, partial-save rollback, preflight error classification, no credential access for local jobs, and clear translation failure before network work. Translation coverage verifies `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
 
 ## Submission blockers outside the repository
 

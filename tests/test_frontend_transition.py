@@ -96,7 +96,8 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("slotDragState", js)
         self.assertIn("startSlotDrag", js)
         self.assertIn("finishSlotDrag", js)
-        self.assertIn("createSlotDragProxy", js)
+        self.assertIn('"drag-proxy slot-drag-proxy"', js)
+        self.assertIn("--slot-color", js)
         self.assertIn('slot.addEventListener("pointerdown"', js)
         self.assertIn("getBoundingClientRect", js)
         self.assertIn("is-slot-dragging", js)
@@ -263,8 +264,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=workbench-4", html)
-        self.assertIn("/static/app.js?v=workbench-4", html)
+        self.assertIn("/static/styles.css?v=workbench-5", html)
+        self.assertIn("/static/app.js?v=workbench-5", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -354,8 +355,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=workbench-4", html)
-        self.assertIn("/static/app.js?v=workbench-4", html)
+        self.assertIn("/static/styles.css?v=workbench-5", html)
+        self.assertIn("/static/app.js?v=workbench-5", html)
 
     def test_document_workbench_tokens_exist(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -365,6 +366,14 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("--accent: #b3482d", css)
         self.assertIn("--radius: 6px", css)
         self.assertIn("background-size: 32px 32px", css)
+
+    def test_format_node_visuals_live_in_css(self):
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+
+        for data_format in ("pdf", "word", "translated_pdf", "ocr", "ppt", "excel", "md", "html", "image", "data"):
+            self.assertIn(f'.format-node[data-format="{data_format}"]', css)
+        self.assertNotIn("--angle", html)
 
     def test_hidden_conversion_page_does_not_push_initial_compass_down(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")

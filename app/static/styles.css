@@ -389,6 +389,17 @@ h3 {
   z-index: 2;
 }
 
+.format-node[data-format="pdf"] { --angle: -90deg; --x: 0; --y: -1; --node-color: #b3482d; }
+.format-node[data-format="word"] { --angle: -54deg; --x: 0.588; --y: -0.809; --node-color: #315f9f; }
+.format-node[data-format="translated_pdf"] { --angle: -18deg; --x: 0.951; --y: -0.309; --node-color: #223e5c; }
+.format-node[data-format="ocr"] { --angle: 18deg; --x: 0.951; --y: 0.309; --node-color: #6a4a8b; }
+.format-node[data-format="ppt"] { --angle: 54deg; --x: 0.588; --y: 0.809; --node-color: #a6532f; }
+.format-node[data-format="excel"] { --angle: 90deg; --x: 0; --y: 1; --node-color: #2f7357; }
+.format-node[data-format="md"] { --angle: 126deg; --x: -0.588; --y: 0.809; --node-color: #4a5e72; }
+.format-node[data-format="html"] { --angle: 162deg; --x: -0.951; --y: 0.309; --node-color: #76623c; }
+.format-node[data-format="image"] { --angle: 198deg; --x: -0.951; --y: -0.309; --node-color: #7a4e66; }
+.format-node[data-format="data"] { --angle: 234deg; --x: -0.588; --y: -0.809; --node-color: #5f6b35; }
+
 .format-node::before {
   content: "";
   position: absolute;

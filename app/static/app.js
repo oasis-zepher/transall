@@ -764,24 +764,13 @@ function updateDragOverSlot(activeSlot) {
   });
 }
 
-function createDragProxy(node, rect) {
+function createDragProxy(node, rect, className, colorVariable) {
   const proxy = document.createElement("div");
-  proxy.className = "drag-proxy";
+  proxy.className = className;
   proxy.style.width = `${rect.width}px`;
   proxy.style.height = `${rect.height}px`;
-  proxy.style.setProperty("--node-color", node.style.getPropertyValue("--node-color"));
+  proxy.style.setProperty("--node-color", getComputedStyle(node).getPropertyValue(colorVariable).trim() || "var(--accent)");
   proxy.innerHTML = node.innerHTML;
-  document.body.appendChild(proxy);
-  return proxy;
-}
-
-function createSlotDragProxy(slot, rect) {
-  const proxy = document.createElement("div");
-  proxy.className = "drag-proxy slot-drag-proxy";
-  proxy.style.width = `${rect.width}px`;
-  proxy.style.height = `${rect.height}px`;
-  proxy.style.setProperty("--node-color", getComputedStyle(slot).getPropertyValue("--slot-color").trim() || "var(--accent)");
-  proxy.innerHTML = slot.innerHTML;
   document.body.appendChild(proxy);
   return proxy;
 }
@@ -804,19 +793,23 @@ function unblockTextSelection() {
 
 function finishPointerDrag(x, y) {
   if (!pointerDragState) return;
-  const { node, format, proxy, started, pointerId } = pointerDragState;
+  const { format, started } = pointerDragState;
   const slot = started ? slotFromPoint(x, y) : null;
-  node.classList.remove("is-pointer-dragging");
-  if (node.hasPointerCapture?.(pointerId)) {
-    node.releasePointerCapture(pointerId);
-  }
-  proxy?.remove();
-  updateDragOverSlot(null);
+  teardownDrag(pointerDragState, "is-pointer-dragging");
   pointerDragState = null;
   unblockTextSelection();
   if (slot) {
     assignFormatToSlot(slot.dataset.routeSlot, format);
   }
+}
+
+function teardownDrag(state, draggingClass) {
+  state.node.classList.remove(draggingClass);
+  if (state.node.hasPointerCapture?.(state.pointerId)) {
+    state.node.releasePointerCapture(state.pointerId);
+  }
+  state.proxy?.remove();
+  updateDragOverSlot(null);
 }
 
 function startPointerDrag(node, event) {
@@ -861,14 +854,14 @@ function startSlotDrag(slot, event) {
 }
 
 function updatePointerDrag(event) {
-  advanceDrag(pointerDragState, event, "is-pointer-dragging", createDragProxy);
+  advanceDrag(pointerDragState, event, "is-pointer-dragging", "drag-proxy", "--node-color");
 }
 
 function updateSlotDrag(event) {
-  advanceDrag(slotDragState, event, "is-slot-dragging", createSlotDragProxy);
+  advanceDrag(slotDragState, event, "is-slot-dragging", "drag-proxy slot-drag-proxy", "--slot-color");
 }
 
-function advanceDrag(state, event, draggingClass, proxyFactory) {
+function advanceDrag(state, event, draggingClass, proxyClassName, colorVariable) {
   if (!state) return;
   event.preventDefault();
   const distance = Math.hypot(event.clientX - state.startX, event.clientY - state.startY);
@@ -876,7 +869,7 @@ function advanceDrag(state, event, draggingClass, proxyFactory) {
   if (!state.started) {
     state.started = true;
     state.node.classList.add(draggingClass);
-    state.proxy = proxyFactory(state.node, state.node.getBoundingClientRect());
+    state.proxy = createDragProxy(state.node, state.node.getBoundingClientRect(), proxyClassName, colorVariable);
   }
   moveDragProxy(state, event.clientX, event.clientY);
   updateDragOverSlot(slotFromPoint(event.clientX, event.clientY));
@@ -898,14 +891,9 @@ function endPointerDrag(event) {
 
 function finishSlotDrag(x, y) {
   if (!slotDragState) return;
-  const { slot, slotName, format, proxy, started, pointerId } = slotDragState;
+  const { slot, slotName, format, started } = slotDragState;
   const targetSlot = started ? slotFromPoint(x, y) : null;
-  slot.classList.remove("is-slot-dragging");
-  if (slot.hasPointerCapture?.(pointerId)) {
-    slot.releasePointerCapture(pointerId);
-  }
-  proxy?.remove();
-  updateDragOverSlot(null);
+  teardownDrag(slotDragState, "is-slot-dragging");
   slotDragState = null;
   unblockTextSelection();
   if (!started) return;
@@ -1033,11 +1021,13 @@ routeSlots.forEach((slot) => {
   });
 });
 
-filesInput.addEventListener("change", () => {
+function handleFilesChanged() {
   updateFileUi();
   requestPreflight();
   updateRouteUi();
-});
+}
+
+filesInput.addEventListener("change", handleFilesChanged);
 document.querySelector("#provider")?.addEventListener("change", () => {
   refreshControls();
   requestPreflight();
@@ -1065,9 +1055,7 @@ dropzone.addEventListener("drop", (event) => {
   dropzone.classList.remove("is-dragging");
   if (event.dataTransfer?.files?.length) {
     filesInput.files = event.dataTransfer.files;
-    updateFileUi();
-    requestPreflight();
-    updateRouteUi();
+    handleFilesChanged();
   }
 });
 

@@ -62,6 +62,21 @@ def capabilities_payload() -> dict[str, Any]:
     }
 
 
+_DISABLED_ROUTE: dict[str, Any] = {
+    "kind": "convert",
+    "enabled": False,
+    "output": "该路径第一版未接入。",
+    "summary": "当前支持：常见文档/图片/文本数据转 PDF，常见文档/数据转 Markdown，PDF 修改，PDF 翻译为中文PDF，PDF/图片 OCR。",
+    "kindLabel": "未接入",
+    "requirements": [],
+    "optionPanels": [],
+    "engine": "",
+    "fallbackEngines": [],
+    "dependencyProfile": [],
+    "licenseNote": "",
+}
+
+
 def resolve_route(source: str | None, target: str | None) -> dict[str, Any] | None:
     if not source or not target:
         return None
@@ -70,22 +85,12 @@ def resolve_route(source: str | None, target: str | None) -> dict[str, Any] | No
             return route
     if source in FORMAT_DEFINITIONS and target in FORMAT_DEFINITIONS:
         return {
+            **_DISABLED_ROUTE,
             "source": source,
             "target": target,
-            "kind": "convert",
             "title": f"{_format_label(source)} → {_format_label(target)}",
-            "enabled": False,
             "accept": FORMAT_DEFINITIONS[source].get("input", ""),
             "input": FORMAT_DEFINITIONS[source].get("detail", "未知格式"),
-            "output": "该路径第一版未接入。",
-            "summary": "当前支持：常见文档/图片/文本数据转 PDF，常见文档/数据转 Markdown，PDF 修改，PDF 翻译为中文PDF，PDF/图片 OCR。",
-            "kindLabel": "未接入",
-            "requirements": [],
-            "optionPanels": [],
-            "engine": "",
-            "fallbackEngines": [],
-            "dependencyProfile": [],
-            "licenseNote": "",
         }
     return None
 

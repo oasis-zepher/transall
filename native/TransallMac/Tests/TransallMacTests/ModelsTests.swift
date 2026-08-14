@@ -63,6 +63,47 @@ struct ModelsTests {
     #expect(chunks.joined().filter { !$0.isWhitespace } == source.filter { !$0.isWhitespace })
   }
 
+  @Test @MainActor
+  func importingDocumentsAppendsAndDeduplicatesFiles() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-import-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let first = temporary.appendingPathComponent("first.pdf")
+    let second = temporary.appendingPathComponent("second.pdf")
+    try Data("first".utf8).write(to: first)
+    try Data("second".utf8).write(to: second)
+
+    let model = AppModel()
+    model.importDocuments([first, first])
+    model.importDocuments([first, second, second], appending: true)
+
+    #expect(model.documents.map(\.name) == ["first.pdf", "second.pdf"])
+    #expect(model.documents.map(\.size) == [5, 6])
+  }
+
+  @Test
+  func outputNamesAreRecognizableAndSafe() throws {
+    let editRoute = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let ocrRoute = try #require(NativeCapabilities.routes.first { $0.kind == "ocr" })
+    let translateRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+
+    #expect(
+      OutputFileNamer.name(
+        for: editRoute, options: JobOptions(), inputNames: ["1-研究/报告?.pdf"])
+        == "报告-edited.pdf")
+    #expect(
+      OutputFileNamer.name(
+        for: ocrRoute, options: JobOptions(), inputNames: ["1-scan.pdf"])
+        == "scan-ocr.pdf")
+    #expect(
+      OutputFileNamer.name(
+        for: translateRoute, options: JobOptions(), inputNames: ["1-paper.pdf"])
+        == "paper-translated.pdf")
+  }
+
   @Test
   func nativePDFEditDeletesAndRotatesPages() async throws {
     let temporary = FileManager.default.temporaryDirectory

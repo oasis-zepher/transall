@@ -199,7 +199,12 @@ struct FormatRouterView: View {
   private func state(for format: String) -> FormatNode.State {
     if model.selection.target == format { return .target }
     if model.selection.source == format { return .source }
-    guard let source = model.selection.source, model.selection.target == nil else {
+    guard let source = model.selection.source else {
+      let isSource =
+        model.capabilities?.routes.contains { $0.source == format && $0.enabled } == true
+      return isSource ? .available : .unavailable
+    }
+    guard model.selection.target == nil else {
       return .available
     }
     let isAvailable =

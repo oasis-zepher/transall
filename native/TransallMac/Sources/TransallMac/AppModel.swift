@@ -25,7 +25,7 @@ final class AppModel: ObservableObject {
   private let lastJobKey = "transall.native.lastJobId"
 
   let formatOrder = [
-    "pdf", "word", "translated_pdf", "ocr", "ppt", "excel", "md", "html", "image", "data",
+    "pdf", "translated_pdf", "ocr", "md", "html", "image", "data",
   ]
 
   var route: RouteDefinition? {
@@ -119,7 +119,7 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func importDocuments(_ urls: [URL]) {
+  func importDocuments(_ urls: [URL], appending: Bool = false) {
     let imported = urls.compactMap { url -> SelectedDocument? in
       let accessing = url.startAccessingSecurityScopedResource()
       defer {
@@ -133,12 +133,19 @@ final class AppModel: ObservableObject {
       return
     }
 
-    let total = imported.reduce(Int64.zero) { $0 + $1.size }
+    var combined = appending ? documents : []
+    var existing = Set(combined.map { $0.url.standardizedFileURL.resolvingSymlinksInPath() })
+    combined.append(
+      contentsOf: imported.filter {
+        existing.insert($0.url.standardizedFileURL.resolvingSymlinksInPath()).inserted
+      })
+
+    let total = combined.reduce(Int64.zero) { $0 + $1.size }
     if let limit = capabilities?.limits.maxUploadBytes, total > Int64(limit) {
       errorMessage = "所选文件超过 \(capabilities?.limits.maxUploadMB ?? 0) MB 限制。"
       return
     }
-    documents = imported
+    documents = combined
     errorMessage = nil
   }
 

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 private final class InputViewState: ObservableObject {
   @Published var showImporter = false
   @Published var isDropTargeted = false
+  var isAppending = false
 }
 
 struct InputWorkbenchView: View {
@@ -26,11 +27,11 @@ struct InputWorkbenchView: View {
     }
     .fileImporter(
       isPresented: $viewState.showImporter,
-      allowedContentTypes: [.item],
+      allowedContentTypes: allowedContentTypes,
       allowsMultipleSelection: true
     ) { result in
       switch result {
-      case .success(let urls): model.importDocuments(urls)
+      case .success(let urls): model.importDocuments(urls, appending: viewState.isAppending)
       case .failure(let error): model.errorMessage = error.localizedDescription
       }
     }
@@ -90,8 +91,11 @@ struct InputWorkbenchView: View {
           }
         }
 
-        Button("继续添加文件") { viewState.showImporter = true }
-          .buttonStyle(QuietButtonStyle())
+        Button("继续添加文件") {
+          viewState.isAppending = true
+          viewState.showImporter = true
+        }
+        .buttonStyle(QuietButtonStyle())
       }
     }
     .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty ? 116 : 76)
@@ -109,10 +113,13 @@ struct InputWorkbenchView: View {
     }
     .contentShape(Rectangle())
     .onTapGesture {
-      if model.documents.isEmpty { viewState.showImporter = true }
+      if model.documents.isEmpty {
+        viewState.isAppending = false
+        viewState.showImporter = true
+      }
     }
     .dropDestination(for: URL.self) { urls, _ in
-      model.importDocuments(urls)
+      model.importDocuments(urls, appending: !model.documents.isEmpty)
       return !urls.isEmpty
     } isTargeted: { targeted in
       viewState.isDropTargeted = targeted
@@ -122,11 +129,13 @@ struct InputWorkbenchView: View {
     .accessibilityHint(model.documents.isEmpty ? "按回车键选择文件，也可以将文件拖到这里" : "可继续添加或移除文件")
     .accessibilityAddTraits(model.documents.isEmpty ? .isButton : [])
     .accessibilityAction(named: "选择文件") {
+      viewState.isAppending = !model.documents.isEmpty
       viewState.showImporter = true
     }
     .focusable(model.documents.isEmpty)
     .onKeyPress(keys: [.return, .space]) { _ in
       guard model.documents.isEmpty else { return .ignored }
+      viewState.isAppending = false
       viewState.showImporter = true
       return .handled
     }
@@ -297,6 +306,24 @@ struct InputWorkbenchView: View {
   private var fileHint: String {
     guard let route = model.route, route.enabled else { return "路径确定后会校验文件类型" }
     return "接受 \(route.accept)"
+  }
+
+  private var allowedContentTypes: [UTType] {
+    guard let source = model.route?.source else { return [.item] }
+    switch source {
+    case "pdf":
+      return [.pdf]
+    case "image":
+      return [.image]
+    case "md":
+      return [UTType(filenameExtension: "md") ?? .plainText, .plainText]
+    case "html":
+      return [.html]
+    case "data":
+      return [.plainText, .commaSeparatedText, .json]
+    default:
+      return [.item]
+    }
   }
 
   private var fieldColumns: [GridItem] {

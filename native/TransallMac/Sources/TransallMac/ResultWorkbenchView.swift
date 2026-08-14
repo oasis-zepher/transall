@@ -14,10 +14,17 @@ struct ResultWorkbenchView: View {
         header
 
         if let job = model.currentJob {
-          ProgressView(value: Double(job.progress), total: 100)
-            .tint(statusColor(job.status))
-            .accessibilityLabel("任务进度")
-            .accessibilityValue("百分之\(job.progress)")
+          if job.isRunning {
+            ProgressView()
+              .controlSize(.small)
+              .accessibilityLabel("任务正在处理")
+              .accessibilityValue(statusLabel(job.status))
+          } else if job.status == "done" {
+            ProgressView(value: 1, total: 1)
+              .tint(TransallTheme.source)
+              .accessibilityLabel("任务进度")
+              .accessibilityValue("已完成")
+          }
         }
 
         warnings

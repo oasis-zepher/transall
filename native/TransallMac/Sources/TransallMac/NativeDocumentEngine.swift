@@ -236,7 +236,8 @@ final class NativeDocumentEngine: ObservableObject {
     let apiKey = try? ProviderCredentialStore.shared.value(for: credential)
     let inputURLs = metadata.inputNames.map { directory.appendingPathComponent("Input/\($0)") }
     let outputURL = directory.appendingPathComponent(
-      outputName(for: metadata.route, options: metadata.options))
+      OutputFileNamer.name(
+        for: metadata.route, options: metadata.options, inputNames: metadata.inputNames))
 
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
       await self?.markRunning(jobID: jobID, directory: directory)
@@ -319,15 +320,6 @@ final class NativeDocumentEngine: ObservableObject {
       })
   }
 
-  private func outputName(for route: RouteDefinition, options: JobOptions) -> String {
-    switch route.kind {
-    case "ocr" where options.ocrOutputFormat == "text": "ocr-result.txt"
-    case "extract_markdown": "extracted.md"
-    case "pdf_translate": "translated.pdf"
-    default: "result.pdf"
-    }
-  }
-
   private func allowedExtensions(for source: String) -> Set<String> {
     switch source {
     case "pdf": ["pdf"]
@@ -399,6 +391,38 @@ final class NativeDocumentEngine: ObservableObject {
     guard !text.isEmpty else { return }
     serviceLog.append(text)
     if serviceLog.count > 80 { serviceLog.removeFirst(serviceLog.count - 80) }
+  }
+}
+
+enum OutputFileNamer {
+  static func name(
+    for route: RouteDefinition, options: JobOptions, inputNames: [String]
+  ) -> String {
+    let firstName = inputNames.first.map(originalInputName) ?? "document"
+    let stem = safeOutputStem(
+      URL(fileURLWithPath: firstName).deletingPathExtension().lastPathComponent)
+    return switch route.kind {
+    case "pdf_edit" where options.editAction == "merge": "merged.pdf"
+    case "pdf_edit": "\(stem)-edited.pdf"
+    case "ocr" where options.ocrOutputFormat == "text": "\(stem)-ocr.txt"
+    case "ocr": "\(stem)-ocr.pdf"
+    case "extract_markdown": "\(stem).md"
+    case "pdf_translate": "\(stem)-translated.pdf"
+    case "image_to_pdf" where inputNames.count > 1: "images.pdf"
+    default: "\(stem).pdf"
+    }
+  }
+
+  private static func originalInputName(_ value: String) -> String {
+    value.replacingOccurrences(
+      of: #"^\d+-"#, with: "", options: .regularExpression)
+  }
+
+  private static func safeOutputStem(_ value: String) -> String {
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_ "))
+    let filtered = value.unicodeScalars.map { allowed.contains($0) ? Character(String($0)) : "-" }
+    let result = String(filtered).trimmingCharacters(in: CharacterSet(charactersIn: "- "))
+    return String((result.isEmpty ? "document" : result).prefix(80))
   }
 }
 

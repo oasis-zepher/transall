@@ -482,20 +482,26 @@ final class NativeDocumentEngine: ObservableObject {
       guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
       var outputURL: URL?
       do {
-        if let credentialError { throw NativeDocumentError.provider(credentialError) }
-        let inputURLs = try Self.validatedStoredInputs(
-          named: metadata.inputNames, in: directory)
         let expectedOutputURL = try Self.containedFileURL(
           named: OutputFileNamer.name(
             for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
           in: directory, description: "任务结果")
         outputURL = expectedOutputURL
+        if let credentialError { throw NativeDocumentError.provider(credentialError) }
+        let inputURLs = try Self.validatedStoredInputs(
+          named: metadata.inputNames, in: directory)
         let result = try await jobProcessor(
           metadata.route, inputURLs, metadata.options, expectedOutputURL, apiKey)
         try Task.checkCancellation()
+        guard result.outputURL.standardizedFileURL == expectedOutputURL.standardizedFileURL else {
+          throw NativeDocumentError.processing("处理器返回了意外的结果位置。")
+        }
+        guard Self.isCompleteResult(expectedOutputURL) else {
+          throw NativeDocumentError.processing("处理器没有生成完整可用的结果。")
+        }
         let accepted =
           await self?.markCompleted(
-            jobID: jobID, output: result.outputURL.lastPathComponent, logs: result.logs,
+            jobID: jobID, output: expectedOutputURL.lastPathComponent, logs: result.logs,
             directory: directory) == true
         if !accepted {
           await self?.removeIncompleteOutput(at: expectedOutputURL, jobID: jobID)

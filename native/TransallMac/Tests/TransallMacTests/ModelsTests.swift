@@ -1057,6 +1057,77 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func processingSuccessWithoutCompleteOutputFails() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-missing-output-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("source.png")
+    try Data("processor fixture".utf8).write(to: input, options: .atomic)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobProcessor: { _, _, _, outputURL, _ in
+        NativeDocumentProcessor.Result(outputURL: outputURL, logs: [])
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "failed")
+    #expect(job.error?.contains("完整可用") == true)
+    #expect(job.output == nil)
+  }
+
+  @Test @MainActor
+  func processingSuccessFromUnexpectedLocationFailsAndCleansExpectedOutput() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-unexpected-output-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("source.png")
+    try Data("processor fixture".utf8).write(to: input, options: .atomic)
+    let unexpectedOutput = temporary.appendingPathComponent("unexpected.pdf")
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobProcessor: { _, _, _, outputURL, _ in
+        try Data("partial result".utf8).write(to: outputURL, options: .atomic)
+        try Data("external result".utf8).write(to: unexpectedOutput, options: .atomic)
+        return NativeDocumentProcessor.Result(outputURL: unexpectedOutput, logs: [])
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    let expectedOutput = dataDirectory.appendingPathComponent("Jobs/\(job.id)/source.pdf")
+    #expect(job.status == "failed")
+    #expect(job.error?.contains("意外的结果位置") == true)
+    #expect(!FileManager.default.fileExists(atPath: expectedOutput.path))
+    #expect(FileManager.default.fileExists(atPath: unexpectedOutput.path))
+  }
+
+  @Test @MainActor
   func cancellationRemainsVisibleWhenCancelledStateCannotBeSaved() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-cancel-state-test-\(UUID().uuidString)", isDirectory: true)

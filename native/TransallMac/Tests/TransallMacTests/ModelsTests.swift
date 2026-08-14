@@ -537,6 +537,10 @@ struct ModelsTests {
     let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
     let stale: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
     #expect(stale.status == "running")
+    #expect(
+      FileManager.default.fileExists(
+        atPath: jobDirectory.appendingPathComponent("completion.json").path)
+    )
     let output = try #require(job.output)
     #expect(
       (try NativeDocumentProcessor.previewPageCount(
@@ -590,6 +594,53 @@ struct ModelsTests {
     #expect(restored.error?.contains("没有自动重试") == true)
     #expect(persisted.status == "failed")
     #expect(engine.serviceLog.contains { $0.contains("未自动重新执行") })
+  }
+
+  @Test @MainActor
+  func validPDFWithoutCompletionReceiptIsNotRecoveredAsFinishedTranslation() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-partial-translation-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let translationRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let sourceText = temporary.appendingPathComponent("partial.txt")
+    try Data("only part of the intended result".utf8).write(to: sourceText, options: .atomic)
+    let output = jobDirectory.appendingPathComponent("source-translated.pdf")
+    _ = try await NativeDocumentProcessor.process(
+      route: textRoute, inputs: [sourceText], options: JobOptions(), outputURL: output,
+      apiKey: nil)
+    #expect((try NativeDocumentProcessor.previewPageCount(pdfURL: output, limit: 1)) == 1)
+
+    let now = ISO8601DateFormatter().string(from: Date())
+    let running = JobResponse(
+      id: jobID, kind: translationRoute.kind, status: "running", inputs: ["source.pdf"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    var options = JobOptions()
+    options.provider = "openai"
+    try persistTestJob(running, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(
+        route: translationRoute, options: options, inputNames: ["1-source.pdf"])
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "task_interrupted")
+    #expect(restored.output == nil)
+    #expect(FileManager.default.fileExists(atPath: output.path))
   }
 
   @Test @MainActor

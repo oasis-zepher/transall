@@ -362,10 +362,17 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func markCompleted(jobID: String, output: String, logs: [String], directory: URL) {
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
-    let updated = replacing(
+    var updated = replacing(
       job, status: "done", stage: "complete", message: "任务完成。", output: output,
       progress: 100, logs: job.logs + logs)
     tasks[jobID] = nil
+    do {
+      try persistCompletionReceipt(output: output, in: directory)
+    } catch {
+      updated = appendingLog(
+        "警告：结果已生成，但完成凭据未能保存：\(error.localizedDescription)", to: updated)
+      appendPersistenceWarning(jobID: jobID, action: "保存任务完成凭据", error: error)
+    }
     do {
       try jobPersister(updated, directory)
       jobs[jobID] = updated
@@ -417,13 +424,14 @@ final class NativeDocumentEngine: ObservableObject {
   private func recoveredState(
     _ job: JobResponse, metadata: NativeJobMetadata, directory: URL
   ) -> JobResponse? {
-    let output = OutputFileNamer.name(
+    let expectedOutput = OutputFileNamer.name(
       for: metadata.route, options: metadata.options, inputNames: metadata.inputNames)
-    let outputURL = directory.appendingPathComponent(output)
-    if Self.isCompleteResult(outputURL) {
+    let receipt: NativeJobCompletionReceipt? = try? load("completion.json", from: directory)
+    let outputURL = directory.appendingPathComponent(expectedOutput)
+    if receipt?.output == expectedOutput, Self.isCompleteResult(outputURL) {
       appendLog("已从完整结果恢复任务 \(job.id.prefix(8))，未重新执行处理。")
       return replacing(
-        job, status: "done", stage: "complete", message: "任务完成。", output: output,
+        job, status: "done", stage: "complete", message: "任务完成。", output: expectedOutput,
         progress: 100, logs: job.logs + ["应用重启后从完整结果恢复完成状态。"])
     }
 
@@ -590,6 +598,12 @@ final class NativeDocumentEngine: ObservableObject {
     try data.write(to: directory.appendingPathComponent("metadata.json"), options: .atomic)
   }
 
+  private func persistCompletionReceipt(output: String, in directory: URL) throws {
+    let receipt = NativeJobCompletionReceipt(output: output)
+    let data = try JSONEncoder().encode(receipt)
+    try data.write(to: directory.appendingPathComponent("completion.json"), options: .atomic)
+  }
+
   private nonisolated static func persistJob(_ job: JobResponse, in directory: URL) throws {
     let data = try JSONEncoder().encode(job)
     try data.write(to: directory.appendingPathComponent("job.json"), options: .atomic)
@@ -729,4 +743,8 @@ private struct NativeJobMetadata: Codable {
   let route: RouteDefinition
   let options: JobOptions
   let inputNames: [String]
+}
+
+private struct NativeJobCompletionReceipt: Codable {
+  let output: String
 }

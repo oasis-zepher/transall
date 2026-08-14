@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 52 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 56 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -47,6 +47,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Task-state writes no longer fail silently: processing does not start until the running state is saved, completion/failure/cancellation write errors remain visible, and a complete output can restore its finished state without reprocessing.
 - Restart recovery requires a completion receipt written only after the processor returns successfully. A readable but partial PDF without that receipt is never presented as a completed result.
 - After a restart, interrupted translation tasks stop with a retryable explanation instead of automatically issuing another provider request. Interrupted local-only tasks still resume automatically.
+- Stored task identifiers, input and output names, state files, and task directories are validated before recovery, preview, or export. Path traversal and symbolic-link substitutions are rejected, while damaged running metadata becomes a visible, deletable failed task instead of processing files outside its task directory.
 - Settings state that provider keys are stored only in macOS Keychain; delete controls are disabled when no key exists.
 - If Keychain reads fail, Settings identifies the read failure, disables credential edits, and offers a retry instead of treating existing keys as empty. Multi-provider saves roll back earlier writes if a later write fails.
 - Distribution-signed builds request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; legacy entries migrate after a successful protected write. Unsigned development builds fall back to the legacy keychain when the application-identifier entitlement is unavailable. Both branches have simulated regression coverage; the signed path still requires validation after signing assets exist.

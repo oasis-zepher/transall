@@ -65,6 +65,18 @@ struct ModelsTests {
     #expect(chunks.joined().filter { !$0.isWhitespace } == source.filter { !$0.isWhitespace })
   }
 
+  @Test
+  func translationSessionDoesNotPersistProviderData() {
+    let configuration = TranslationService.sessionConfiguration()
+
+    #expect(configuration.identifier == nil)
+    #expect(configuration.requestCachePolicy == .reloadIgnoringLocalCacheData)
+    #expect(configuration.urlCache == nil)
+    #expect(configuration.httpCookieStorage == nil)
+    #expect(!configuration.httpShouldSetCookies)
+    #expect(configuration.urlCredentialStorage == nil)
+  }
+
   @Test @MainActor
   func importingDocumentsAppendsAndDeduplicatesFiles() throws {
     let temporary = FileManager.default.temporaryDirectory

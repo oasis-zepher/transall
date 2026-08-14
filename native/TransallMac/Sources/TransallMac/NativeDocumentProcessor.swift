@@ -653,6 +653,8 @@ struct TranslationService {
   static let maximumAttempts = 3
   static let maximumRetryDelay: TimeInterval = 30
 
+  private static let requestSession = URLSession(configuration: sessionConfiguration())
+
   let provider: String
   let apiKey: String
   private let requestSender: RequestSender
@@ -660,13 +662,25 @@ struct TranslationService {
 
   init(
     provider: String, apiKey: String,
-    requestSender: @escaping RequestSender = { try await URLSession.shared.data(for: $0) },
+    requestSender: @escaping RequestSender = {
+      try await TranslationService.requestSession.data(for: $0)
+    },
     sleeper: @escaping Sleeper = { try await Task.sleep(for: .seconds($0)) }
   ) {
     self.provider = provider
     self.apiKey = apiKey
     self.requestSender = requestSender
     self.sleeper = sleeper
+  }
+
+  static func sessionConfiguration() -> URLSessionConfiguration {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.urlCache = nil
+    configuration.httpCookieStorage = nil
+    configuration.httpShouldSetCookies = false
+    configuration.urlCredentialStorage = nil
+    return configuration
   }
 
   func translate(_ text: String, source: String, target: String, glossary: String) async throws
@@ -742,6 +756,8 @@ struct TranslationService {
     ]
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    request.httpShouldHandleCookies = false
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 120

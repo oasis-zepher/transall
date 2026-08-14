@@ -12,8 +12,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
-| 1 | Accessibility | 3/4 | 4/4 | Support-site and native state text reach WCAG AA contrast; navigation targets are at least 44 px, and native controls expose labels, values, focus, reduced-motion behavior, and preview-error announcements. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one bounded raster page at a time; oversized images are downsampled for their target use, scanned-PDF routes reuse one raster document handle per input, and large file transfers, PDF previews, startup cleanup, and task deletion run outside the main actor. |
+| 1 | Accessibility | 3/4 | 4/4 | Support-site and native state text reach WCAG AA contrast; navigation targets are at least 44 px, and native controls expose labels, values, focus, reduced-motion behavior, preview-error announcements, and Keychain status announcements. |
+| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one bounded raster page at a time; oversized images are downsampled for their target use, input rows are created lazily, scanned-PDF routes reuse one raster document handle per input, and large file transfers, PDF previews, startup cleanup, and task deletion run outside the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
@@ -35,6 +35,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 4. **Silent PDF page omission** — merge, reorder, and watermark operations now stop with a page-specific error when PDFKit cannot copy a page.
 5. **Native route-state contrast** — the unselected source and target labels now use the 4.95:1 muted-text token instead of the 1.99:1 border token.
 6. **Preview error announcement** — inline preview errors are exposed as one labeled accessibility element and request a high-priority VoiceOver announcement when they appear.
+7. **Large input-list rendering** — the input file well uses a `LazyVStack` within the existing outer scroll view, so large batches do not instantiate every file row at once.
 
 ## Resolved P3 findings
 
@@ -42,6 +43,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 2. Removed unsupported PDF replacement fields from the job model.
 3. Updated the native README from the beta-era requirement to Xcode 26.6 or a compatible newer release.
 4. Added Open Graph assets, per-page social metadata, App Privacy Required Reason coverage for file timestamps, and synthetic review files.
+5. Keychain reload, save, deletion, and failure messages now request VoiceOver announcements; errors use high priority and successful status changes use medium priority.
 
 ## Additional reliability hardening
 

@@ -57,9 +57,11 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Scanned-PDF Markdown extraction and translation open each PDF once for raster access instead of reopening it for every page; damaged or empty PDFs fail with a file-specific error.
 - Translation glossaries are limited to 20,000 characters in both preflight and the processing layer, and multiple text inputs are combined without retaining a second array of document contents.
 - Input imports and result saves run outside the main actor, preserve security-scoped access, and propagate cancellation; large transfers no longer block the SwiftUI event loop.
+- Input file rows use lazy stack rendering inside the workbench scroll view, avoiding eager row creation for large file batches.
 - Startup cleanup and manual task deletion run outside the main actor with cancellation propagation. While deletion is active, the app disables saving, preview generation, duplicate deletion, and new task submission.
 - PDF preview cache inspection and rendering run outside the main actor with cancellation propagation. Preview failures show the exact error and keep a retry action available; a real-window test verified recovery after replacing a damaged PDF with a valid result.
 - Unselected route-state text meets WCAG AA contrast at 4.95:1, and new preview failures request an immediate VoiceOver announcement without moving keyboard focus.
+- Keychain reload, save, deletion, and failure messages request VoiceOver announcements without moving keyboard focus; failures use high priority.
 - PDF merge, reorder, and watermark operations fail with a page-specific error if a page cannot be copied instead of silently producing an incomplete result.
 
 ## Prepared submission material

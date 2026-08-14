@@ -100,6 +100,9 @@ struct JobOptionValidationIssue: Equatable {
 enum JobOptionValidator {
   static let maximumLanguageCharacters = 64
   static let maximumOCRLanguageCharacters = 256
+  static let maximumPageSelectionCharacters = 4_096
+  static let maximumCropBoxCharacters = 256
+  static let maximumWatermarkCharacters = 512
 
   static func issues(
     for route: RouteDefinition, options: JobOptions
@@ -128,7 +131,9 @@ enum JobOptionValidator {
     let values = value.split(separator: ",").compactMap {
       Double($0.trimmingCharacters(in: .whitespaces))
     }
-    guard values.count == 4, values[2] > values[0], values[3] > values[1] else {
+    guard values.count == 4, values.allSatisfy({ $0.isFinite }), values[2] > values[0],
+      values[3] > values[1]
+    else {
       throw NativeDocumentError.invalidOption("裁剪区域必须是 x0,y0,x1,y1，且右下坐标大于左上坐标。")
     }
     return CGRect(
@@ -153,6 +158,13 @@ enum JobOptionValidator {
       ("裁剪页", options.cropPages),
     ]
     for (label, specification) in pageSelections {
+      if specification.count > maximumPageSelectionCharacters {
+        issues.append(
+          JobOptionValidationIssue(
+            code: "page_selection_too_large", message: "\(label)内容过长。",
+            hint: "请控制在 \(maximumPageSelectionCharacters) 个字符以内。"))
+        continue
+      }
       do {
         try PageSelectionParser.validateSyntax(specification)
       } catch {
@@ -171,14 +183,27 @@ enum JobOptionValidator {
           hint: "旋转角度必须是 90、180 或 270。"))
     }
     if !options.cropPages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      do {
-        _ = try parseCropBox(options.cropBox)
-      } catch {
+      if options.cropBox.count > maximumCropBoxCharacters {
         issues.append(
           JobOptionValidationIssue(
-            code: "invalid_crop_box", message: "裁剪区域无效。",
-            hint: error.localizedDescription))
+            code: "crop_box_too_large", message: "裁剪区域内容过长。",
+            hint: "请控制在 \(maximumCropBoxCharacters) 个字符以内。"))
+      } else {
+        do {
+          _ = try parseCropBox(options.cropBox)
+        } catch {
+          issues.append(
+            JobOptionValidationIssue(
+              code: "invalid_crop_box", message: "裁剪区域无效。",
+              hint: error.localizedDescription))
+        }
       }
+    }
+    if options.watermark.count > maximumWatermarkCharacters {
+      issues.append(
+        JobOptionValidationIssue(
+          code: "watermark_too_large", message: "水印文字过长。",
+          hint: "请控制在 \(maximumWatermarkCharacters) 个字符以内。"))
     }
     return issues
   }

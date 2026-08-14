@@ -222,6 +222,40 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func pdfEditOptionBoundsRejectOversizedAndNonfiniteValues() throws {
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 4)
+    var options = JobOptions()
+    options.deletePages = String(
+      repeating: "1", count: JobOptionValidator.maximumPageSelectionCharacters + 1)
+    options.cropPages = "1"
+    options.cropBox = "0,0,inf,20"
+    options.watermark = String(
+      repeating: "水", count: JobOptionValidator.maximumWatermarkCharacters + 1)
+
+    let preflight = NativeDocumentEngine().preflight(
+      route: route, files: [file], options: options)
+    #expect(preflight.blockingIssues.contains { $0.code == "page_selection_too_large" })
+    #expect(preflight.blockingIssues.contains { $0.code == "invalid_crop_box" })
+    #expect(preflight.blockingIssues.contains { $0.code == "watermark_too_large" })
+
+    options.deletePages = ""
+    options.cropBox = String(
+      repeating: "0", count: JobOptionValidator.maximumCropBoxCharacters + 1)
+    options.watermark = ""
+    let oversizedCrop = NativeDocumentEngine().preflight(
+      route: route, files: [file], options: options)
+    #expect(oversizedCrop.blockingIssues.contains { $0.code == "crop_box_too_large" })
+
+    do {
+      _ = try JobOptionValidator.parseCropBox("0,0,inf,20")
+      Issue.record("Non-finite crop coordinates must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_option")
+    }
+  }
+
+  @Test @MainActor
   func translationAndOCROptionsAreRejectedBeforeProcessing() async throws {
     let store = TestCredentialStore(values: [.deepseek: "test-key"])
     let engine = NativeDocumentEngine(credentialStore: store)

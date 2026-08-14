@@ -95,6 +95,39 @@ class CoreBehaviorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "OCR supports PDF and image inputs"):
                 ocr_document(source, Path(tmp) / "out")
 
+    def test_pdf_searchable_ocr_prefers_ocrmypdf(self):
+        from app.ocr import ocr_document
+
+        def fake_run(command, **kwargs):
+            Path(command[-1]).write_bytes(b"%PDF-1.7\n")
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.ocr.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), patch(
+            "app.ocr.subprocess.run", side_effect=fake_run
+        ) as run:
+            root = Path(tmp)
+            source = root / "scan.pdf"
+            make_pdf(source)
+            output = ocr_document(source, root / "out", language="chi_sim+eng")
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "ocrmypdf")
+        self.assertIn("--skip-text", command)
+        self.assertIn("--deskew", command)
+        self.assertEqual(output.name, "scan-ocr.pdf")
+
+    def test_pdf_searchable_ocr_keeps_tesseract_fallback(self):
+        from app.ocr import ocr_document
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.ocr.shutil.which", side_effect=lambda name: None if name == "ocrmypdf" else f"/usr/bin/{name}"), patch(
+            "app.ocr._ocr_to_searchable_pdf"
+        ) as fallback:
+            root = Path(tmp)
+            source = root / "scan.pdf"
+            make_pdf(source)
+            output = ocr_document(source, root / "out")
+
+        fallback.assert_called_once_with(source, output, "chi_sim+eng")
+
     def test_markitdown_extraction_enables_plugins(self):
         from app.conversion import extract_markdown
 
@@ -233,32 +266,24 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertEqual(result.name, "payload.pdf")
         self.assertEqual(rendered, [("payload.json", "payload.pdf")])
 
-    def test_layout_engine_can_use_pdf2zh_when_babeldoc_is_unavailable(self):
+    def test_layout_engine_reports_unavailable_without_babeldoc(self):
         from app.translation_engines import translate_with_layout_engines
         from app.translation import TranslationProvider
 
-        with tempfile.TemporaryDirectory() as tmp, patch("app.translation_engines.babeldoc_available", return_value=False), patch(
-            "app.translation_engines.pdf2zh_available", return_value=True
-        ), patch("app.translation_engines.translate_with_pdf2zh") as translate_with_pdf2zh:
+        with tempfile.TemporaryDirectory() as tmp, patch("app.translation_engines.babeldoc_available", return_value=False):
             source = Path(tmp) / "source.pdf"
             output = Path(tmp) / "translated.pdf"
             make_pdf(source)
-            translate_with_pdf2zh.return_value = output
+            with self.assertRaisesRegex(RuntimeError, "No layout-preserving"):
+                translate_with_layout_engines(
+                    source=source,
+                    output=output,
+                    provider=TranslationProvider("deepseek", "https://api.deepseek.com/v1", "secret", "deepseek-chat"),
+                    source_lang="en",
+                    target_lang="zh",
+                )
 
-            result = translate_with_layout_engines(
-                source=source,
-                output=output,
-                provider=TranslationProvider("deepseek", "https://api.deepseek.com/v1", "secret", "deepseek-chat"),
-                source_lang="en",
-                target_lang="zh",
-                output_mode="translated",
-                glossary="",
-            )
-
-        self.assertEqual(result, output)
-        translate_with_pdf2zh.assert_called_once()
-
-    def test_translation_engine_order_prefers_babeldoc_then_pdf2zh(self):
+    def test_translation_engine_uses_only_babeldoc(self):
         from app.translation_engines import translate_with_layout_engines
         from app.translation import TranslationProvider
 
@@ -268,34 +293,23 @@ class CoreBehaviorTests(unittest.TestCase):
             calls.append("babeldoc")
             raise RuntimeError("babeldoc failed")
 
-        def fake_pdf2zh(*args, **kwargs):
-            calls.append("pdf2zh")
-            output = kwargs["output"]
-            output.write_bytes(b"%PDF-1.7\n")
-            return output
-
         with tempfile.TemporaryDirectory() as tmp, patch("app.translation_engines.babeldoc_available", return_value=True), patch(
-            "app.translation_engines.pdf2zh_available", return_value=True
-        ), patch("app.translation_engines.translate_with_babeldoc", side_effect=fake_babeldoc), patch(
-            "app.translation_engines.translate_with_pdf2zh", side_effect=fake_pdf2zh
+            "app.translation_engines.translate_with_babeldoc", side_effect=fake_babeldoc
         ):
             root = Path(tmp)
             source = root / "source.pdf"
             output = root / "translated.pdf"
             make_pdf(source)
-            result = translate_with_layout_engines(
-                source=source,
-                output=output,
-                provider=TranslationProvider("deepseek", "https://api.deepseek.com/v1", "secret", "deepseek-chat"),
-                source_lang="en",
-                target_lang="zh",
-                pages_spec="",
-                output_mode="translated",
-                glossary="",
-            )
+            with self.assertRaisesRegex(RuntimeError, "BabelDOC"):
+                translate_with_layout_engines(
+                    source=source,
+                    output=output,
+                    provider=TranslationProvider("deepseek", "https://api.deepseek.com/v1", "secret", "deepseek-chat"),
+                    source_lang="en",
+                    target_lang="zh",
+                )
 
-        self.assertEqual(result, output)
-        self.assertEqual(calls, ["babeldoc", "pdf2zh"])
+        self.assertEqual(calls, ["babeldoc"])
 
     def test_pdf_translation_uses_layout_engines_before_fallback(self):
         from app.translation import translate_pdf
@@ -320,7 +334,7 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertNotIn("No OCR in v1", readme)
         self.assertIn("OCR", readme)
         self.assertIn("Playwright", readme)
-        self.assertIn("pdf2zh", readme)
+        self.assertNotIn("pdf2zh", readme)
         self.assertIn("BabelDOC", readme)
         self.assertIn("External Engine Policy", readme)
         self.assertIn("AGPL", readme)
@@ -330,7 +344,7 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertNotIn("pdf2zh", requirements)
         self.assertIn("markitdown[all]", optional_requirements)
         self.assertIn("BabelDOC", optional_requirements)
-        self.assertIn("pdf2zh==1.7.9", optional_requirements)
+        self.assertNotIn("pdf2zh", optional_requirements)
 
 
 if __name__ == "__main__":

@@ -41,8 +41,10 @@ class ApiContractTests(unittest.TestCase):
             self.assertIn("licenseNote", route)
         self.assertEqual(routes[("pdf", "translated_pdf")]["kind"], "pdf_translate")
         self.assertEqual(routes[("pdf", "translated_pdf")]["engine"], "babeldoc")
-        self.assertEqual(routes[("pdf", "translated_pdf")]["fallbackEngines"], ["pdf2zh", "builtin_pdf_translate"])
+        self.assertEqual(routes[("pdf", "translated_pdf")]["fallbackEngines"], ["builtin_pdf_translate"])
         self.assertEqual(routes[("pdf", "ocr")]["kind"], "ocr")
+        self.assertEqual(routes[("pdf", "ocr")]["engine"], "ocrmypdf_ocr")
+        self.assertEqual(routes[("pdf", "ocr")]["fallbackEngines"], ["tesseract_ocr"])
         self.assertEqual(routes[("image", "ocr")]["kind"], "ocr")
         self.assertEqual(routes[("pdf", "pdf")]["kind"], "pdf_edit")
         self.assertEqual(routes[("word", "pdf")]["kind"], "convert")
@@ -263,7 +265,7 @@ class ApiContractTests(unittest.TestCase):
         ), patch("app.diagnostics.command_available") as command_available, patch(
             "app.diagnostics.python_module_available"
         ) as python_module_available:
-            command_available.side_effect = lambda command: command in {"soffice", "tesseract", "babeldoc"}
+            command_available.side_effect = lambda command: command in {"soffice", "tesseract", "babeldoc", "ocrmypdf"}
             python_module_available.side_effect = lambda module: module in {"markitdown", "playwright"}
 
             from app.main import create_app
@@ -277,8 +279,8 @@ class ApiContractTests(unittest.TestCase):
 
         self.assertTrue(by_name["libreoffice"]["available"])
         self.assertTrue(by_name["tesseract"]["available"])
+        self.assertTrue(by_name["ocrmypdf"]["available"])
         self.assertTrue(by_name["babeldoc"]["available"])
-        self.assertFalse(by_name["pdf2zh"]["available"])
         self.assertTrue(by_name["openai"]["available"])
         self.assertFalse(by_name["deepseek"]["available"])
         self.assertIn("Convert Office files to PDF", by_name["libreoffice"]["required_for"])
@@ -286,7 +288,6 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(by_name["libreoffice"]["category"], "external_tool")
         self.assertEqual(by_name["libreoffice"]["risk"], "heavy")
         self.assertEqual(by_name["markitdown"]["category"], "optional")
-        self.assertEqual(by_name["pdf2zh"]["risk"], "license_sensitive")
         self.assertEqual(by_name["pymupdf"]["risk"], "license_sensitive")
         self.assertNotIn("sk-secret", response.text)
 

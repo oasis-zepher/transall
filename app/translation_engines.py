@@ -20,10 +20,6 @@ def babeldoc_available() -> bool:
     return shutil.which("babeldoc") is not None
 
 
-def pdf2zh_available() -> bool:
-    return shutil.which("pdf2zh") is not None
-
-
 def translate_with_layout_engines(
     source: Path,
     output: Path,
@@ -49,20 +45,6 @@ def translate_with_layout_engines(
             )
         except Exception as exc:
             errors.append(f"BabelDOC: {exc}")
-
-    if pdf2zh_available() and not glossary.strip():
-        try:
-            return translate_with_pdf2zh(
-                source=source,
-                output=output,
-                provider=provider,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                pages_spec=pages_spec,
-                output_mode=output_mode,
-            )
-        except Exception as exc:
-            errors.append(f"pdf2zh: {exc}")
 
     raise RuntimeError("; ".join(errors) or "No layout-preserving translation engine is available")
 
@@ -125,47 +107,6 @@ def translate_with_babeldoc(
         shutil.copy2(generated, output)
     if output_mode != "bilingual" and _normalized_pdf_text(source) == _normalized_pdf_text(output):
         raise RuntimeError("BabelDOC output text is unchanged")
-    return output
-
-
-def translate_with_pdf2zh(
-    source: Path,
-    output: Path,
-    provider: ProviderLike,
-    source_lang: str,
-    target_lang: str,
-    pages_spec: str = "",
-    output_mode: str = "translated",
-) -> Path:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    env = {
-        **__import__("os").environ.copy(),
-        "OPENAI_API_KEY": provider.api_key,
-        "OPENAI_BASE_URL": provider.base_url,
-    }
-    command = [
-        "pdf2zh",
-        str(source.resolve()),
-        "--service",
-        f"openai:{provider.model}",
-        "--lang-in",
-        source_lang or "en",
-        "--lang-out",
-        target_lang or "zh",
-        "--thread",
-        "4",
-    ]
-    if pages_spec:
-        command.extend(["--pages", pages_spec])
-
-    subprocess.run(command, cwd=output.parent, env=env, check=True, capture_output=True, text=True, timeout=1800)
-    generated = output.parent / f"{source.stem}-{'dual' if output_mode == 'bilingual' else 'zh'}.pdf"
-    if not generated.exists():
-        raise RuntimeError("pdf2zh did not produce the expected PDF output")
-    if generated != output:
-        shutil.copy2(generated, output)
-    if output_mode != "bilingual" and _normalized_pdf_text(source) == _normalized_pdf_text(output):
-        raise RuntimeError("pdf2zh output text is unchanged")
     return output
 
 

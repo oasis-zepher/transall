@@ -45,12 +45,12 @@ ROUTE_COPY: dict[str, dict[str, str]] = {
     "pdf_translate": {
         "kindLabel": "PDF 翻译",
         "output": "输出为纯译文 PDF 或双语对照 PDF。",
-        "summary": "优先使用 BabelDOC 做版式保真翻译，失败后回退到 pdf2zh，再回退到基础文本重建。扫描件请先走 OCR。",
+        "summary": "使用 BabelDOC 做版式保真翻译；不可用时回退到基础文本重建。扫描件请先走 OCR。",
     },
     "ocr": {
         "kindLabel": "OCR",
         "output": "输出为可搜索 PDF 或纯文本。",
-        "summary": "使用本机 Tesseract 识别 PDF 或图片中的文字。适合扫描件、截图和图片型 PDF。",
+        "summary": "PDF 优先使用 OCRmyPDF 生成可搜索文件；图片和纯文本识别使用 Tesseract。",
     },
 }
 
@@ -176,8 +176,8 @@ def preflight(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _supported_routes():
-    yield _route("pdf", "translated_pdf", "pdf_translate", engine="babeldoc", fallback_engines=["pdf2zh", "builtin_pdf_translate"], requirements=[{"name": "deepseek", "required": True}, {"name": "babeldoc", "required": False}, {"name": "pdf2zh", "required": False}], option_panels=["translate", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
-    yield _route("pdf", "ocr", "ocr", engine="tesseract_ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
+    yield _route("pdf", "translated_pdf", "pdf_translate", engine="babeldoc", fallback_engines=["builtin_pdf_translate"], requirements=[{"name": "deepseek", "required": True}, {"name": "babeldoc", "required": False}], option_panels=["translate", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
+    yield _route("pdf", "ocr", "ocr", engine="ocrmypdf_ocr", fallback_engines=["tesseract_ocr"], requirements=[{"name": "tesseract", "required": True}, {"name": "ocrmypdf", "required": False}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"])
     yield _route("image", "ocr", "ocr", engine="tesseract_ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["image"]["input"])
     yield _route("pdf", "md", "extract_markdown", engine="markitdown", fallback_engines=["tesseract_ocr"], requirements=[{"name": "markitdown", "required": "one-of-markdown"}, {"name": "tesseract", "required": "one-of-markdown"}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["pdf"]["input"], ocrFallback=True)
     yield _route("image", "md", "extract_markdown", engine="tesseract_ocr", requirements=[{"name": "tesseract", "required": True}], option_panels=["ocr", "advanced"], accept=FORMAT_DEFINITIONS["image"]["input"], ocrFallback=True)
@@ -245,6 +245,8 @@ def _requirements_for_route(route: dict[str, Any] | None, options: dict[str, Any
         requirements = [{"name": provider, "required": True}] + [
             item for item in requirements if item.get("name") not in {"deepseek", "openai"}
         ]
+    if route.get("kind") == "ocr" and options.get("output_format") == "text":
+        requirements = [item for item in requirements if item.get("name") != "ocrmypdf"]
     return requirements
 
 

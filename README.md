@@ -36,8 +36,8 @@ Provider API keys are never returned by `/api/config/providers`.
 - Convert to PDF: Office via LibreOffice, Markdown/HTML/text/data via full Playwright Chromium print layout, images via Pillow.
 - Extract Markdown: MarkItDown with plugins enabled for common document, data, archive, and media-adjacent inputs.
 - PDF edits: merge, delete pages, reorder, rotate, crop, watermark, text find/replace.
-- PDF translation: BabelDOC first for layout-preserving translation, then pdf2zh, then fallback OpenAI-compatible DeepSeek/OpenAI reconstruction. Outputs translated or bilingual PDF.
-- OCR: local Tesseract for PDF and image inputs, with searchable PDF or plain text output.
+- PDF translation: BabelDOC for layout-preserving translation, with an OpenAI-compatible DeepSeek/OpenAI text reconstruction fallback. Outputs translated or bilingual PDF.
+- OCR: OCRmyPDF for searchable PDF output when installed; Tesseract handles images, plain text output, and the compatibility fallback.
 - Files are stored under `work/docwork-data` and cleaned by the app TTL policy.
 
 ## Install By Feature
@@ -62,10 +62,10 @@ brew install libreoffice
 brew install --cask libreoffice
 ```
 
-OCR and OCR fallback for PDF/Image to Markdown use local Tesseract:
+OCR uses one public workflow. OCRmyPDF improves searchable PDF output without adding another UI mode; Tesseract remains the image/text engine and fallback:
 
 ```bash
-brew install tesseract tesseract-lang
+brew install ocrmypdf tesseract-lang
 ```
 
 Enhanced Markdown extraction and layout-preserving PDF translation are optional:
@@ -74,21 +74,19 @@ Enhanced Markdown extraction and layout-preserving PDF translation are optional:
 python -m pip install -r requirements-optional.txt
 ```
 
-`pdf2zh==1.7.9` and `numpy<2.3` are kept in `requirements-optional.txt` because newer pdf2zh releases currently require Python `<3.13`; this project is running on Python 3.13.
-
 Layout translation engine order:
 
 ```text
-BabelDOC CLI -> pdf2zh CLI -> built-in fallback translator
+BabelDOC CLI -> built-in fallback translator
 ```
 
-BabelDOC uses OpenAI-compatible settings from the selected provider and is preferred because it is closer to pdf2zh/BabelDOC style layout reconstruction than the fallback text-only PDF builder.
+BabelDOC uses OpenAI-compatible settings from the selected provider and preserves layout more effectively than the fallback text-only PDF builder.
 
 ## External Engine Policy
 
 transall does not copy AGPL or large third-party engine source into this repository. It calls installed local tools or packages through adapters:
 
-- LibreOffice, Tesseract, Playwright Chromium, BabelDOC, and pdf2zh remain external/local engines.
+- LibreOffice, OCRmyPDF, Tesseract, Playwright Chromium, and BabelDOC remain external/local engines.
+- OCRmyPDF is MPL-2.0 and is called as an installed local command; its source is not copied into transall.
 - PyMuPDF is installed as a Python package and is not vendored; it is dual licensed under AGPL-3.0 or a commercial Artifex license.
-- pdf2zh is AGPLv3 and is only used as an optional local CLI fallback.
 - MarkItDown and BabelDOC are optional installed packages, not copied source.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import fitz
@@ -30,7 +31,10 @@ def ocr_document(
         return output
 
     output = output_dir / f"{source.stem}-ocr.pdf"
-    _ocr_to_searchable_pdf(source, output, language)
+    if ext in PDF_EXTENSIONS and shutil.which("ocrmypdf"):
+        _ocr_pdf_with_ocrmypdf(source, output, language)
+    else:
+        _ocr_to_searchable_pdf(source, output, language)
     return output
 
 
@@ -75,6 +79,32 @@ def _ocr_to_searchable_pdf(source: Path, output: Path, language: str) -> None:
         target.save(output)
     finally:
         target.close()
+
+
+def _ocr_pdf_with_ocrmypdf(source: Path, output: Path, language: str) -> None:
+    command = [
+        "ocrmypdf",
+        "--language",
+        language,
+        "--skip-text",
+        "--rotate-pages",
+        "--deskew",
+        "--jobs",
+        "2",
+        "--output-type",
+        "pdf",
+        str(source),
+        str(output),
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("OCRmyPDF timed out after 15 minutes") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "OCRmyPDF failed").strip()
+        raise RuntimeError(f"OCRmyPDF failed: {detail}") from exc
+    if not output.exists():
+        raise RuntimeError("OCRmyPDF did not produce a PDF")
 
 
 def _iter_page_images(source: Path):

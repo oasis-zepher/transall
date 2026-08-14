@@ -59,6 +59,16 @@ DEPENDENCY_DEFINITIONS: dict[str, dict[str, Any]] = {
         "detail": "OCR uses the local Tesseract command through pytesseract. transall does not vendor OCR engine source.",
         "install_hint": "brew install tesseract tesseract-lang && python -m pip install -r requirements.txt",
     },
+    "ocrmypdf": {
+        "label": "OCRmyPDF",
+        "availability": {"type": "command", "name": "ocrmypdf"},
+        "category": "optional",
+        "risk": "heavy",
+        "required_for": ["Searchable PDF OCR"],
+        "detail": "PDF OCR uses the installed OCRmyPDF command when available; transall does not vendor its source.",
+        "install_hint": "brew install ocrmypdf tesseract-lang",
+        "license_note": "OCRmyPDF is MPL-2.0 and is called as an installed local command.",
+    },
     "babeldoc": {
         "label": "BabelDOC",
         "availability": {"type": "command", "name": "babeldoc"},
@@ -68,16 +78,6 @@ DEPENDENCY_DEFINITIONS: dict[str, dict[str, Any]] = {
         "detail": "Optional primary layout-preserving translation engine called as a local CLI.",
         "install_hint": "python -m pip install -r requirements-optional.txt",
         "license_note": "BabelDOC is not vendored; install and license it separately.",
-    },
-    "pdf2zh": {
-        "label": "pdf2zh",
-        "availability": {"type": "command", "name": "pdf2zh"},
-        "category": "optional",
-        "risk": "license_sensitive",
-        "required_for": ["PDF translation fallback"],
-        "detail": "Optional secondary layout-preserving translation engine called as a local CLI.",
-        "install_hint": "python -m pip install -r requirements-optional.txt",
-        "license_note": "pdf2zh is AGPLv3 and is not vendored by transall.",
     },
     "deepseek": {
         "label": "DeepSeek",
@@ -126,6 +126,11 @@ ENGINE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "dependencies": ["tesseract", "pymupdf"],
         "license_note": "Tesseract is called as a local OCR engine; source is not vendored.",
     },
+    "ocrmypdf_ocr": {
+        "label": "OCRmyPDF adapter",
+        "dependencies": ["ocrmypdf", "tesseract"],
+        "license_note": "OCRmyPDF is called as an installed local command; source is not vendored.",
+    },
     "pymupdf_pdf_edit": {
         "label": "PyMuPDF PDF editor",
         "dependencies": ["pymupdf"],
@@ -135,11 +140,6 @@ ENGINE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "label": "BabelDOC layout translator",
         "dependencies": ["babeldoc"],
         "license_note": "BabelDOC is optional and not vendored.",
-    },
-    "pdf2zh": {
-        "label": "pdf2zh layout translator",
-        "dependencies": ["pdf2zh"],
-        "license_note": "pdf2zh is AGPLv3 and is not vendored.",
     },
     "builtin_pdf_translate": {
         "label": "transall PDF translation fallback",

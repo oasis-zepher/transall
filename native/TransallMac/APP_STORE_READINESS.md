@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 75/75 Swift package tests, 75/75 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 77/77 Swift package tests, 77/77 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -46,6 +46,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Translation uses a dedicated ephemeral network session with URL caching, cookies, and shared URL credential storage disabled; individual requests also reject caching and cookies.
 - Task-state writes no longer fail silently: processing does not start until the running state is saved, completion/failure/cancellation write errors remain visible, and a complete output can restore its finished state without reprocessing.
 - Restart recovery requires a completion receipt written only after the processor returns successfully. A readable but partial PDF without that receipt is never presented as a completed result.
+- If processing fails or is cancelled after writing part of its result, the incomplete output is removed on a utility-priority task. Cleanup failures are visible in the engine log. A successfully generated result is still retained when only its completion receipt or final task-state write fails, preserving restart recovery.
 - After a restart, interrupted translation tasks stop with a retryable explanation instead of automatically issuing another provider request. Interrupted local-only tasks still resume automatically.
 - Choosing **Reselect Route** clears the current task's restoration reference, so a task the user dismissed does not reappear on the next launch. This action does not immediately delete its local files; they remain covered by manual deletion and the 24-hour automatic retention cleanup.
 - Stored task identifiers, input and output names, route-specific input counts, options, state files, and task directories are validated before recovery, preview, or export. Path traversal, symbolic-link substitutions, invalid options, and impossible input counts are rejected, while damaged running metadata becomes a visible, deletable failed task instead of resuming work from unsafe state.

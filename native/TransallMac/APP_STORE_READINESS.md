@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 61 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 62 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -65,6 +65,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Input inspection, input copies, and result saves run outside the main actor, preserve security-scoped access, and propagate cancellation; large transfers no longer block the SwiftUI event loop.
 - Input file rows use lazy stack rendering inside the workbench scroll view, avoiding eager row creation for large file batches.
 - Startup cleanup and manual task deletion run outside the main actor with cancellation propagation. Deletion cancels and waits for any in-flight preview before removing the task directory, so late preview writes cannot recreate deleted local data. While deletion is active, the app disables saving, preview generation, duplicate deletion, and new task submission.
+- Cancelled processing tasks remain tracked until their background work exits. Deleting a cancelled task cancels and waits for that processor before removing the task directory, so a late processor write cannot recreate deleted local data.
 - PDF preview cache inspection and rendering run outside the main actor with cancellation propagation. Preview failures show the exact error and keep a retry action available; a real-window test verified recovery after replacing a damaged PDF with a valid result.
 - Unselected route-state text meets WCAG AA contrast at 4.95:1, and new preview failures request an immediate VoiceOver announcement without moving keyboard focus.
 - Keychain reload, save, deletion, and failure messages request VoiceOver announcements without moving keyboard focus; failures use high priority.

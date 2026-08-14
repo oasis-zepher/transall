@@ -1363,6 +1363,39 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func resettingRouteClearsDismissedJobRestoration() throws {
+    let suiteName = "transall-reset-route-test-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+
+    let jobID = UUID().uuidString.lowercased()
+    preferences.set(jobID, forKey: "transall.native.lastJobId")
+    let model = AppModel(
+      backend: NativeDocumentEngine(), preferences: preferences)
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
+    let now = ISO8601DateFormatter().string(from: Date())
+    model.currentJob = JobResponse(
+      id: jobID, kind: "pdf_edit", status: "done", inputs: ["source.pdf"],
+      createdAt: now, updatedAt: now, output: "source-edited.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    model.previewPages = [PreviewPage(page: 1, url: "preview.png")]
+    model.preflightWarnings = [
+      PreflightIssue(code: "old_warning", dependency: nil, message: "旧警告", hint: nil)
+    ]
+
+    model.resetRoute(animated: false)
+
+    #expect(model.selection == RouteSelection())
+    #expect(model.currentJob == nil)
+    #expect(model.previewPages.isEmpty)
+    #expect(model.preflightWarnings.isEmpty)
+    let reopenedPreferences = try #require(UserDefaults(suiteName: suiteName))
+    #expect(reopenedPreferences.string(forKey: "transall.native.lastJobId") == nil)
+  }
+
+  @Test @MainActor
   func runtimeCleanupRemovesExpiredCurrentJobButKeepsRunningWork() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(

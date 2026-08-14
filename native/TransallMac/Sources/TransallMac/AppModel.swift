@@ -39,14 +39,17 @@ final class AppModel: ObservableObject {
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
   private var retentionCleanupTask: Task<Void, Never>?
+  private let preferences: UserDefaults
   private let lastJobKey = "transall.native.lastJobId"
 
   init() {
     backend = NativeDocumentEngine()
+    preferences = .standard
   }
 
-  init(backend: NativeDocumentEngine) {
+  init(backend: NativeDocumentEngine, preferences: UserDefaults = .standard) {
     self.backend = backend
+    self.preferences = preferences
   }
 
   let formatOrder = [
@@ -154,6 +157,7 @@ final class AppModel: ObservableObject {
       return
     }
     pollingTask?.cancel()
+    preferences.removeObject(forKey: lastJobKey)
     let changes = { [self] in
       selection.clear()
       documents = []
@@ -288,7 +292,7 @@ final class AppModel: ObservableObject {
 
       let job = try await backend.createJob(route: route, files: documents, options: options)
       currentJob = job
-      UserDefaults.standard.set(job.id, forKey: lastJobKey)
+      preferences.set(job.id, forKey: lastJobKey)
       isSubmitting = false
       beginPolling(jobID: job.id)
     } catch {
@@ -401,8 +405,8 @@ final class AppModel: ObservableObject {
   }
 
   private func clearJobState(id: String) {
-    if UserDefaults.standard.string(forKey: lastJobKey) == id {
-      UserDefaults.standard.removeObject(forKey: lastJobKey)
+    if preferences.string(forKey: lastJobKey) == id {
+      preferences.removeObject(forKey: lastJobKey)
     }
     guard currentJob?.id == id else { return }
     currentJob = nil
@@ -433,7 +437,7 @@ final class AppModel: ObservableObject {
   }
 
   private func restoreLastJob() async {
-    guard let jobID = UserDefaults.standard.string(forKey: lastJobKey) else { return }
+    guard let jobID = preferences.string(forKey: lastJobKey) else { return }
     do {
       let job = try backend.job(id: jobID)
       currentJob = job
@@ -443,7 +447,7 @@ final class AppModel: ObservableObject {
         await loadPreview(jobID: job.id)
       }
     } catch {
-      UserDefaults.standard.removeObject(forKey: lastJobKey)
+      preferences.removeObject(forKey: lastJobKey)
     }
   }
 }

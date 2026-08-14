@@ -843,6 +843,154 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func corruptResultPathCannotEscapeJobDirectory() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-result-boundary-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let secret = dataDirectory.appendingPathComponent("outside.txt")
+    try Data("must stay private".utf8).write(to: secret, options: .atomic)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: "../../outside.txt", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+    let destination = temporary.appendingPathComponent("exported.txt")
+
+    do {
+      try await engine.download(jobID: jobID, to: destination)
+      Issue.record("A stored result path must not escape its job directory")
+    } catch {
+      #expect(error.localizedDescription.contains("文件名无效"))
+    }
+
+    #expect(!FileManager.default.fileExists(atPath: destination.path))
+    #expect(try String(contentsOf: secret, encoding: .utf8) == "must stay private")
+  }
+
+  @Test @MainActor
+  func symbolicLinkResultCannotBeDownloaded() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-result-link-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let secret = temporary.appendingPathComponent("outside.pdf")
+    try Data("outside data".utf8).write(to: secret, options: .atomic)
+    try FileManager.default.createSymbolicLink(
+      at: jobDirectory.appendingPathComponent("result.pdf"), withDestinationURL: secret)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: "result.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+    let destination = temporary.appendingPathComponent("exported.pdf")
+
+    do {
+      try await engine.download(jobID: jobID, to: destination)
+      Issue.record("A symbolic-link result must not be downloaded")
+    } catch {
+      #expect(error.localizedDescription.contains("普通文件"))
+    }
+
+    #expect(!FileManager.default.fileExists(atPath: destination.path))
+  }
+
+  @Test @MainActor
+  func corruptRecoveryInputPathCannotEscapeInputDirectory() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-input-boundary-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: jobDirectory.appendingPathComponent("Input", isDirectory: true),
+      withIntermediateDirectories: true)
+    let outside = dataDirectory.appendingPathComponent("Jobs/outside.txt")
+    try Data("must not be processed".utf8).write(to: outside, options: .atomic)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let running = JobResponse(
+      id: jobID, kind: route.kind, status: "running", inputs: ["outside.txt"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    try persistTestJob(running, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(
+        route: route, options: JobOptions(), inputNames: ["../../outside.txt"])
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "job_state_corrupt")
+    #expect(restored.error?.contains("文件名无效") == true)
+    #expect(restored.errorHint?.contains("删除") == true)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: jobDirectory.appendingPathComponent("outside.pdf").path))
+
+    try await engine.deleteJob(id: jobID)
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
+  func symbolicLinkJobDirectoryIsRejected() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-job-directory-link-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let externalDirectory = temporary.appendingPathComponent("External", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: externalDirectory, withIntermediateDirectories: true)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: "result.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: externalDirectory)
+    try FileManager.default.createSymbolicLink(
+      at: dataDirectory.appendingPathComponent("Jobs/\(jobID)"),
+      withDestinationURL: externalDirectory)
+
+    do {
+      _ = try engine.job(id: jobID)
+      Issue.record("A symbolic-link job directory must not be opened")
+    } catch {
+      #expect(error.localizedDescription.contains("不是有效目录"))
+    }
+  }
+
+  @Test @MainActor
   func startupRemovesOnlyExpiredJobDirectories() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-expired-job-test-\(UUID().uuidString)", isDirectory: true)

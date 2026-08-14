@@ -146,7 +146,10 @@ struct InputWorkbenchView: View {
     .accessibilityHint(
       model.isImporting
         ? "全部文件通过校验后才会加入列表"
-        : (model.documents.isEmpty ? "按回车键选择文件，也可以将文件拖到这里" : "可继续添加或移除文件"))
+        : (model.documents.isEmpty
+          ? "按回车键选择文件，也可以将文件拖到这里"
+          : "可继续添加或移除文件")
+    )
     .accessibilityAddTraits(model.documents.isEmpty && !model.isImporting ? .isButton : [])
     .accessibilityAction(named: "选择文件") {
       guard !model.isImporting else { return }

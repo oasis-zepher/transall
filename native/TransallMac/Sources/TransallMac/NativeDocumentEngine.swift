@@ -203,9 +203,31 @@ final class NativeDocumentEngine: ObservableObject {
     if let job = jobs[id] { return job }
     let directory = try jobDirectory(id)
     let job: JobResponse = try load("job.json", from: directory)
-    jobs[id] = job
+    guard job.id == id else {
+      throw NativeDocumentError.invalidFile("任务状态与任务编号不一致，数据可能已经损坏。")
+    }
     if job.isRunning, tasks[id] == nil {
-      let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
+      let metadata: NativeJobMetadata
+      do {
+        metadata = try load("metadata.json", from: directory)
+        try Self.validateStoredMetadata(metadata, for: job)
+      } catch {
+        let corrupted = replacing(
+          job, status: "failed", stage: "failed", message: "任务数据已损坏。",
+          error: error.localizedDescription, errorCode: "job_state_corrupt",
+          errorHint: "删除这项本地任务后，重新选择原文件运行。", retryable: false,
+          progress: job.progress, logs: job.logs + ["任务恢复已停止：本地状态校验失败。"])
+        jobs[id] = corrupted
+        do {
+          try jobPersister(corrupted, directory)
+        } catch {
+          jobs[id] = appendingLog(
+            "警告：损坏状态未能保存：\(error.localizedDescription)", to: corrupted)
+          appendPersistenceWarning(jobID: id, action: "保存损坏状态", error: error)
+        }
+        return jobs[id] ?? corrupted
+      }
+      jobs[id] = job
       if let recovered = recoveredState(job, metadata: metadata, directory: directory) {
         jobs[id] = recovered
         do {
@@ -219,6 +241,8 @@ final class NativeDocumentEngine: ObservableObject {
         appendLog("正在恢复上次未完成的本地任务 \(id.prefix(8))。")
         launch(jobID: id, metadata: metadata, directory: directory)
       }
+    } else {
+      jobs[id] = job
     }
     return jobs[id] ?? job
   }
@@ -252,7 +276,9 @@ final class NativeDocumentEngine: ObservableObject {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
     }
     if jobs[id] == nil, let persisted: JobResponse = try? load("job.json", from: directory),
-      persisted.isRunning
+      persisted.id == id, persisted.isRunning,
+      let metadata: NativeJobMetadata = try? load("metadata.json", from: directory),
+      (try? Self.validateStoredMetadata(metadata, for: persisted)) != nil
     {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
     }
@@ -279,7 +305,8 @@ final class NativeDocumentEngine: ObservableObject {
     guard job.status == "done", let output = job.output else {
       throw NativeDocumentError.processing("任务还没有可保存的结果。")
     }
-    let source = try jobDirectory(jobID).appendingPathComponent(output)
+    let source = try Self.validatedRegularFile(
+      named: output, in: jobDirectory(jobID), description: "任务结果")
     let transfer = Task.detached(priority: .userInitiated) {
       let accessing = destination.startAccessingSecurityScopedResource()
       defer { if accessing { destination.stopAccessingSecurityScopedResource() } }
@@ -298,7 +325,8 @@ final class NativeDocumentEngine: ObservableObject {
     }
     let directory = try jobDirectory(jobID)
     let previewDirectory = directory.appendingPathComponent("Preview", isDirectory: true)
-    let outputURL = directory.appendingPathComponent(output)
+    let outputURL = try Self.validatedRegularFile(
+      named: output, in: directory, description: "任务结果")
     let urls = try await PreviewCache.pages(pdfURL: outputURL, directory: previewDirectory)
     return PreviewResponse(
       pages: urls.enumerated().map { index, url in
@@ -319,15 +347,16 @@ final class NativeDocumentEngine: ObservableObject {
         credentialError = "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)"
       }
     }
-    let inputURLs = metadata.inputNames.map { directory.appendingPathComponent("Input/\($0)") }
-    let outputURL = directory.appendingPathComponent(
-      OutputFileNamer.name(
-        for: metadata.route, options: metadata.options, inputNames: metadata.inputNames))
-
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
       guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
       do {
         if let credentialError { throw NativeDocumentError.provider(credentialError) }
+        let inputURLs = try Self.validatedStoredInputs(
+          named: metadata.inputNames, in: directory)
+        let outputURL = try Self.containedFileURL(
+          named: OutputFileNamer.name(
+            for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
+          in: directory, description: "任务结果")
         let result = try await NativeDocumentProcessor.process(
           route: metadata.route, inputs: inputURLs, options: metadata.options,
           outputURL: outputURL, apiKey: apiKey)
@@ -513,7 +542,8 @@ final class NativeDocumentEngine: ObservableObject {
         try Task.checkCancellation()
         let safeName =
           "\(index + 1)-\(document.name.replacingOccurrences(of: "/", with: "-"))"
-        let destination = inputDirectory.appendingPathComponent(safeName)
+        let destination = try containedFileURL(
+          named: safeName, in: inputDirectory, description: "输入文件")
         let accessing = document.url.startAccessingSecurityScopedResource()
         defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
         do {
@@ -582,17 +612,21 @@ final class NativeDocumentEngine: ObservableObject {
       at: directory.appendingPathComponent("Jobs", isDirectory: true),
       withIntermediateDirectories: true)
     let jobsDirectory = directory.appendingPathComponent("Jobs", isDirectory: true)
+    try validateDirectory(jobsDirectory, description: "任务数据目录")
     let directories = try FileManager.default.contentsOfDirectory(
       at: jobsDirectory,
-      includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+      includingPropertiesForKeys: [
+        .contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey,
+      ],
       options: [.skipsHiddenFiles])
     var warnings: [String] = []
     for directory in directories {
       try Task.checkCancellation()
       do {
         let values = try directory.resourceValues(
-          forKeys: [.contentModificationDateKey, .isDirectoryKey])
-        guard values.isDirectory == true, let modified = values.contentModificationDate,
+          forKeys: [.contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isSymbolicLink != true, values.isDirectory == true,
+          let modified = values.contentModificationDate,
           Date().timeIntervalSince(modified) > 24 * 60 * 60
         else { continue }
         try FileManager.default.removeItem(at: directory)
@@ -607,12 +641,16 @@ final class NativeDocumentEngine: ObservableObject {
     guard let dataDirectory else {
       throw NativeDocumentError.processing("原生文档引擎尚未就绪。")
     }
-    let safe = id.filter { $0.isLetter || $0.isNumber || $0 == "-" }
-    guard safe == id else { throw NativeDocumentError.invalidOption("任务编号无效。") }
-    let directory = dataDirectory.appendingPathComponent("Jobs/\(safe)", isDirectory: true)
+    guard UUID(uuidString: id)?.uuidString.lowercased() == id else {
+      throw NativeDocumentError.invalidOption("任务编号无效。")
+    }
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    try Self.validateDirectory(jobsDirectory, description: "任务数据目录")
+    let directory = jobsDirectory.appendingPathComponent(id, isDirectory: true)
     guard FileManager.default.fileExists(atPath: directory.path) else {
       throw NativeDocumentError.processing("找不到任务数据。")
     }
+    try Self.validateDirectory(directory, description: "任务目录")
     return directory
   }
 
@@ -633,7 +671,11 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private nonisolated static func isCompleteResult(_ url: URL) -> Bool {
-    guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+    guard
+      let values = try? url.resourceValues(
+        forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+      values.isSymbolicLink != true, values.isRegularFile == true
+    else {
       return false
     }
     if url.pathExtension.lowercased() == "pdf" {
@@ -643,7 +685,90 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func load<T: Decodable>(_ name: String, from directory: URL) throws -> T {
-    try JSONDecoder().decode(T.self, from: Data(contentsOf: directory.appendingPathComponent(name)))
+    let url = try Self.validatedRegularFile(
+      named: name, in: directory, description: "任务状态文件")
+    return try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
+  }
+
+  private nonisolated static func validateStoredInputNames(_ names: [String]) throws {
+    guard !names.isEmpty else {
+      throw NativeDocumentError.invalidFile("任务没有可恢复的输入文件。")
+    }
+    guard Set(names).count == names.count else {
+      throw NativeDocumentError.invalidFile("任务输入列表包含重复文件，数据可能已经损坏。")
+    }
+    for name in names {
+      guard isSafeFileName(name) else {
+        throw NativeDocumentError.invalidFile("任务输入文件名无效，数据可能已经损坏。")
+      }
+    }
+  }
+
+  private nonisolated static func validateStoredMetadata(
+    _ metadata: NativeJobMetadata, for job: JobResponse
+  ) throws {
+    guard metadata.route.kind == job.kind else {
+      throw NativeDocumentError.invalidFile("任务路径与任务状态不一致，数据可能已经损坏。")
+    }
+    try validateStoredInputNames(metadata.inputNames)
+  }
+
+  private nonisolated static func validatedStoredInputs(
+    named names: [String], in jobDirectory: URL
+  ) throws -> [URL] {
+    try validateStoredInputNames(names)
+    let inputDirectory = jobDirectory.appendingPathComponent("Input", isDirectory: true)
+    try validateDirectory(inputDirectory, description: "任务输入目录")
+    return try names.map {
+      try validatedRegularFile(named: $0, in: inputDirectory, description: "任务输入")
+    }
+  }
+
+  private nonisolated static func validatedRegularFile(
+    named name: String, in directory: URL, description: String
+  ) throws -> URL {
+    let url = try containedFileURL(named: name, in: directory, description: description)
+    let values: URLResourceValues
+    do {
+      values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    } catch {
+      throw NativeDocumentError.invalidFile("\(description)不可读取：\(error.localizedDescription)")
+    }
+    guard values.isSymbolicLink != true, values.isRegularFile == true else {
+      throw NativeDocumentError.invalidFile("\(description)不是有效的普通文件。")
+    }
+    return url
+  }
+
+  private nonisolated static func containedFileURL(
+    named name: String, in directory: URL, description: String
+  ) throws -> URL {
+    guard isSafeFileName(name) else {
+      throw NativeDocumentError.invalidFile("\(description)的文件名无效。")
+    }
+    let standardizedDirectory = directory.standardizedFileURL
+    let url = directory.appendingPathComponent(name, isDirectory: false).standardizedFileURL
+    guard url.deletingLastPathComponent() == standardizedDirectory else {
+      throw NativeDocumentError.invalidFile("\(description)超出任务目录。")
+    }
+    return url
+  }
+
+  private nonisolated static func isSafeFileName(_ name: String) -> Bool {
+    !name.isEmpty && name != "." && name != ".." && !name.contains("/")
+      && URL(fileURLWithPath: name).lastPathComponent == name
+  }
+
+  private nonisolated static func validateDirectory(_ url: URL, description: String) throws {
+    let values: URLResourceValues
+    do {
+      values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+    } catch {
+      throw NativeDocumentError.invalidFile("\(description)不可读取：\(error.localizedDescription)")
+    }
+    guard values.isSymbolicLink != true, values.isDirectory == true else {
+      throw NativeDocumentError.invalidFile("\(description)不是有效目录。")
+    }
   }
 
   private func appendLog(_ text: String) {
@@ -660,6 +785,11 @@ enum AtomicResultSaver {
       ".transall-save-\(UUID().uuidString)", isDirectory: false)
     do {
       try Task.checkCancellation()
+      let sourceValues = try source.resourceValues(
+        forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+      guard sourceValues.isSymbolicLink != true, sourceValues.isRegularFile == true else {
+        throw NativeDocumentError.invalidFile("任务结果不是有效的普通文件。")
+      }
       try manager.copyItem(at: source, to: temporary)
       try Task.checkCancellation()
       if manager.fileExists(atPath: destination.path) {

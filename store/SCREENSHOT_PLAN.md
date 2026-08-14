@@ -8,7 +8,7 @@ Capture from the signed release candidate at a supported 16:10 size, preferably 
 | 2 | PDF editing | Two neutral sample PDFs, merge/edit controls, advanced page fields |
 | 3 | OCR result | Completed state, page previews, local Vision log, recognizable output filename |
 | 4 | Translation disclosure | PDF → 译文 PDF path, provider picker, clear remote-processing notice; no API key |
-| 5 | Settings and privacy | Provider status, Keychain statement, next-launch cleanup after 24 hours, privacy-policy links |
+| 5 | Settings and privacy | Provider status, Keychain statement, automatic cleanup after 24 hours, privacy-policy links |
 
 ## Prepared synthetic files
 

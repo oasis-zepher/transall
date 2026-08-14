@@ -31,7 +31,7 @@ test("server-renders the Transall support page", async () => {
   const html = await response.text();
   assert.match(html, /<title>Transall 支持<\/title>/i);
   assert.match(html, /本地 PDF 与文档工作台/);
-  assert.match(html, /超过 24 小时后，会在下次启动时自动清理/);
+  assert.match(html, /超过 24 小时后，会在启动时及运行期间定期自动清理/);
   assert.match(html, /href="\/privacy"/);
   assert.match(html, /rel="icon" href="\/icon\.png"/);
   assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/);

@@ -24,7 +24,7 @@ swift build
 swift run TransallMac
 ```
 
-Local task copies, previews, logs, and results are stored in the app's Application Support container. Task data can be deleted from the result panel and is removed on the next app launch after it becomes more than 24 hours old.
+Local task copies, previews, logs, and results are stored in the app's Application Support container. Task data can be deleted from the result panel and is removed after it becomes more than 24 hours old, either when the app launches or during an hourly retention check while the app remains open. Active processing is never removed by a runtime retention check.
 
 ## Tests
 

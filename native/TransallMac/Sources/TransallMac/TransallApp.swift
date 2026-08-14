@@ -8,6 +8,7 @@ struct TransallApp: App {
     WindowGroup {
       ContentView()
         .environmentObject(model)
+        .preferredColorScheme(.light)
         .frame(minWidth: 760, minHeight: 680)
         .task {
           await model.start()
@@ -18,5 +19,12 @@ struct TransallApp: App {
     }
     .windowStyle(.hiddenTitleBar)
     .defaultSize(width: 1240, height: 820)
+
+    Settings {
+      SettingsView()
+        .environmentObject(model)
+        .preferredColorScheme(.light)
+        .frame(width: 500)
+    }
   }
 }

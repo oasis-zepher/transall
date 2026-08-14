@@ -119,6 +119,17 @@ struct InputWorkbenchView: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("文件选择区")
+    .accessibilityHint(model.documents.isEmpty ? "按回车键选择文件，也可以将文件拖到这里" : "可继续添加或移除文件")
+    .accessibilityAddTraits(model.documents.isEmpty ? .isButton : [])
+    .accessibilityAction(named: "选择文件") {
+      viewState.showImporter = true
+    }
+    .focusable(model.documents.isEmpty)
+    .onKeyPress(keys: [.return, .space]) { _ in
+      guard model.documents.isEmpty else { return .ignored }
+      viewState.showImporter = true
+      return .handled
+    }
   }
 
   @ViewBuilder

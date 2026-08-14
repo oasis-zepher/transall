@@ -150,6 +150,14 @@ final class AppModel: ObservableObject {
     await start()
   }
 
+  func applyCredentialChanges() async -> String {
+    let message = await backend.applyCredentialChanges()
+    if case .running = backend.state {
+      await reloadEnvironment()
+    }
+    return message
+  }
+
   func runJob() async {
     guard let route, route.enabled, !documents.isEmpty else { return }
     isSubmitting = true
@@ -212,6 +220,19 @@ final class AppModel: ObservableObject {
   func refreshPreview() async {
     guard let job = currentJob else { return }
     await loadPreview(jobID: job.id)
+  }
+
+  func deleteCurrentJob() async {
+    guard let job = currentJob, !job.isRunning else { return }
+    do {
+      try await backend.client.deleteJob(id: job.id)
+      UserDefaults.standard.removeObject(forKey: lastJobKey)
+      currentJob = nil
+      previewPages = []
+      preflightWarnings = []
+    } catch {
+      errorMessage = error.localizedDescription
+    }
   }
 
   func diagnostic(for requirement: RouteRequirement) -> DiagnosticDefinition? {

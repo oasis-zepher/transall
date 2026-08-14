@@ -43,6 +43,7 @@ struct PreviewGridView: View {
                 Rectangle().stroke(TransallTheme.line, lineWidth: 1)
               }
               .shadow(color: TransallTheme.ink.opacity(0.09), radius: 6, y: 3)
+              .accessibilityLabel("第 \(page.page) 页预览")
 
               Text("第 \(page.page) 页")
                 .font(.system(size: 9, weight: .medium))

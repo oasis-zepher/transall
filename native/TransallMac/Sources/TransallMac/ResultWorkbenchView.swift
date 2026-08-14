@@ -1,7 +1,12 @@
 import SwiftUI
 
+private final class ResultViewState: ObservableObject {
+  @Published var showDeleteConfirmation = false
+}
+
 struct ResultWorkbenchView: View {
   @EnvironmentObject private var model: AppModel
+  @StateObject private var viewState = ResultViewState()
 
   var body: some View {
     WorkbenchPanel {
@@ -28,6 +33,17 @@ struct ResultWorkbenchView: View {
           PreviewGridView(pages: model.previewPages, client: model.backend.client)
         }
       }
+    }
+    .confirmationDialog(
+      "删除这个任务的本地文件？",
+      isPresented: $viewState.showDeleteConfirmation
+    ) {
+      Button("删除任务数据", role: .destructive) {
+        Task { await model.deleteCurrentJob() }
+      }
+      Button("取消", role: .cancel) {}
+    } message: {
+      Text("上传副本、结果和预览会从本机删除；原始文件不受影响。")
     }
   }
 
@@ -127,6 +143,13 @@ struct ResultWorkbenchView: View {
           }
           .buttonStyle(QuietButtonStyle())
         }
+
+        Button("删除任务数据", role: .destructive) {
+          viewState.showDeleteConfirmation = true
+        }
+        .font(.system(size: 10, weight: .medium))
+        .buttonStyle(.plain)
+        .foregroundStyle(TransallTheme.danger)
       } else {
         Text("完成后可在这里保存，不会覆盖原文件。")
           .font(.system(size: 10))

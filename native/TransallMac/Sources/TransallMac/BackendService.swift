@@ -62,6 +62,23 @@ final class BackendService: ObservableObject {
     ownsProcess = false
   }
 
+  func applyCredentialChanges() async -> String {
+    guard ownsProcess else {
+      return "密钥已保存到钥匙串。当前连接的是外部服务，重启该服务后生效。"
+    }
+    stop()
+    try? await Task.sleep(for: .milliseconds(350))
+    await start()
+    switch state {
+    case .running:
+      return "密钥已保存到钥匙串，本地引擎已重新启动。"
+    case .starting:
+      return "密钥已保存，正在重新启动本地引擎。"
+    case .failed(let message):
+      return "密钥已保存，但本地引擎重启失败：\(message)"
+    }
+  }
+
   private func launchProcess() throws {
     if let bundled = Bundle.main.url(forAuxiliaryExecutable: "transall-backend") {
       try run(executable: bundled, arguments: [])
@@ -92,6 +109,11 @@ final class BackendService: ObservableObject {
     environment["TRANSALL_HOST"] = client.baseURL.host ?? "127.0.0.1"
     environment["TRANSALL_PORT"] = String(client.baseURL.port ?? 8765)
     environment["DOCWORK_DATA_DIR"] = try applicationDataDirectory().path
+    for credential in ProviderCredential.allCases {
+      if let value = try? ProviderCredentialStore.shared.value(for: credential), !value.isEmpty {
+        environment[credential.environmentVariable] = value
+      }
+    }
     process.environment = environment
 
     let output = Pipe()

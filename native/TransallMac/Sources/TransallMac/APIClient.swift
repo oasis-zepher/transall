@@ -105,6 +105,10 @@ final class APIClient {
     try await request("/api/jobs/\(id)/cancel", method: "POST")
   }
 
+  func deleteJob(id: String) async throws {
+    let _: DeleteJobResponse = try await request("/api/jobs/\(id)", method: "DELETE")
+  }
+
   func previewPages(jobID: String) async throws -> PreviewResponse {
     try await get("/api/jobs/\(jobID)/preview/pages")
   }
@@ -176,6 +180,10 @@ final class APIClient {
     }
     return detail
   }
+}
+
+private struct DeleteJobResponse: Decodable {
+  let deleted: Bool
 }
 
 private final class MultipartWriter {

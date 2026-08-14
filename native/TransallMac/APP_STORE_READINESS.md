@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 79/79 Swift package tests, 79/79 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 80/80 Swift package tests, 80/80 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -60,7 +60,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - PDF edit page-selection fields are limited to 4,096 characters, crop-box text to 256 characters, and watermark text to 512 characters. Crop coordinates must also be finite, so values such as `inf` cannot reach PDFKit or be persisted as runnable task options.
 - While task creation is copying and validating input files, the route selector, route reset, option controls, file picker, drag-and-drop target, and input removal controls remain locked. Model-level guards also reject route or input mutations, preventing a late task result from appearing under a route the user changed during submission.
 - Launch and quit leave no Transall process and no TCP listener on port 8765.
-- The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
+- The 5.4 MB unsigned universal archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
 - Image-to-PDF conversion decodes one input at a time, failed imports remove incomplete task directories, and the processor rejects unknown translation providers before network work.
 - File selection metadata is read outside the main actor. A mixed valid/invalid batch leaves the existing selection unchanged, directories and symbolic links are rejected with the matching filename, and conflicting route actions remain disabled during inspection.
 - The engine independently verifies source and copied inputs are regular non-symbolic-link files. Text-to-PDF input is limited to 20 MB to bound UTF-8 decoding, combined-text storage, and PDF layout memory; other native routes retain the 250 MB limit. The route-specific limit is enforced during selection and task preflight, rechecked against copied file sizes, and checked again by the text processor before loading data, so stale metadata and non-UI callers cannot bypass it.
@@ -75,7 +75,10 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - PDF preview cache inspection and rendering run outside the main actor with cancellation propagation. Preview failures show the exact error and keep a retry action available; a real-window test verified recovery after replacing a damaged PDF with a valid result.
 - Unselected route-state text meets WCAG AA contrast at 4.95:1, and new preview failures request an immediate VoiceOver announcement without moving keyboard focus.
 - Keychain reload, save, deletion, and failure messages request VoiceOver announcements without moving keyboard focus; failures use high priority.
-- PDF merge and watermark operations fail with a page-specific error if a page cannot be copied or accessed. Reordering validates and copies every requested page once, then uses that complete replacement document directly instead of performing a second optional-copy pass that could omit a page; a regression test verifies both page count and text order.
+- Single-document PDF editing works on the processor-owned in-memory document instead of copying every source page before editing. Merge still copies each page into an independent result, and regression coverage verifies that editing never modifies the source PDF on disk.
+- Delete, rotate, reorder, crop, and watermark loops check cancellation between pages. Rotation and cropping now fail with a page-specific error if PDFKit cannot retrieve a requested page instead of silently skipping it.
+- The processing layer independently requires exactly one input for single-document PDF editing and at least two inputs for PDF merge, protecting non-UI and recovered task entry points.
+- PDF merge and watermark operations fail with a page-specific error if a page cannot be copied or accessed. Reordering validates and copies every requested page once, then uses that complete replacement document directly instead of performing a second optional-copy pass that could omit a page; regression tests verify page count, text order, input-count validation, and source-file preservation.
 
 ## Prepared submission material
 

@@ -13,7 +13,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Support-site small text reaches WCAG AA contrast and navigation targets are at least 44 px; native controls expose labels, values, focus, and reduced-motion behavior. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input, and large file transfers and PDF previews run outside the main actor. |
+| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input, and large file transfers, PDF previews, startup cleanup, and task deletion run outside the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
@@ -25,7 +25,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 2. **Ambiguous multiple-file routes** — preflight requires exactly one input for PDF translation and single-document PDF editing; merge mode still accepts multiple PDFs.
 3. **Unsafe overwrite saving** — result saving copies to a sibling temporary file and uses atomic replacement, preserving an existing destination if the new copy fails.
 4. **Website contrast** — the muted text token now meets WCAG AA for its rendered small-text usage.
-5. **Large-file UI blocking** — input imports and result saves use cancellable detached transfers instead of synchronously copying up to 250 MB on the main actor.
+5. **Large-file UI blocking** — input imports, result saves, startup cleanup, and task deletion use cancellable detached work instead of synchronously copying or removing up to 250 MB on the main actor.
 
 ## Resolved P2 findings
 
@@ -46,13 +46,14 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - PDF preview cache checks and rendering now run outside the main actor and propagate task cancellation.
 - Preview failures remain visible with a specific message and a retry action instead of silently clearing the preview area.
 - Preview results are applied only to the job that requested them, preventing an older task from overwriting a newer task's state.
+- Startup removes only task directories older than 24 hours on a utility-priority task; manual deletion exposes a busy state and blocks conflicting result operations until removal finishes.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 25/25 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 25/25 passed |
+| Swift package tests with Xcode 26.6 | 27/27 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 27/27 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
@@ -64,7 +65,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
 
 ## Submission blockers outside the repository
 

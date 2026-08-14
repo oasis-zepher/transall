@@ -33,10 +33,10 @@ final class NativeDocumentEngine: ObservableObject {
 
   init(
     dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil,
-    credentialStore: any ProviderCredentialStoring = ProviderCredentialStore.shared
+    credentialStore: (any ProviderCredentialStoring)? = nil
   ) {
     self.dataDirectoryOverride = dataDirectoryOverride
-    self.credentialStore = credentialStore
+    self.credentialStore = credentialStore ?? ProviderCredentialStore.shared
     self.jobPersister =
       jobPersister ?? { job, directory in
         try Self.persistJob(job, in: directory)

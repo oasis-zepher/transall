@@ -15,8 +15,8 @@ final class ProviderSettingsModel: ObservableObject {
   private let store: any ProviderCredentialStoring
   private var storedValues: [ProviderCredential: String] = [:]
 
-  init(store: any ProviderCredentialStoring = ProviderCredentialStore.shared) {
-    self.store = store
+  init(store: (any ProviderCredentialStoring)? = nil) {
+    self.store = store ?? ProviderCredentialStore.shared
     reload(showSuccess: false)
   }
 

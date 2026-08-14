@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import PDFKit
+import Security
 import Testing
 
 @testable import TransallMac
@@ -205,6 +206,43 @@ struct ModelsTests {
     #expect(store.values[.deepseek] == "old-deepseek")
     #expect(store.values[.openAI] == "old-openai")
     #expect(store.writes.map(\.credential) == [.deepseek, .deepseek])
+  }
+
+  @Test @MainActor
+  func keychainMigratesLegacyCredentialsToLockedDataProtectionStorage() throws {
+    let keychain = SimulatedKeychain()
+    keychain.legacy[ProviderCredential.deepseek.rawValue] = Data("legacy-key".utf8)
+    let store = ProviderCredentialStore(client: keychain.client)
+
+    #expect(try store.value(for: .deepseek) == "legacy-key")
+    #expect(keychain.legacy[ProviderCredential.deepseek.rawValue] == nil)
+    #expect(
+      keychain.protected[ProviderCredential.deepseek.rawValue] == Data("legacy-key".utf8))
+    #expect(
+      keychain.accessibility[ProviderCredential.deepseek.rawValue]
+        == (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String))
+
+    try store.setValue("updated-key", for: .deepseek)
+    #expect(
+      keychain.protected[ProviderCredential.deepseek.rawValue] == Data("updated-key".utf8))
+    try store.setValue("", for: .deepseek)
+    #expect(keychain.protected[ProviderCredential.deepseek.rawValue] == nil)
+  }
+
+  @Test @MainActor
+  func keychainFallsBackToLegacyStorageWithoutApplicationEntitlement() throws {
+    let keychain = SimulatedKeychain(dataProtectionAvailable: false)
+    keychain.legacy[ProviderCredential.openAI.rawValue] = Data("development-key".utf8)
+    let store = ProviderCredentialStore(client: keychain.client)
+
+    #expect(try store.value(for: .openAI) == "development-key")
+    try store.setValue("replacement-key", for: .openAI)
+    #expect(
+      keychain.legacy[ProviderCredential.openAI.rawValue] == Data("replacement-key".utf8))
+    #expect(keychain.protected[ProviderCredential.openAI.rawValue] == nil)
+
+    try store.setValue("", for: .openAI)
+    #expect(keychain.legacy[ProviderCredential.openAI.rawValue] == nil)
   }
 
   @Test @MainActor
@@ -1297,4 +1335,88 @@ private enum TestCredentialError: LocalizedError {
   case unavailable
 
   var errorDescription: String? { "测试钥匙串不可用" }
+}
+
+@MainActor
+private final class SimulatedKeychain {
+  var legacy: [String: Data] = [:]
+  var protected: [String: Data] = [:]
+  var accessibility: [String: String] = [:]
+  let dataProtectionAvailable: Bool
+
+  init(dataProtectionAvailable: Bool = true) {
+    self.dataProtectionAvailable = dataProtectionAvailable
+  }
+
+  var client: KeychainClient {
+    KeychainClient(
+      copyMatching: { [self] query in
+        guard let account = account(in: query) else { return (errSecParam, nil) }
+        if isDataProtection(query), !dataProtectionAvailable {
+          return (errSecMissingEntitlement, nil)
+        }
+        let values = isDataProtection(query) ? protected : legacy
+        guard let data = values[account] else { return (errSecItemNotFound, nil) }
+        return (errSecSuccess, data)
+      },
+      update: { [self] query, attributes in
+        guard let account = account(in: query), let data = valueData(in: attributes) else {
+          return errSecParam
+        }
+        if isDataProtection(query), !dataProtectionAvailable { return errSecMissingEntitlement }
+        if isDataProtection(query) {
+          guard protected[account] != nil else { return errSecItemNotFound }
+          protected[account] = data
+          recordAccessibility(attributes, account: account)
+        } else {
+          guard legacy[account] != nil else { return errSecItemNotFound }
+          legacy[account] = data
+        }
+        return errSecSuccess
+      },
+      add: { [self] item in
+        guard let account = account(in: item), let data = valueData(in: item) else {
+          return errSecParam
+        }
+        if isDataProtection(item), !dataProtectionAvailable { return errSecMissingEntitlement }
+        if isDataProtection(item) {
+          guard protected[account] == nil else { return errSecDuplicateItem }
+          protected[account] = data
+          recordAccessibility(item, account: account)
+        } else {
+          guard legacy[account] == nil else { return errSecDuplicateItem }
+          legacy[account] = data
+        }
+        return errSecSuccess
+      },
+      delete: { [self] query in
+        guard let account = account(in: query) else { return errSecParam }
+        if isDataProtection(query), !dataProtectionAvailable { return errSecMissingEntitlement }
+        if isDataProtection(query) {
+          guard protected.removeValue(forKey: account) != nil else {
+            return errSecItemNotFound
+          }
+          accessibility[account] = nil
+        } else {
+          guard legacy.removeValue(forKey: account) != nil else { return errSecItemNotFound }
+        }
+        return errSecSuccess
+      })
+  }
+
+  private func isDataProtection(_ query: [String: Any]) -> Bool {
+    query[kSecUseDataProtectionKeychain as String] as? Bool == true
+  }
+
+  private func account(in query: [String: Any]) -> String? {
+    query[kSecAttrAccount as String] as? String
+  }
+
+  private func valueData(in attributes: [String: Any]) -> Data? {
+    attributes[kSecValueData as String] as? Data
+  }
+
+  private func recordAccessibility(_ attributes: [String: Any], account: String) {
+    accessibility[account] = attributes[kSecAttrAccessible as String] as? String
+  }
 }

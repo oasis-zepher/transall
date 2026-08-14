@@ -141,6 +141,21 @@ struct ModelsTests {
     #expect(!merge.blockingIssues.contains { $0.code == "merge_requires_files" })
   }
 
+  @Test @MainActor
+  func preflightRejectsOversizedTranslationGlossary() throws {
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    var options = JobOptions()
+    options.glossary = String(
+      repeating: "术", count: TranslationService.maximumGlossaryCharacters + 1)
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 10)
+
+    let result = NativeDocumentEngine().preflight(
+      route: route, files: [file], options: options)
+
+    #expect(result.blockingIssues.contains { $0.code == "glossary_too_large" })
+  }
+
   @Test
   func resultSavingReplacesExistingFile() throws {
     let temporary = FileManager.default.temporaryDirectory
@@ -191,7 +206,8 @@ struct ModelsTests {
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
     try Data("not needed for the copy test".utf8).write(to: readable)
     let missing = temporary.appendingPathComponent("missing.png")
-    let engine = NativeDocumentEngine(dataDirectoryOverride: temporary.appendingPathComponent("Data"))
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"))
     await engine.start()
     let route = try #require(
       NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
@@ -302,6 +318,74 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.code == "invalid_option")
       #expect(error.errorDescription?.contains("翻译服务无效") == true)
+    }
+  }
+
+  @Test
+  func oversizedGlossaryIsRejectedBeforeTranslation() async throws {
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    var options = JobOptions()
+    options.glossary = String(
+      repeating: "A", count: TranslationService.maximumGlossaryCharacters + 1)
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: route, inputs: [URL(fileURLWithPath: "/tmp/missing.pdf")], options: options,
+        outputURL: URL(fileURLWithPath: "/tmp/unused.pdf"), apiKey: "unused")
+      Issue.record("Oversized glossary should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_option")
+      #expect(error.errorDescription?.contains("术语表") == true)
+    }
+  }
+
+  @Test
+  func multipleTextInputsProduceSearchablePDF() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-text-pdf-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let first = temporary.appendingPathComponent("first.txt")
+    let second = temporary.appendingPathComponent("second.txt")
+    try Data("first searchable block".utf8).write(to: first)
+    try Data("second searchable block".utf8).write(to: second)
+    let output = temporary.appendingPathComponent("text.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [first, second], options: JobOptions(), outputURL: output,
+      apiKey: nil)
+
+    let document = try #require(PDFDocument(url: output))
+    let text = document.string ?? ""
+    #expect(text.contains("first searchable block"))
+    #expect(text.contains("second searchable block"))
+  }
+
+  @Test
+  func markdownExtractionRejectsInvalidPDFClearly() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-invalid-pdf-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let invalidPDF = temporary.appendingPathComponent("broken.pdf")
+    try Data("not a pdf".utf8).write(to: invalidPDF)
+    let output = temporary.appendingPathComponent("output.md")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "extract_markdown" && $0.source == "pdf" })
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: route, inputs: [invalidPDF], options: JobOptions(), outputURL: output,
+        apiKey: nil)
+      Issue.record("Invalid PDF should not be treated as an image")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(error.errorDescription?.contains("无法打开 broken.pdf") == true)
     }
   }
 

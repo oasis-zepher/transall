@@ -115,6 +115,10 @@ enum NativeDocumentProcessor {
       guard ["deepseek", "openai"].contains(options.provider) else {
         throw NativeDocumentError.invalidOption("翻译服务无效，请重新选择 DeepSeek 或 OpenAI。")
       }
+      guard options.glossary.count <= TranslationService.maximumGlossaryCharacters else {
+        throw NativeDocumentError.invalidOption(
+          "术语表不能超过 \(TranslationService.maximumGlossaryCharacters) 个字符。")
+      }
       guard let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
         throw NativeDocumentError.provider("所选翻译服务尚未配置 API Key。")
       }
@@ -277,14 +281,17 @@ enum NativeDocumentProcessor {
   }
 
   private static func textFilesToPDF(inputs: [URL], source: String, outputURL: URL) throws {
-    let blocks = try inputs.map { url -> String in
+    var combined = ""
+    for url in inputs {
+      try Task.checkCancellation()
       let data = try Data(contentsOf: url)
       guard let text = String(data: data, encoding: .utf8) else {
         throw NativeDocumentError.invalidFile("\(url.lastPathComponent) 不是 UTF-8 文本。")
       }
-      return source == "html" ? stripHTML(text) : text
+      if !combined.isEmpty { combined += "\n\n—— \n\n" }
+      combined += source == "html" ? stripHTML(text) : text
     }
-    try writeTextPDF(blocks.joined(separator: "\n\n—— \n\n"), to: outputURL)
+    try writeTextPDF(combined, to: outputURL)
   }
 
   private static func performOCR(inputs: [URL], options: JobOptions, outputURL: URL) async throws {
@@ -309,22 +316,30 @@ enum NativeDocumentProcessor {
     var sections: [String] = []
     for input in inputs {
       try Task.checkCancellation()
-      if input.pathExtension.lowercased() == "pdf", let document = PDFDocument(url: input) {
+      if input.pathExtension.lowercased() == "pdf" {
+        guard let document = PDFDocument(url: input), document.pageCount > 0,
+          let rasterDocument = CGPDFDocument(input as CFURL)
+        else {
+          throw NativeDocumentError.invalidFile(
+            "无法打开 \(input.lastPathComponent) 或 PDF 没有页面。")
+        }
         var pages: [String] = []
         for index in 0..<document.pageCount {
           try Task.checkCancellation()
-          let text =
+          var text =
             document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-          if text.isEmpty, options.ocrLanguage.isEmpty == false,
-            let page = CGPDFDocument(input as CFURL)?.page(at: index + 1),
-            let image = render(page: page, maximumDimension: 2200)
-          {
-            pages.append(
-              try recognize(image, languages: recognitionLanguages(options.ocrLanguage)).map(\.text)
-                .joined(separator: "\n"))
-          } else {
-            pages.append(text)
+          if text.isEmpty, !options.ocrLanguage.isEmpty {
+            guard let page = rasterDocument.page(at: index + 1),
+              let image = render(page: page, maximumDimension: 2200)
+            else {
+              throw NativeDocumentError.processing(
+                "无法渲染 \(input.lastPathComponent) 的第 \(index + 1) 页。")
+            }
+            text = try recognize(
+              image, languages: recognitionLanguages(options.ocrLanguage)
+            ).map(\.text).joined(separator: "\n")
           }
+          pages.append(text)
         }
         sections.append(pages.joined(separator: "\n\n---\n\n"))
       } else {
@@ -343,15 +358,21 @@ enum NativeDocumentProcessor {
     guard let document = PDFDocument(url: input), document.pageCount > 0 else {
       throw NativeDocumentError.invalidFile("无法打开 PDF 或 PDF 没有页面。")
     }
+    guard let rasterDocument = CGPDFDocument(input as CFURL) else {
+      throw NativeDocumentError.invalidFile("无法打开 PDF 图像内容。")
+    }
     let translator = TranslationService(provider: options.provider, apiKey: apiKey)
     var pages: [String] = []
     for index in 0..<document.pageCount {
       try Task.checkCancellation()
       var sourceText =
         document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      if sourceText.isEmpty, let page = CGPDFDocument(input as CFURL)?.page(at: index + 1),
-        let image = render(page: page, maximumDimension: 2400)
-      {
+      if sourceText.isEmpty {
+        guard let page = rasterDocument.page(at: index + 1),
+          let image = render(page: page, maximumDimension: 2400)
+        else {
+          throw NativeDocumentError.processing("无法渲染 PDF 的第 \(index + 1) 页。")
+        }
         sourceText = try recognize(
           image, languages: recognitionLanguages(options.ocrLanguage)
         ).map(\.text).joined(separator: "\n")
@@ -609,6 +630,8 @@ enum NativeDocumentProcessor {
 }
 
 struct TranslationService {
+  static let maximumGlossaryCharacters = 20_000
+
   let provider: String
   let apiKey: String
 

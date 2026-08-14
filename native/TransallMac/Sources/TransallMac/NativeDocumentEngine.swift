@@ -108,6 +108,13 @@ final class NativeDocumentEngine: ObservableObject {
             "invalid_provider", "翻译服务无效。",
             hint: "请在翻译选项中重新选择 DeepSeek 或 OpenAI。"))
       }
+      if options.glossary.count > TranslationService.maximumGlossaryCharacters {
+        blocking.append(
+          issue(
+            "glossary_too_large",
+            "术语表超过 \(TranslationService.maximumGlossaryCharacters) 个字符。",
+            hint: "请删除不相关术语后再试。"))
+      }
       let credential: ProviderCredential = options.provider == "openai" ? .openAI : .deepseek
       let key = (try? ProviderCredentialStore.shared.value(for: credential)) ?? ""
       if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -147,7 +154,8 @@ final class NativeDocumentEngine: ObservableObject {
         do {
           try FileManager.default.copyItem(at: document.url, to: destination)
         } catch {
-          throw NativeDocumentError.invalidFile("无法读取 \(document.name)：\(error.localizedDescription)")
+          throw NativeDocumentError.invalidFile(
+            "无法读取 \(document.name)：\(error.localizedDescription)")
         }
         copiedInputs.append(destination)
       }

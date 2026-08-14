@@ -4,6 +4,10 @@ import Foundation
 @MainActor
 final class NativeDocumentEngine: ObservableObject {
   typealias JobPersister = (JobResponse, URL) throws -> Void
+  typealias JobProcessor =
+    @Sendable (
+      RouteDefinition, [URL], JobOptions, URL, String?
+    ) async throws -> NativeDocumentProcessor.Result
   typealias PreviewGenerator = @Sendable (URL, URL) async throws -> [URL]
 
   private struct PreviewOperation {
@@ -35,6 +39,7 @@ final class NativeDocumentEngine: ObservableObject {
   private var dataDirectory: URL?
   private let dataDirectoryOverride: URL?
   private let jobPersister: JobPersister
+  private let jobProcessor: JobProcessor
   private let credentialStore: any ProviderCredentialStoring
   private let previewGenerator: PreviewGenerator
   private var isTerminating = false
@@ -42,10 +47,16 @@ final class NativeDocumentEngine: ObservableObject {
   init(
     dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil,
     credentialStore: (any ProviderCredentialStoring)? = nil,
+    jobProcessor: JobProcessor? = nil,
     previewGenerator: PreviewGenerator? = nil
   ) {
     self.dataDirectoryOverride = dataDirectoryOverride
     self.credentialStore = credentialStore ?? ProviderCredentialStore.shared
+    self.jobProcessor =
+      jobProcessor ?? { route, inputs, options, outputURL, apiKey in
+        try await NativeDocumentProcessor.process(
+          route: route, inputs: inputs, options: options, outputURL: outputURL, apiKey: apiKey)
+      }
     self.previewGenerator =
       previewGenerator ?? { pdfURL, directory in
         try await PreviewCache.pages(pdfURL: pdfURL, directory: directory)
@@ -300,7 +311,6 @@ final class NativeDocumentEngine: ObservableObject {
       job, status: "cancelled", stage: "cancelled", message: "任务已取消。", progress: job.progress,
       cancelRequested: true, logs: job.logs + ["已收到取消请求。"])
     tasks[id]?.cancel()
-    tasks[id] = nil
     let directory = try jobDirectory(id)
     do {
       try jobPersister(job, directory)
@@ -317,7 +327,7 @@ final class NativeDocumentEngine: ObservableObject {
 
   func deleteJob(id: String) async throws {
     let directory = try jobDirectory(id)
-    if tasks[id] != nil || jobs[id]?.isRunning == true {
+    if jobs[id]?.isRunning == true {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
     }
     if jobs[id] == nil, let persisted: JobResponse = try? load("job.json", from: directory),
@@ -331,6 +341,12 @@ final class NativeDocumentEngine: ObservableObject {
       throw NativeDocumentError.processing("任务数据正在删除。")
     }
     defer { deletingJobs.remove(id) }
+
+    if let task = tasks[id] {
+      task.cancel()
+      await task.value
+      tasks[id] = nil
+    }
 
     if let operation = previewOperations[id] {
       operation.task.cancel()
@@ -418,6 +434,7 @@ final class NativeDocumentEngine: ObservableObject {
         credentialError = "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)"
       }
     }
+    let jobProcessor = self.jobProcessor
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
       guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
       do {
@@ -428,9 +445,8 @@ final class NativeDocumentEngine: ObservableObject {
           named: OutputFileNamer.name(
             for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
           in: directory, description: "任务结果")
-        let result = try await NativeDocumentProcessor.process(
-          route: metadata.route, inputs: inputURLs, options: metadata.options,
-          outputURL: outputURL, apiKey: apiKey)
+        let result = try await jobProcessor(
+          metadata.route, inputURLs, metadata.options, outputURL, apiKey)
         try Task.checkCancellation()
         await self?.markCompleted(
           jobID: jobID, output: result.outputURL.lastPathComponent, logs: result.logs,
@@ -444,7 +460,10 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func markRunning(jobID: String, directory: URL) -> Bool {
-    guard let job = jobs[jobID], job.status != "cancelled" else { return false }
+    guard let job = jobs[jobID], job.status != "cancelled" else {
+      tasks[jobID] = nil
+      return false
+    }
     let updated = replacing(
       job, status: "running", stage: "processing", message: "原生引擎正在处理。", progress: 12,
       logs: job.logs + ["开始使用 macOS 原生框架处理。"])
@@ -461,11 +480,11 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func markCompleted(jobID: String, output: String, logs: [String], directory: URL) {
+    tasks[jobID] = nil
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
     var updated = replacing(
       job, status: "done", stage: "complete", message: "任务完成。", output: output,
       progress: 100, logs: job.logs + logs)
-    tasks[jobID] = nil
     do {
       try persistCompletionReceipt(output: output, in: directory)
     } catch {
@@ -484,12 +503,12 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func markCancelled(jobID: String, directory: URL) {
+    tasks[jobID] = nil
     guard !isTerminating else { return }
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
     let updated = replacing(
       job, status: "cancelled", stage: "cancelled", message: "任务已取消。", progress: job.progress,
       cancelRequested: true, logs: job.logs + ["任务已安全停止。"])
-    tasks[jobID] = nil
     do {
       try jobPersister(updated, directory)
       jobs[jobID] = updated
@@ -502,6 +521,7 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func markFailed(jobID: String, error: Error, directory: URL) {
+    tasks[jobID] = nil
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
     let nativeError = error as? NativeDocumentError
     let updated = replacing(
@@ -509,7 +529,6 @@ final class NativeDocumentEngine: ObservableObject {
       errorCode: nativeError?.code ?? "native_processing_failed",
       errorHint: nativeError?.recoverySuggestion ?? "检查输入文件和参数后重试。",
       retryable: true, progress: job.progress, logs: job.logs)
-    tasks[jobID] = nil
     do {
       try jobPersister(updated, directory)
       jobs[jobID] = updated

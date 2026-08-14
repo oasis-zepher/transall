@@ -1198,13 +1198,63 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func deletingCancelledJobWaitsForProcessingToStop() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-cancel-delete-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let gate = DeletionRaceGate()
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobProcessor: { _, _, _, outputURL, _ in
+        await gate.markStarted()
+        await withTaskCancellationHandler(
+          operation: { await gate.waitForRelease() },
+          onCancel: { Task { await gate.markCancelled() } })
+        try FileManager.default.createDirectory(
+          at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("late result".utf8).write(to: outputURL, options: .atomic)
+        await gate.markFinished()
+        return NativeDocumentProcessor.Result(outputURL: outputURL, logs: [])
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+
+    let input = temporary.appendingPathComponent("source.png")
+    try Data("processor fixture".utf8).write(to: input, options: .atomic)
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let created = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
+    await gate.waitUntilStarted()
+
+    let cancelled = try engine.cancelJob(id: created.id)
+    #expect(cancelled.status == "cancelled")
+    await gate.waitUntilCancelled()
+
+    let releaseTask = Task {
+      try? await Task.sleep(for: .milliseconds(40))
+      await gate.release()
+    }
+    try await engine.deleteJob(id: created.id)
+    _ = await releaseTask.result
+    await gate.waitUntilFinished()
+
+    let jobDirectory = dataDirectory.appendingPathComponent(
+      "Jobs/\(created.id)", isDirectory: true)
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
   func deletingJobWaitsForCancelledPreviewBeforeRemovingData() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(
         "transall-delete-preview-test-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
 
-    let gate = PreviewDeletionGate()
+    let gate = DeletionRaceGate()
     let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
     let engine = NativeDocumentEngine(
       dataDirectoryOverride: dataDirectory,
@@ -1719,13 +1769,15 @@ struct ModelsTests {
   }
 }
 
-private actor PreviewDeletionGate {
+private actor DeletionRaceGate {
   private var started = false
   private var cancelled = false
   private var released = false
+  private var finished = false
   private var startWaiters: [CheckedContinuation<Void, Never>] = []
   private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
   private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+  private var finishWaiters: [CheckedContinuation<Void, Never>] = []
 
   func markStarted() {
     started = true
@@ -1758,6 +1810,17 @@ private actor PreviewDeletionGate {
     released = true
     for waiter in releaseWaiters { waiter.resume() }
     releaseWaiters.removeAll()
+  }
+
+  func markFinished() {
+    finished = true
+    for waiter in finishWaiters { waiter.resume() }
+    finishWaiters.removeAll()
+  }
+
+  func waitUntilFinished() async {
+    guard !finished else { return }
+    await withCheckedContinuation { finishWaiters.append($0) }
   }
 }
 

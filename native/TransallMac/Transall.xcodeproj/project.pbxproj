@@ -1,0 +1,492 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		02F7648DDB608C156C583A19 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975D6F46884E34E367163F8B /* AppModel.swift */; };
+		0D9720FA0CA3DF3DA63F68E9 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731832B8F6DF08DC30EE37B3 /* ModelsTests.swift */; };
+		2BAD452567AA357697985652 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A783D9F1857488D271DE6B6 /* Theme.swift */; };
+		2DEEEE4A4FB70325462F0C3F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0D0B3D50B261BE33FE0BF791 /* Assets.xcassets */; };
+		2F5A8C704DF42E0CB6CF9BFF /* ResultWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14542B700BFBCB2EAB342567 /* ResultWorkbenchView.swift */; };
+		3C6367E73038766AB2490ECD /* BackendService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2540C0FC72B6DC717F71D898 /* BackendService.swift */; };
+		4B3057A05706EB55FA243D1F /* FormatRouterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C424D2BA93DD757D4326CA9 /* FormatRouterView.swift */; };
+		4B3CB4FE9F81656821CC4406 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82245EC1D31F3526CB017407 /* Models.swift */; };
+		7536CC32256EB7F8608235CC /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C16A1DE5A233D210AAB294 /* APIClient.swift */; };
+		878979380AB0A7F122948B26 /* PreviewGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C349C8B30921EA926B77FD /* PreviewGridView.swift */; };
+		ABE6CFED2B8BBE9DC7E82AE4 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CEB7FC0F21550861A7056150 /* PrivacyInfo.xcprivacy */; };
+		B7D6307395D3871B3881B3B0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44CF8F7690D955369BC6DF12 /* SettingsView.swift */; };
+		C5B01C48D961650F847125B6 /* InputWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23B3E15C0AFA1C7D20D89CB0 /* InputWorkbenchView.swift */; };
+		F0B40FCFEEC8FDB8495927BD /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACD0A511F9EA757A81CB456 /* ContentView.swift */; };
+		F7F0FD1E89B2CA0613E7A4FE /* ProviderCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21AD818224660A1CF6BD47D3 /* ProviderCredentialStore.swift */; };
+		FCA3CF0287CE41D805779CF0 /* TransallApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718EBE299C57D5B7A6CBE022 /* TransallApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		12C8532BBD04CEA398C4BBE4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 262C293916BC66135FE4EB10 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 37A850CAB4C1C7CEE2F00634;
+			remoteInfo = Transall;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		09C349C8B30921EA926B77FD /* PreviewGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewGridView.swift; sourceTree = "<group>"; };
+		0D0B3D50B261BE33FE0BF791 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		14542B700BFBCB2EAB342567 /* ResultWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultWorkbenchView.swift; sourceTree = "<group>"; };
+		21AD818224660A1CF6BD47D3 /* ProviderCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderCredentialStore.swift; sourceTree = "<group>"; };
+		23B3E15C0AFA1C7D20D89CB0 /* InputWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputWorkbenchView.swift; sourceTree = "<group>"; };
+		2540C0FC72B6DC717F71D898 /* BackendService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendService.swift; sourceTree = "<group>"; };
+		44CF8F7690D955369BC6DF12 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		718EBE299C57D5B7A6CBE022 /* TransallApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransallApp.swift; sourceTree = "<group>"; };
+		731832B8F6DF08DC30EE37B3 /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
+		76C16A1DE5A233D210AAB294 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		7ACD0A511F9EA757A81CB456 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		7C424D2BA93DD757D4326CA9 /* FormatRouterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormatRouterView.swift; sourceTree = "<group>"; };
+		7D4D635310A3A7E5F01DBCAE /* Transall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Transall.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		82245EC1D31F3526CB017407 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		87E8A929EB0655A0464B0BEE /* TransallTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TransallTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8A783D9F1857488D271DE6B6 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		975D6F46884E34E367163F8B /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		CEB7FC0F21550861A7056150 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		2A273E8EB345D6C865B6BCB2 /* TransallMacTests */ = {
+			isa = PBXGroup;
+			children = (
+				731832B8F6DF08DC30EE37B3 /* ModelsTests.swift */,
+			);
+			path = TransallMacTests;
+			sourceTree = "<group>";
+		};
+		32BF53854026B8BD1889FAC0 /* TransallMac */ = {
+			isa = PBXGroup;
+			children = (
+				76C16A1DE5A233D210AAB294 /* APIClient.swift */,
+				975D6F46884E34E367163F8B /* AppModel.swift */,
+				2540C0FC72B6DC717F71D898 /* BackendService.swift */,
+				7ACD0A511F9EA757A81CB456 /* ContentView.swift */,
+				7C424D2BA93DD757D4326CA9 /* FormatRouterView.swift */,
+				23B3E15C0AFA1C7D20D89CB0 /* InputWorkbenchView.swift */,
+				82245EC1D31F3526CB017407 /* Models.swift */,
+				09C349C8B30921EA926B77FD /* PreviewGridView.swift */,
+				21AD818224660A1CF6BD47D3 /* ProviderCredentialStore.swift */,
+				14542B700BFBCB2EAB342567 /* ResultWorkbenchView.swift */,
+				44CF8F7690D955369BC6DF12 /* SettingsView.swift */,
+				8A783D9F1857488D271DE6B6 /* Theme.swift */,
+				718EBE299C57D5B7A6CBE022 /* TransallApp.swift */,
+			);
+			path = TransallMac;
+			sourceTree = "<group>";
+		};
+		3B8A4BAD432B7406E1E05B28 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7D4D635310A3A7E5F01DBCAE /* Transall.app */,
+				87E8A929EB0655A0464B0BEE /* TransallTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4A0E63344278C5EBEA943E5E = {
+			isa = PBXGroup;
+			children = (
+				5F5EEEF3863069665A639D5A /* Resources */,
+				58D0088A6CE2D3F453879B99 /* Sources */,
+				926032E53BE2B4C2900F0BC6 /* Tests */,
+				3B8A4BAD432B7406E1E05B28 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		58D0088A6CE2D3F453879B99 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				32BF53854026B8BD1889FAC0 /* TransallMac */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		5F5EEEF3863069665A639D5A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0D0B3D50B261BE33FE0BF791 /* Assets.xcassets */,
+				CEB7FC0F21550861A7056150 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		926032E53BE2B4C2900F0BC6 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				2A273E8EB345D6C865B6BCB2 /* TransallMacTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		37A850CAB4C1C7CEE2F00634 /* Transall */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 90A3D3D2BAB3D81EE7A964D7 /* Build configuration list for PBXNativeTarget "Transall" */;
+			buildPhases = (
+				6E65A38AF13F02B0A76DC097 /* Sources */,
+				E2BFF20A936289B186030665 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Transall;
+			packageProductDependencies = (
+			);
+			productName = Transall;
+			productReference = 7D4D635310A3A7E5F01DBCAE /* Transall.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AFBE7313F789473CC2BA226D /* TransallTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A02732800FCBD6164AE9022F /* Build configuration list for PBXNativeTarget "TransallTests" */;
+			buildPhases = (
+				7891010B5EB80741BA60CC68 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EBE3264D14E93A9A0187B0B8 /* PBXTargetDependency */,
+			);
+			name = TransallTests;
+			packageProductDependencies = (
+			);
+			productName = TransallTests;
+			productReference = 87E8A929EB0655A0464B0BEE /* TransallTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		262C293916BC66135FE4EB10 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					37A850CAB4C1C7CEE2F00634 = {
+						ProvisioningStyle = Automatic;
+					};
+					AFBE7313F789473CC2BA226D = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 2A6344846A4ABF8F51B630C5 /* Build configuration list for PBXProject "Transall" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 4A0E63344278C5EBEA943E5E;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 3B8A4BAD432B7406E1E05B28 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				37A850CAB4C1C7CEE2F00634 /* Transall */,
+				AFBE7313F789473CC2BA226D /* TransallTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E2BFF20A936289B186030665 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2DEEEE4A4FB70325462F0C3F /* Assets.xcassets in Resources */,
+				ABE6CFED2B8BBE9DC7E82AE4 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6E65A38AF13F02B0A76DC097 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7536CC32256EB7F8608235CC /* APIClient.swift in Sources */,
+				02F7648DDB608C156C583A19 /* AppModel.swift in Sources */,
+				3C6367E73038766AB2490ECD /* BackendService.swift in Sources */,
+				F0B40FCFEEC8FDB8495927BD /* ContentView.swift in Sources */,
+				4B3057A05706EB55FA243D1F /* FormatRouterView.swift in Sources */,
+				C5B01C48D961650F847125B6 /* InputWorkbenchView.swift in Sources */,
+				4B3CB4FE9F81656821CC4406 /* Models.swift in Sources */,
+				878979380AB0A7F122948B26 /* PreviewGridView.swift in Sources */,
+				F7F0FD1E89B2CA0613E7A4FE /* ProviderCredentialStore.swift in Sources */,
+				2F5A8C704DF42E0CB6CF9BFF /* ResultWorkbenchView.swift in Sources */,
+				B7D6307395D3871B3881B3B0 /* SettingsView.swift in Sources */,
+				2BAD452567AA357697985652 /* Theme.swift in Sources */,
+				FCA3CF0287CE41D805779CF0 /* TransallApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7891010B5EB80741BA60CC68 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0D9720FA0CA3DF3DA63F68E9 /* ModelsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EBE3264D14E93A9A0187B0B8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 37A850CAB4C1C7CEE2F00634 /* Transall */;
+			targetProxy = 12C8532BBD04CEA398C4BBE4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		147F1BF65D844DB913268F7B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.transall.mac.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Transall.app/Contents/MacOS/Transall";
+			};
+			name = Debug;
+		};
+		277637DA606E97628E4353EE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		9CC0F77A44AC7AB41D44D7B6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Support/Transall.Debug.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.transall.mac;
+				PRODUCT_MODULE_NAME = TransallMac;
+				PRODUCT_NAME = Transall;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		A71D13D5971CF4E5050DA570 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Support/Transall.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = YES;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.transall.mac;
+				PRODUCT_MODULE_NAME = TransallMac;
+				PRODUCT_NAME = Transall;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		AFD4E240F9FEB0682C775CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.transall.mac.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Transall.app/Contents/MacOS/Transall";
+			};
+			name = Release;
+		};
+		B83FFE84A04D64F4EC5D511D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2A6344846A4ABF8F51B630C5 /* Build configuration list for PBXProject "Transall" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B83FFE84A04D64F4EC5D511D /* Debug */,
+				277637DA606E97628E4353EE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		90A3D3D2BAB3D81EE7A964D7 /* Build configuration list for PBXNativeTarget "Transall" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9CC0F77A44AC7AB41D44D7B6 /* Debug */,
+				A71D13D5971CF4E5050DA570 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A02732800FCBD6164AE9022F /* Build configuration list for PBXNativeTarget "TransallTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				147F1BF65D844DB913268F7B /* Debug */,
+				AFD4E240F9FEB0682C775CE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 262C293916BC66135FE4EB10 /* Project object */;
+}

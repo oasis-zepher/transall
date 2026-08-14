@@ -10,3 +10,6 @@ outputs/
 .playwright-cli/
 native/TransallMac/.build/
 native/TransallMac/.swiftpm/
+native/TransallMac/DerivedData/
+native/TransallMac/Transall.xcodeproj/xcuserdata/
+*.xcuserstate

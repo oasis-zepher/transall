@@ -167,18 +167,21 @@ struct ResultWorkbenchView: View {
           .disabled(model.isLoadingPreview || model.isDeletingJob)
         }
 
+      } else {
+        Text(artifactStatusMessage)
+          .font(.caption2)
+          .foregroundStyle(TransallTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      if let job = model.currentJob, !job.isRunning {
         Button(model.isDeletingJob ? "正在删除" : "删除任务数据", role: .destructive) {
           viewState.showDeleteConfirmation = true
         }
         .font(.caption2.weight(.medium))
         .buttonStyle(.plain)
         .foregroundStyle(TransallTheme.danger)
-        .disabled(model.isSaving || model.isDeletingJob)
-      } else {
-        Text("完成后可在这里保存，不会覆盖原文件。")
-          .font(.caption2)
-          .foregroundStyle(TransallTheme.muted)
-          .fixedSize(horizontal: false, vertical: true)
+        .disabled(!model.canDeleteCurrentJob)
       }
     }
     .padding(11)
@@ -209,6 +212,14 @@ struct ResultWorkbenchView: View {
   private var previewButtonLabel: String {
     if model.isLoadingPreview { return "正在生成预览" }
     return model.previewPages.isEmpty ? "生成预览" : "刷新预览"
+  }
+
+  private var artifactStatusMessage: String {
+    switch model.currentJob?.status {
+    case "failed": "任务失败，详情见运行日志。"
+    case "cancelled": "任务已取消，没有可保存的结果。"
+    default: "完成后可在这里保存，不会覆盖原文件。"
+    }
   }
 
   private func statusLabel(_ status: String) -> String {

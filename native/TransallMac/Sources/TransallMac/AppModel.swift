@@ -74,6 +74,11 @@ final class AppModel: ObservableObject {
     currentJob?.status == "done" && currentJob?.output?.lowercased().hasSuffix(".pdf") == true
   }
 
+  var canDeleteCurrentJob: Bool {
+    guard let currentJob else { return false }
+    return !currentJob.isRunning && !isSaving && !isDeletingJob
+  }
+
   var logText: String {
     var lines: [String] = []
     if let job = currentJob {
@@ -316,7 +321,7 @@ final class AppModel: ObservableObject {
   }
 
   func deleteCurrentJob() async {
-    guard let job = currentJob, !job.isRunning, !isSaving, !isDeletingJob else { return }
+    guard canDeleteCurrentJob, let job = currentJob else { return }
     let jobID = job.id
     isDeletingJob = true
     defer { isDeletingJob = false }

@@ -1161,6 +1161,43 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func failedAndCancelledJobsCanDeleteTheirLocalData() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-finished-delete-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let model = AppModel(backend: engine)
+
+    for status in ["failed", "cancelled"] {
+      let jobID = UUID().uuidString.lowercased()
+      let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+      try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+      let now = ISO8601DateFormatter().string(from: Date())
+      let job = JobResponse(
+        id: jobID, kind: "text_to_pdf", status: status, inputs: ["source.txt"],
+        createdAt: now, updatedAt: now, output: nil,
+        error: status == "failed" ? "测试处理失败" : nil, stage: status,
+        message: status == "failed" ? "任务失败。" : "任务已取消。", errorCode: nil,
+        errorHint: nil, retryable: status == "failed", progress: 20,
+        cancelRequested: status == "cancelled", logs: [])
+      try persistTestJob(job, in: jobDirectory)
+      model.currentJob = job
+
+      #expect(model.canDeleteCurrentJob)
+      await model.deleteCurrentJob()
+
+      #expect(model.currentJob == nil)
+      #expect(!model.isDeletingJob)
+      #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+    }
+  }
+
+  @Test @MainActor
   func deletingJobWaitsForCancelledPreviewBeforeRemovingData() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(

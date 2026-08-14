@@ -194,6 +194,117 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func createJobRejectsUnregisteredRouteBeforeWritingTaskData() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-unsupported-route-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+
+    let input = temporary.appendingPathComponent("source.docx")
+    try Data("not a supported native input".utf8).write(to: input, options: .atomic)
+    let supported = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+    let unsupported = RouteDefinition(
+      source: "word", target: supported.target, kind: supported.kind, title: supported.title,
+      enabled: true, accept: ".docx", input: "Word 文档", requirements: supported.requirements,
+      optionPanels: supported.optionPanels, kindLabel: supported.kindLabel,
+      output: supported.output, summary: supported.summary, engine: supported.engine,
+      fallbackEngines: supported.fallbackEngines,
+      dependencyProfile: supported.dependencyProfile, licenseNote: supported.licenseNote,
+      ocrFallback: supported.ocrFallback)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+
+    let preflight = engine.preflight(
+      route: unsupported, files: [SelectedDocument(url: input, size: 28)],
+      options: JobOptions())
+    #expect(preflight.blockingIssues.map(\.code) == ["unsupported_route"])
+    do {
+      _ = try await engine.createJob(
+        route: unsupported, files: [SelectedDocument(url: input, size: 28)],
+        options: JobOptions())
+      Issue.record("An unregistered native route must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_option")
+      #expect(error.localizedDescription.contains("不属于当前原生版本"))
+    }
+
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path).isEmpty)
+  }
+
+  @Test @MainActor
+  func createJobEnforcesStructuralPreflightBeforeWritingTaskData() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-create-preflight-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+
+    let text = temporary.appendingPathComponent("wrong.txt")
+    let pdf = temporary.appendingPathComponent("single.pdf")
+    try Data("wrong type".utf8).write(to: text, options: .atomic)
+    try Data("single input".utf8).write(to: pdf, options: .atomic)
+    let imageRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let editRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+
+    do {
+      _ = try await engine.createJob(route: imageRoute, files: [], options: JobOptions())
+      Issue.record("An empty job must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(error.localizedDescription.contains("至少一个文件"))
+    }
+
+    do {
+      _ = try await engine.createJob(
+        route: imageRoute, files: [SelectedDocument(url: text, size: 10)],
+        options: JobOptions())
+      Issue.record("A mismatched input extension must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(error.localizedDescription.contains("输入格式"))
+    }
+
+    do {
+      _ = try await engine.createJob(
+        route: imageRoute,
+        files: [
+          SelectedDocument(url: text, size: Int64.max),
+          SelectedDocument(url: text, size: Int64.max),
+        ], options: JobOptions())
+      Issue.record("Overflowing input sizes must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(error.localizedDescription.contains("250 MB"))
+    }
+
+    var mergeOptions = JobOptions()
+    mergeOptions.editAction = "merge"
+    do {
+      _ = try await engine.createJob(
+        route: editRoute, files: [SelectedDocument(url: pdf, size: 12)],
+        options: mergeOptions)
+      Issue.record("A one-file merge must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_option")
+      #expect(error.localizedDescription.contains("至少需要两个文件"))
+    }
+
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path).isEmpty)
+  }
+
+  @Test @MainActor
   func credentialSettingsBlockWritesAfterKeychainLoadFailure() async {
     let store = TestCredentialStore(
       values: [.deepseek: "existing-deepseek", .openAI: "existing-openai"],

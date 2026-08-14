@@ -88,19 +88,40 @@ final class NativeDocumentEngine: ObservableObject {
   func preflight(
     route: RouteDefinition, files: [SelectedDocument], options: JobOptions
   ) -> PreflightResponse {
+    makePreflight(route: route, files: files, options: options, checkCredentials: true)
+  }
+
+  private func makePreflight(
+    route: RouteDefinition, files: [SelectedDocument], options: JobOptions,
+    checkCredentials: Bool
+  ) -> PreflightResponse {
     var blocking: [PreflightIssue] = []
     var warnings: [PreflightIssue] = []
-    let total = files.reduce(Int64.zero) { $0 + $1.size }
+    guard Self.canonicalRoute(matching: route) != nil else {
+      blocking.append(
+        issue(
+          "unsupported_route", "此转换路径不属于当前原生版本。",
+          hint: "请重新选择源格式和目标格式。"))
+      return PreflightResponse(
+        ok: false, blockingIssues: blocking, warnings: [], requirements: [])
+    }
+    var total = Int64.zero
+    var totalOverflowed = false
+    for file in files where file.size > 0 {
+      let addition = total.addingReportingOverflow(file.size)
+      total = addition.overflow ? Int64.max : addition.partialValue
+      totalOverflowed = totalOverflowed || addition.overflow
+    }
     if files.isEmpty {
       blocking.append(issue("missing_files", "请选择至少一个文件。"))
-    } else if total > Int64(NativeCapabilities.uploadLimitBytes) {
+    } else if totalOverflowed || total > Int64(NativeCapabilities.uploadLimitBytes) {
       blocking.append(issue("upload_too_large", "所选文件总计超过 250 MB。"))
     }
 
     let allowed = allowedExtensions(for: route.source)
-    for file in files where file.size == 0 {
+    for file in files where file.size <= 0 {
       blocking.append(
-        issue("empty_file", "\(file.name) 是空文件。", hint: "请选择包含内容的文件。"))
+        issue("empty_file", "\(file.name) 的文件大小无效。", hint: "请选择包含内容的文件。"))
     }
     for file in files where !allowed.contains(file.url.pathExtension.lowercased()) {
       blocking.append(
@@ -137,7 +158,7 @@ final class NativeDocumentEngine: ObservableObject {
             "术语表超过 \(TranslationService.maximumGlossaryCharacters) 个字符。",
             hint: "请删除不相关术语后再试。"))
       }
-      if let credential = ProviderCredential(rawValue: options.provider) {
+      if checkCredentials, let credential = ProviderCredential(rawValue: options.provider) {
         do {
           let key = try credentialStore.value(for: credential)
           if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -170,6 +191,14 @@ final class NativeDocumentEngine: ObservableObject {
     guard state == .running, let dataDirectory else {
       throw NativeDocumentError.processing("原生文档引擎尚未就绪。")
     }
+    let validation = makePreflight(
+      route: route, files: files, options: options, checkCredentials: false)
+    if let issue = validation.blockingIssues.first {
+      throw Self.preflightError(issue)
+    }
+    guard let canonicalRoute = Self.canonicalRoute(matching: route) else {
+      throw NativeDocumentError.invalidOption("此转换路径不属于当前原生版本。")
+    }
     let id = UUID().uuidString.lowercased()
     let directory = dataDirectory.appendingPathComponent("Jobs/\(id)", isDirectory: true)
     let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
@@ -179,12 +208,13 @@ final class NativeDocumentEngine: ObservableObject {
 
       let now = ISO8601DateFormatter().string(from: Date())
       let job = JobResponse(
-        id: id, kind: route.kind, status: "queued", inputs: files.map(\.name), createdAt: now,
+        id: id, kind: canonicalRoute.kind, status: "queued", inputs: files.map(\.name),
+        createdAt: now,
         updatedAt: now, output: nil, error: nil, stage: "queued", message: "任务已进入队列。",
         errorCode: nil, errorHint: nil, retryable: false, progress: 0,
         cancelRequested: false, logs: ["已将输入副本保存到应用沙盒。"])
       let metadata = NativeJobMetadata(
-        route: route, options: options, inputNames: copiedInputs.map(\.lastPathComponent))
+        route: canonicalRoute, options: options, inputNames: copiedInputs.map(\.lastPathComponent))
       jobs[id] = job
       try jobPersister(job, directory)
       try persistMetadata(metadata, in: directory)
@@ -707,10 +737,31 @@ final class NativeDocumentEngine: ObservableObject {
   private nonisolated static func validateStoredMetadata(
     _ metadata: NativeJobMetadata, for job: JobResponse
   ) throws {
-    guard metadata.route.kind == job.kind else {
+    guard canonicalRoute(matching: metadata.route) != nil, metadata.route.kind == job.kind else {
       throw NativeDocumentError.invalidFile("任务路径与任务状态不一致，数据可能已经损坏。")
     }
     try validateStoredInputNames(metadata.inputNames)
+  }
+
+  private nonisolated static func canonicalRoute(
+    matching route: RouteDefinition
+  ) -> RouteDefinition? {
+    guard route.enabled else { return nil }
+    return NativeCapabilities.routes.first {
+      $0.enabled && $0.source == route.source && $0.target == route.target && $0.kind == route.kind
+    }
+  }
+
+  private nonisolated static func preflightError(_ issue: PreflightIssue) -> NativeDocumentError {
+    let message = [issue.message, issue.hint].compactMap { $0 }.joined(separator: "：")
+    switch issue.code {
+    case "missing_files", "upload_too_large", "empty_file", "invalid_file_type":
+      return .invalidFile(message)
+    case "provider_not_configured", "provider_keychain_unavailable":
+      return .provider(message)
+    default:
+      return .invalidOption(message)
+    }
   }
 
   private nonisolated static func validatedStoredInputs(

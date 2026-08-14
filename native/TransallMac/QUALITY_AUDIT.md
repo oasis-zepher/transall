@@ -65,7 +65,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Choosing **Reselect Route** removes the dismissed task's restoration reference, preventing it from returning after relaunch. The task directory is not deleted by this navigation action and remains subject to manual deletion or the 24-hour automatic retention policy.
 - Persisted task identifiers, state files, input/output names, route-specific input counts, options, and task directories are checked before use. Recovery cannot follow path traversal or symbolic-link substitutions or resume from invalid options and impossible input counts; malformed running metadata becomes a visible failed task that the user can delete.
 - Newly persisted options are canonicalized for the selected route. Local jobs no longer retain unrelated glossary, watermark, provider, or OCR values from another route, while translation and other option-bearing jobs keep exactly the values their processor and recovery path require.
-- Keychain read failures disable credential editing until a successful reload, and a partial multi-provider save is rolled back. Local-only jobs no longer read translation credentials; translation jobs report Keychain access errors before network work.
+- Keychain read failures disable credential editing until a successful reload. Failed multi-provider saves attempt to roll back every started write, including writes that mutate before throwing, then re-read Keychain and report the actual stored state. Failed deletions use the same reconciliation path, and malformed non-UTF-8 credential data is rejected. Local-only jobs no longer read translation credentials; translation jobs report Keychain access errors before network work.
 - Provider keys request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; existing legacy entries migrate without losing the credential, while unsigned development builds retain a tested legacy fallback when the application identity entitlement is unavailable.
 - Input copying rechecks regular-file status and the actual copied byte count, preventing changed files or non-UI callers from bypassing route-specific limits or placing symbolic links in a task directory. Text-to-PDF input is capped at 20 MB, while other native routes retain the 250 MB limit; the UI, preflight, copied-byte check, and text processor all apply the matching limit before text is loaded.
 - Task submission locks route selection, route reset, option controls, file picking, drag-and-drop, and input removal until input validation and copying finish. Matching model guards prevent non-UI calls from changing the route or input list during the same interval.
@@ -78,8 +78,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 82/82 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 82/82 passed |
+| Swift package tests with Xcode 26.6 | 86/86 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 86/86 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; 5.4 MB universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

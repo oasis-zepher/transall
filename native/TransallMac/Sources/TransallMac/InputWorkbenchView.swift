@@ -53,7 +53,7 @@ struct InputWorkbenchView: View {
   }
 
   private var fileWell: some View {
-    VStack(spacing: model.documents.isEmpty ? 7 : 10) {
+    LazyVStack(spacing: model.documents.isEmpty ? 7 : 10) {
       if model.documents.isEmpty {
         Image(systemName: "doc.badge.plus")
           .font(.title2.weight(.light))

@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import SwiftUI
 
@@ -195,6 +196,18 @@ struct SettingsView: View {
     .frame(width: 540)
     .frame(minHeight: 560)
     .background(TransallTheme.paper)
+    .onChange(of: settings.message) { _, message in
+      guard !message.isEmpty else { return }
+      NSAccessibility.post(
+        element: NSApplication.shared,
+        notification: .announcementRequested,
+        userInfo: [
+          .announcement: message,
+          .priority: settings.messageIsError
+            ? NSAccessibilityPriorityLevel.high.rawValue
+            : NSAccessibilityPriorityLevel.medium.rawValue,
+        ])
+    }
     .confirmationDialog(
       removalTitle,
       isPresented: Binding(

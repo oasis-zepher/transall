@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { publicationConfig } from "../publication-config";
+import { SiteFooter, SiteHeader } from "../site-chrome";
 
 export const metadata: Metadata = {
   title: "关于发布者",
@@ -20,21 +20,10 @@ export const metadata: Metadata = {
 
 export default function AboutPublisher() {
   return (
-    <main>
-      <header className="site-header">
-        <Link className="wordmark" href="/" aria-label="Transall 支持首页">
-          transall
-        </Link>
-        <nav aria-label="主要导航">
-          <Link href="/">支持</Link>
-          <Link href="/privacy">隐私</Link>
-          <Link aria-current="page" href="/about">
-            关于
-          </Link>
-        </nav>
-      </header>
-
-      <section className="about-shell" aria-labelledby="about-title">
+    <div className="site-shell">
+      <SiteHeader current="about" />
+      <main>
+        <section className="about-shell" aria-labelledby="about-title">
         <div className="section-index">PUBLISHER / 03</div>
         <div className="about-copy">
           <p className="eyebrow">ABOUT THE PUBLISHER</p>
@@ -76,12 +65,9 @@ export default function AboutPublisher() {
           </dl>
           <p>个人开发者法定姓名和公开支持邮箱确认后再发布本页。Zephyr 作为品牌使用，不替代 App Store 卖家名称。</p>
         </aside>
-      </section>
-
-      <footer>
-        <span>© {publicationConfig.copyrightYear} Transall</span>
-        <Link href="/privacy">隐私政策</Link>
-      </footer>
-    </main>
+        </section>
+      </main>
+      <SiteFooter href="/privacy" label="隐私政策" />
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { publicationConfig } from "../publication-config";
+import { SiteFooter, SiteHeader } from "../site-chrome";
 
 export const metadata: Metadata = {
   title: "隐私政策",
@@ -20,21 +20,10 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicy() {
   return (
-    <main>
-      <header className="site-header">
-        <Link className="wordmark" href="/" aria-label="Transall 支持首页">
-          transall
-        </Link>
-        <nav aria-label="主要导航">
-          <Link href="/">支持</Link>
-          <Link aria-current="page" href="/privacy">
-            隐私
-          </Link>
-          <Link href="/about">关于</Link>
-        </nav>
-      </header>
-
-      <article className="policy-shell">
+    <div className="site-shell">
+      <SiteHeader current="privacy" />
+      <main>
+        <article className="policy-shell">
         <header className="policy-title">
           <div className="section-index">PRIVACY / 02</div>
           <div>
@@ -132,7 +121,7 @@ export default function PrivacyPolicy() {
           <section>
             <h3>2. Local files and retention</h3>
             <p>
-              PDF editing, OCR, text extraction, and format conversion run locally on the Mac. Working copies, results, previews, and logs stay in the app container. Task data more than 24 hours old is removed the next time the app launches, or immediately when the user deletes the task. Original files are never deleted or overwritten.
+              PDF editing, OCR, text extraction, and format conversion run locally on the Mac. Working copies, results, previews, and logs stay in the app container. Task data more than 24 hours old is removed when the app launches and during hourly checks while it remains open; active processing is retained. Users can also delete the current task immediately. Original files are never deleted or overwritten.
             </p>
           </section>
 
@@ -171,12 +160,9 @@ export default function PrivacyPolicy() {
             </dl>
           </section>
         </section>
-      </article>
-
-      <footer>
-        <span>© {publicationConfig.copyrightYear} Transall</span>
-        <Link href="/">返回支持首页</Link>
-      </footer>
-    </main>
+        </article>
+      </main>
+      <SiteFooter href="/" label="返回支持首页" />
+    </div>
   );
 }

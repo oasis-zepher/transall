@@ -79,7 +79,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure, and successful preview retry verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
-| Support website | ESLint passed; production build passed; 4/4 rendered HTML tests passed |
+| Support website | ESLint passed; production build passed; 5/5 rendered HTML tests passed; desktop and 390 px browser checks have no horizontal overflow or console errors |
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 

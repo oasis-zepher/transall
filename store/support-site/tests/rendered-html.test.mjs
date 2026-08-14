@@ -47,6 +47,7 @@ test("server-renders the bilingual privacy policy", async () => {
   assert.match(html, /Transall 隐私政策/);
   assert.match(html, /PDF 原文件不会上传/);
   assert.match(html, /Local files and retention/);
+  assert.match(html, /during hourly checks while it remains open/);
   assert.match(html, /macOS Keychain/);
   assert.match(html, /DeepSeek 隐私政策/);
   assert.match(html, /OpenAI 隐私政策/);
@@ -55,6 +56,18 @@ test("server-renders the bilingual privacy policy", async () => {
   assert.match(html, /property="og:title" content="Transall 隐私政策"/);
   assert.match(html, /name="twitter:title" content="Transall 隐私政策"/);
   assert.doesNotMatch(html, /og\.png/);
+});
+
+test("keeps repeated site chrome outside the main content landmark", async () => {
+  for (const path of ["/", "/privacy", "/about"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    const main = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? "";
+    assert.ok(main, `Expected a main landmark for ${path}`);
+    assert.doesNotMatch(main, /<nav\b/i, `Navigation must be outside main for ${path}`);
+    assert.doesNotMatch(main, /<footer\b/i, `Footer must be outside main for ${path}`);
+  }
 });
 
 test("server-renders individual publisher information without inventing a legal name", async () => {

@@ -80,32 +80,42 @@ final class AppModel: ObservableObject {
     errorMessage = nil
   }
 
-  func chooseFormat(_ format: String) {
+  func chooseFormat(_ format: String, animated: Bool = true) {
     guard currentJob?.isRunning != true else {
       errorMessage = "任务运行中，请先取消任务再更换路径。"
       return
     }
-    withAnimation(.easeOut(duration: 0.32)) {
+    let changes = { [self] in
       selection.choose(format)
       documents = []
       preflightWarnings = []
       showAdvanced = false
     }
+    if animated {
+      withAnimation(.easeOut(duration: 0.32), changes)
+    } else {
+      changes()
+    }
   }
 
-  func resetRoute() {
+  func resetRoute(animated: Bool = true) {
     guard currentJob?.isRunning != true else {
       errorMessage = "任务运行中，请先取消任务再重选路径。"
       return
     }
     pollingTask?.cancel()
-    withAnimation(.easeOut(duration: 0.3)) {
+    let changes = { [self] in
       selection.clear()
       documents = []
       currentJob = nil
       previewPages = []
       preflightWarnings = []
       errorMessage = nil
+    }
+    if animated {
+      withAnimation(.easeOut(duration: 0.3), changes)
+    } else {
+      changes()
     }
   }
 

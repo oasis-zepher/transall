@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -13,8 +14,10 @@ struct TransallApp: App {
         .task {
           await model.start()
         }
-        .onDisappear {
-          model.backend.stop()
+        .onReceive(
+          NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+        ) { _ in
+          model.backend.prepareForTermination()
         }
     }
     .windowStyle(.hiddenTitleBar)

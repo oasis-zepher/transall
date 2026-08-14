@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FormatRouterView: View {
   @EnvironmentObject private var model: AppModel
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: 15) {
@@ -47,7 +48,7 @@ struct FormatRouterView: View {
             format: format,
             label: model.capabilities?.formats[format]?.label ?? fallbackLabel(for: format),
             state: state(for: format),
-            action: { model.chooseFormat(format) }
+            action: { model.chooseFormat(format, animated: !reduceMotion) }
           )
           .position(
             x: center.x + cos(angle) * radius,
@@ -218,7 +219,7 @@ struct FormatRouterView: View {
 }
 
 private struct FormatNode: View {
-  enum State { case available, unavailable, source, target }
+  enum State: Equatable { case available, unavailable, source, target }
 
   let format: String
   let label: String
@@ -241,6 +242,7 @@ private struct FormatNode: View {
         .shadow(color: TransallTheme.ink.opacity(state == .unavailable ? 0 : 0.1), radius: 7, y: 3)
     }
     .buttonStyle(.plain)
+    .disabled(state == .unavailable)
     .opacity(state == .unavailable ? 0.34 : 1)
     .accessibilityLabel("\(label)格式")
     .accessibilityValue(accessibilityValue)

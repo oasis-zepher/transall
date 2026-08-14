@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
   @EnvironmentObject private var model: AppModel
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     ZStack {
@@ -98,7 +99,7 @@ struct ContentView: View {
         }
 
         if model.selection.source != nil {
-          Button("重选路径") { model.resetRoute() }
+          Button("重选路径") { model.resetRoute(animated: !reduceMotion) }
             .buttonStyle(QuietButtonStyle())
             .disabled(model.currentJob?.isRunning == true)
             .help(model.currentJob?.isRunning == true ? "先取消正在运行的任务" : "重新选择源格式和目标格式")

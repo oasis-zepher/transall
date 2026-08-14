@@ -296,17 +296,24 @@ enum NativeDocumentProcessor {
     var pages: [String] = []
     for index in 0..<document.pageCount {
       try Task.checkCancellation()
-      let original =
+      var sourceText =
         document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      guard !original.isEmpty else {
+      if sourceText.isEmpty, let page = CGPDFDocument(input as CFURL)?.page(at: index + 1),
+        let image = render(page: page, maximumDimension: 2400)
+      {
+        sourceText = try recognize(
+          image, languages: recognitionLanguages(options.ocrLanguage)
+        ).map(\.text).joined(separator: "\n")
+      }
+      guard !sourceText.isEmpty else {
         pages.append("第 \(index + 1) 页没有可提取的文字。")
         continue
       }
       let translated = try await translator.translate(
-        original, source: options.sourceLanguage, target: options.targetLanguage,
+        sourceText, source: options.sourceLanguage, target: options.targetLanguage,
         glossary: options.glossary)
       if options.outputMode == "bilingual" {
-        pages.append("原文\n\(original)\n\n译文\n\(translated)")
+        pages.append("原文\n\(sourceText)\n\n译文\n\(translated)")
       } else {
         pages.append(translated)
       }
@@ -529,13 +536,59 @@ enum NativeDocumentProcessor {
   }
 }
 
-private struct TranslationService {
+struct TranslationService {
   let provider: String
   let apiKey: String
 
   func translate(_ text: String, source: String, target: String, glossary: String) async throws
     -> String
   {
+    var translated: [String] = []
+    for chunk in Self.chunks(text) {
+      try Task.checkCancellation()
+      translated.append(
+        try await translateChunk(chunk, source: source, target: target, glossary: glossary))
+    }
+    return translated.joined(separator: "\n\n")
+  }
+
+  static func chunks(_ text: String, maximumCharacters: Int = 12_000) -> [String] {
+    guard maximumCharacters > 0, text.count > maximumCharacters else { return [text] }
+    var result: [String] = []
+    var current = ""
+    func flush() {
+      let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { result.append(trimmed) }
+      current = ""
+    }
+    for paragraph in text.components(separatedBy: "\n\n") {
+      if paragraph.count > maximumCharacters {
+        flush()
+        var start = paragraph.startIndex
+        while start < paragraph.endIndex {
+          let end =
+            paragraph.index(
+              start, offsetBy: maximumCharacters, limitedBy: paragraph.endIndex)
+            ?? paragraph.endIndex
+          result.append(String(paragraph[start..<end]))
+          start = end
+        }
+      } else if current.isEmpty {
+        current = paragraph
+      } else if current.count + paragraph.count + 2 <= maximumCharacters {
+        current += "\n\n" + paragraph
+      } else {
+        flush()
+        current = paragraph
+      }
+    }
+    flush()
+    return result
+  }
+
+  private func translateChunk(
+    _ text: String, source: String, target: String, glossary: String
+  ) async throws -> String {
     let isOpenAI = provider == "openai"
     let endpoint = URL(
       string: isOpenAI

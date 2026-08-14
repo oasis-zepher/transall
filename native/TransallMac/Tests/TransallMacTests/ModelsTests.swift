@@ -55,6 +55,15 @@ struct ModelsTests {
   }
 
   @Test
+  func translationChunksRespectRequestLimitAndPreserveText() {
+    let source = String(repeating: "甲", count: 23) + "\n\n" + String(repeating: "乙", count: 9)
+    let chunks = TranslationService.chunks(source, maximumCharacters: 10)
+    #expect(chunks.count == 4)
+    #expect(chunks.allSatisfy { $0.count <= 10 })
+    #expect(chunks.joined().filter { !$0.isWhitespace } == source.filter { !$0.isWhitespace })
+  }
+
+  @Test
   func nativePDFEditDeletesAndRotatesPages() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-native-test-\(UUID().uuidString)", isDirectory: true)

@@ -23,11 +23,13 @@ final class NativeDocumentEngine: ObservableObject {
   private var jobs: [String: JobResponse] = [:]
   private var tasks: [String: Task<Void, Never>] = [:]
   private var dataDirectory: URL?
+  private var isTerminating = false
 
   func start() async {
     state = .starting
     do {
       dataDirectory = try applicationDataDirectory()
+      try removeExpiredJobs()
       state = .running
       appendLog("PDFKit、Core Graphics 和 Vision 已就绪。")
     } catch {
@@ -36,7 +38,8 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
-  func stop() {
+  func prepareForTermination() {
+    isTerminating = true
     for task in tasks.values { task.cancel() }
     tasks.removeAll()
   }
@@ -273,6 +276,7 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func markCancelled(jobID: String, directory: URL) {
+    guard !isTerminating else { return }
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
     let updated = replacing(
       job, status: "cancelled", stage: "cancelled", message: "任务已取消。", progress: job.progress,
@@ -349,6 +353,23 @@ final class NativeDocumentEngine: ObservableObject {
       at: directory.appendingPathComponent("Jobs", isDirectory: true),
       withIntermediateDirectories: true)
     return directory
+  }
+
+  private func removeExpiredJobs(now: Date = Date()) throws {
+    guard let dataDirectory else { return }
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    let directories = try FileManager.default.contentsOfDirectory(
+      at: jobsDirectory,
+      includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+      options: [.skipsHiddenFiles])
+    for directory in directories {
+      let values = try directory.resourceValues(
+        forKeys: [.contentModificationDateKey, .isDirectoryKey])
+      guard values.isDirectory == true, let modified = values.contentModificationDate,
+        now.timeIntervalSince(modified) > 24 * 60 * 60
+      else { continue }
+      try FileManager.default.removeItem(at: directory)
+    }
   }
 
   private func jobDirectory(_ id: String) throws -> URL {

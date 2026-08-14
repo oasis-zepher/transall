@@ -1,13 +1,13 @@
 # Transall for macOS
 
-This package is the native SwiftUI client for Transall. It does not use a `WebView`.
+This package is the native SwiftUI edition of Transall. It does not use a `WebView` or a Python sidecar.
 
 ```text
-SwiftUI interface
-    ↕ URLSession on 127.0.0.1:8765
-FastAPI sidecar
-    ↕
-existing conversion, PDF, OCR, and translation engines
+SwiftUI document workbench
+    ├── PDFKit / Core Graphics: PDF operations and rendering
+    ├── Vision: local OCR
+    ├── Core Text: searchable PDF creation
+    └── URLSession: opt-in DeepSeek or OpenAI translation
 ```
 
 ## Development
@@ -15,26 +15,16 @@ existing conversion, PDF, OCR, and translation engines
 Requirements:
 
 - macOS 14 or newer
-- Swift 6 toolchain
-- `uv`
-- the repository's `requirements.lock`
+- Xcode 27 or a compatible Swift toolchain
 
-Run from this directory so the app can discover the repository root:
+Run from this directory:
 
 ```bash
 swift build
 swift run TransallMac
 ```
 
-The client first connects to an existing service at `127.0.0.1:8765`. If none is running, it starts `app.native_entry` with `uv`. These environment variables override discovery:
-
-| Variable | Purpose |
-| --- | --- |
-| `TRANSALL_BACKEND_URL` | Local backend URL |
-| `TRANSALL_PROJECT_ROOT` | Repository root containing `app/main.py` |
-| `TRANSALL_UV_EXECUTABLE` | Absolute path to `uv` |
-
-Local App data is stored in `~/Library/Application Support/Transall/Data` when the SwiftUI app owns the backend process.
+Local task copies, previews, logs, and results are stored in the app's Application Support container. Completed task data can be deleted from the result panel and is removed automatically after 24 hours.
 
 ## Tests
 
@@ -46,10 +36,10 @@ Some Command Line Tools installations do not ship the XCTest module or Swift Tes
 
 ## App packaging
 
-`Support/Info.plist` contains the bundle metadata and allows localhost networking. A distributable build still needs:
+The committed Xcode project includes App Sandbox entitlements, the privacy manifest, and the complete AppIcon set. A store upload still needs:
 
-1. A complete Xcode installation.
-2. The Python engine packaged as the bundle auxiliary executable `transall-backend`.
-3. App signing, notarization, and a DMG or ZIP release artifact.
+1. A unique bundle identifier owned by the publisher.
+2. An Apple Developer team and Mac App Distribution signing assets.
+3. App Store Connect metadata, screenshots, public support URL, and privacy-policy URL.
 
-`BackendService` already prefers the bundled `transall-backend`, then falls back to the source-checkout development command.
+The broader FastAPI/browser edition remains in the repository, but none of its Python dependencies are linked or copied into the native app bundle.

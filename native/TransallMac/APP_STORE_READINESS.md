@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 62 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 63 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -52,7 +52,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - If Keychain reads fail, Settings identifies the read failure, disables credential edits, and offers a retry instead of treating existing keys as empty. Multi-provider saves roll back earlier writes if a later write fails.
 - Distribution-signed builds request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; legacy entries migrate after a successful protected write. Unsigned development builds fall back to the legacy keychain when the application-identifier entitlement is unavailable. Both branches have simulated regression coverage; the signed path still requires validation after signing assets exist.
 - Local-only document jobs do not access translation credentials. Translation preflight and processing surface Keychain failures separately from an unconfigured key and stop before any provider request.
-- Task creation independently rejects unregistered or disabled routes, empty and mismatched input batches, invalid file sizes, overflowing or oversized totals, and one-file merge requests before creating a task directory. Persisted tasks use the matching canonical route from the native capability registry.
+- Task creation independently rejects unregistered or disabled routes, empty and mismatched input batches, invalid file sizes, overflowing or oversized totals, one-file merge requests, unknown PDF edit actions, malformed page selections, unsupported rotation angles, and invalid crop boxes before creating a task directory. Persisted tasks use the matching canonical route from the native capability registry.
 - Launch and quit leave no Transall process and no TCP listener on port 8765.
 - The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
 - Image-to-PDF conversion decodes one input at a time, failed imports remove incomplete task directories, and the processor rejects unknown translation providers before network work.

@@ -74,6 +74,9 @@ enum PageSelectionParser {
 }
 
 enum NativeDocumentProcessor {
+  static let maximumPDFImageDimension = 3_508
+  static let maximumOCRImageDimension = 2_400
+
   struct Result: Sendable {
     let outputURL: URL
     let logs: [String]
@@ -276,7 +279,7 @@ enum NativeDocumentProcessor {
     try withPDFContext(outputURL: outputURL, mediaBox: pageBox) { context in
       for input in inputs {
         try Task.checkCancellation()
-        let image = try loadImage(input)
+        let image = try loadImage(input, maximumDimension: maximumPDFImageDimension)
         context.beginPDFPage(nil)
         context.setFillColor(NSColor.white.cgColor)
         context.fill(pageBox)
@@ -350,7 +353,7 @@ enum NativeDocumentProcessor {
         }
         sections.append(pages.joined(separator: "\n\n---\n\n"))
       } else {
-        let image = try loadImage(input)
+        let image = try loadImage(input, maximumDimension: maximumOCRImageDimension)
         sections.append(
           try recognize(image, languages: recognitionLanguages(options.ocrLanguage)).map(\.text)
             .joined(separator: "\n"))
@@ -425,7 +428,7 @@ enum NativeDocumentProcessor {
           processedPageCount += 1
         }
       } else {
-        try body(loadImage(input))
+        try body(loadImage(input, maximumDimension: maximumOCRImageDimension))
         processedPageCount += 1
       }
     }
@@ -538,17 +541,23 @@ enum NativeDocumentProcessor {
     try body(context)
   }
 
-  static func loadImage(_ url: URL) throws -> CGImage {
+  static func loadImage(
+    _ url: URL, maximumDimension: Int = maximumPDFImageDimension
+  ) throws -> CGImage {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
       throw NativeDocumentError.invalidFile("无法读取图片 \(url.lastPathComponent)。")
     }
     let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-    let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 1
-    let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 1
+    let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 0
+    let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 0
+    guard width > 0, height > 0 else {
+      throw NativeDocumentError.invalidFile("无法读取图片尺寸 \(url.lastPathComponent)。")
+    }
+    let thumbnailDimension = max(1, min(maximumDimension, max(width, height)))
     let options: [CFString: Any] = [
       kCGImageSourceCreateThumbnailFromImageAlways: true,
       kCGImageSourceCreateThumbnailWithTransform: true,
-      kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+      kCGImageSourceThumbnailMaxPixelSize: thumbnailDimension,
       kCGImageSourceShouldCacheImmediately: true,
     ]
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)

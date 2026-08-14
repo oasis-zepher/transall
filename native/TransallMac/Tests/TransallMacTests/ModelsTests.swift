@@ -974,6 +974,21 @@ struct ModelsTests {
   }
 
   @Test
+  func imageLoadingDownsamplesOversizedInput() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-downsample-test-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try writeTestImage(
+      to: temporary, color: CGColor(red: 0.2, green: 0.4, blue: 0.7, alpha: 1),
+      width: 1_200, height: 600)
+
+    let decoded = try NativeDocumentProcessor.loadImage(temporary, maximumDimension: 300)
+
+    #expect(decoded.width == 300)
+    #expect(decoded.height == 150)
+  }
+
+  @Test
   func translationNetworkErrorsHaveActionableMessages() {
     let offline = TranslationService.providerError(
       for: URLError(.notConnectedToInternet))
@@ -1147,14 +1162,16 @@ struct ModelsTests {
     }
   }
 
-  private func writeTestImage(to url: URL, color: CGColor) throws {
+  private func writeTestImage(
+    to url: URL, color: CGColor, width: Int = 32, height: Int = 24
+  ) throws {
     let context = try #require(
       CGContext(
-        data: nil, width: 32, height: 24, bitsPerComponent: 8, bytesPerRow: 0,
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
         space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     context.setFillColor(color)
-    context.fill(CGRect(x: 0, y: 0, width: 32, height: 24))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     let image = try #require(context.makeImage())
     let destination = try #require(
       CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))

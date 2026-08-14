@@ -30,7 +30,7 @@ struct ResultWorkbenchView: View {
 
         if !model.previewPages.isEmpty {
           Divider().overlay(TransallTheme.line)
-          PreviewGridView(pages: model.previewPages, client: model.backend.client)
+          PreviewGridView(pages: model.previewPages)
         }
       }
     }

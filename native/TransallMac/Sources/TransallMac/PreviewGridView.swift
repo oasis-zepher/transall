@@ -2,7 +2,6 @@ import SwiftUI
 
 struct PreviewGridView: View {
   let pages: [PreviewPage]
-  let client: APIClient
 
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
@@ -18,7 +17,7 @@ struct PreviewGridView: View {
         LazyHStack(alignment: .top, spacing: 10) {
           ForEach(pages) { page in
             VStack(alignment: .leading, spacing: 5) {
-              AsyncImage(url: client.absoluteURL(for: page.url)) { phase in
+              AsyncImage(url: URL(string: page.url)) { phase in
                 switch phase {
                 case .empty:
                   ProgressView()

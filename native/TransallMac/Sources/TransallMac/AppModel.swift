@@ -20,7 +20,7 @@ final class AppModel: ObservableObject {
   @Published var isSaving = false
   @Published var showAdvanced = false
 
-  let backend = BackendService()
+  let backend = NativeDocumentEngine()
   private var pollingTask: Task<Void, Never>?
   private let lastJobKey = "transall.native.lastJobId"
 
@@ -65,28 +65,19 @@ final class AppModel: ObservableObject {
   }
 
   func reloadEnvironment() async {
-    do {
-      async let capabilityRequest = backend.client.capabilities()
-      async let diagnosticRequest = backend.client.diagnostics()
-      async let providerRequest = backend.client.providers()
-      let (capabilities, diagnostics, providers) = try await (
-        capabilityRequest,
-        diagnosticRequest,
-        providerRequest
-      )
-      self.capabilities = capabilities
-      self.diagnostics = Dictionary(
-        uniqueKeysWithValues: diagnostics.dependencies.map { ($0.name, $0) })
-      self.providers = providers.providers
-      if !providers.providers.contains(where: { $0.name == options.provider && $0.configured }),
-        let configured = providers.providers.first(where: \.configured)
-      {
-        options.provider = configured.name
-      }
-      errorMessage = nil
-    } catch {
-      errorMessage = error.localizedDescription
+    let capabilities = backend.capabilities()
+    let diagnostics = backend.diagnostics()
+    let providers = backend.providers()
+    self.capabilities = capabilities
+    self.diagnostics = Dictionary(
+      uniqueKeysWithValues: diagnostics.dependencies.map { ($0.name, $0) })
+    self.providers = providers.providers
+    if !providers.providers.contains(where: { $0.name == options.provider && $0.configured }),
+      let configured = providers.providers.first(where: \.configured)
+    {
+      options.provider = configured.name
     }
+    errorMessage = nil
   }
 
   func chooseFormat(_ format: String) {
@@ -164,11 +155,8 @@ final class AppModel: ObservableObject {
     errorMessage = nil
     previewPages = []
     preflightWarnings = []
-    let payload = options.payload(for: route)
-
     do {
-      let preflight = try await backend.client.preflight(
-        route: route, files: documents, options: payload)
+      let preflight = backend.preflight(route: route, files: documents, options: options)
       preflightWarnings = preflight.warnings
       guard preflight.ok else {
         errorMessage = preflight.blockingIssues
@@ -178,8 +166,7 @@ final class AppModel: ObservableObject {
         return
       }
 
-      let job = try await backend.client.createJob(
-        kind: route.kind, files: documents, options: payload)
+      let job = try await backend.createJob(route: route, files: documents, options: options)
       currentJob = job
       UserDefaults.standard.set(job.id, forKey: lastJobKey)
       isSubmitting = false
@@ -193,7 +180,7 @@ final class AppModel: ObservableObject {
   func cancelJob() async {
     guard let job = currentJob, job.isRunning else { return }
     do {
-      currentJob = try await backend.client.cancelJob(id: job.id)
+      currentJob = try backend.cancelJob(id: job.id)
       pollingTask?.cancel()
     } catch {
       errorMessage = error.localizedDescription
@@ -210,7 +197,7 @@ final class AppModel: ObservableObject {
     isSaving = true
     defer { isSaving = false }
     do {
-      try await backend.client.download(jobID: job.id, to: destination)
+      try backend.download(jobID: job.id, to: destination)
       NSWorkspace.shared.activateFileViewerSelecting([destination])
     } catch {
       errorMessage = error.localizedDescription
@@ -225,7 +212,7 @@ final class AppModel: ObservableObject {
   func deleteCurrentJob() async {
     guard let job = currentJob, !job.isRunning else { return }
     do {
-      try await backend.client.deleteJob(id: job.id)
+      try backend.deleteJob(id: job.id)
       UserDefaults.standard.removeObject(forKey: lastJobKey)
       currentJob = nil
       previewPages = []
@@ -248,7 +235,7 @@ final class AppModel: ObservableObject {
       guard let self else { return }
       while !Task.isCancelled {
         do {
-          let job = try await backend.client.job(id: jobID)
+          let job = try backend.job(id: jobID)
           currentJob = job
           if job.isFinished {
             if job.status == "done" {
@@ -266,7 +253,7 @@ final class AppModel: ObservableObject {
 
   private func loadPreview(jobID: String) async {
     do {
-      previewPages = try await backend.client.previewPages(jobID: jobID).pages
+      previewPages = try await backend.previewPages(jobID: jobID).pages
     } catch {
       previewPages = []
     }
@@ -275,7 +262,7 @@ final class AppModel: ObservableObject {
   private func restoreLastJob() async {
     guard let jobID = UserDefaults.standard.string(forKey: lastJobKey) else { return }
     do {
-      let job = try await backend.client.job(id: jobID)
+      let job = try backend.job(id: jobID)
       currentJob = job
       if job.isRunning {
         beginPolling(jobID: job.id)

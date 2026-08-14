@@ -26,8 +26,6 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.productivity
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.transall.mac
@@ -40,7 +38,7 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: Support/Transall.Debug.entitlements
-          ENABLE_APP_SANDBOX: NO
+          ENABLE_APP_SANDBOX: YES
         Release:
           CODE_SIGN_ENTITLEMENTS: Support/Transall.entitlements
           ENABLE_APP_SANDBOX: YES

@@ -206,7 +206,7 @@ struct InputWorkbenchView: View {
     VStack(alignment: .leading, spacing: 9) {
       SectionLabel(text: "OCR")
       optionGrid {
-        TextField("OCR 语言", text: $model.options.ocrLanguage)
+        TextField("识别语言，如 zh-Hans,en-US", text: $model.options.ocrLanguage)
           .textFieldStyle(.roundedBorder)
           .controlSize(.small)
         Picker("输出", selection: $model.options.ocrOutputFormat) {
@@ -247,8 +247,6 @@ struct InputWorkbenchView: View {
         compactField("页面顺序，如 3,1,2", text: $model.options.reorderPages)
         compactField("裁剪页，如 1,3-5", text: $model.options.cropPages)
         compactField("裁剪区域 x0,y0,x1,y1", text: $model.options.cropBox)
-        compactField("查找文字", text: $model.options.replaceFind)
-        compactField("替换为", text: $model.options.replaceWith)
         compactField("水印文字", text: $model.options.watermark)
       }
     }

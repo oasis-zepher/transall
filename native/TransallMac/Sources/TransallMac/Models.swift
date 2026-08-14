@@ -218,7 +218,7 @@ struct RouteSelection: Equatable {
   }
 }
 
-struct JobOptions {
+struct JobOptions: Codable, Equatable {
   var provider = "deepseek"
   var outputMode = "translated"
   var sourceLanguage = "en"
@@ -236,7 +236,7 @@ struct JobOptions {
   var replaceWith = ""
   var watermark = ""
 
-  var ocrLanguage = "chi_sim+eng"
+  var ocrLanguage = "zh-Hans,en-US"
   var ocrOutputFormat = "searchable_pdf"
 
   func payload(for route: RouteDefinition) -> [String: Any] {

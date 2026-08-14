@@ -989,8 +989,6 @@ struct TranslationService {
   static let translatedCharacterExpansionFactor = 8
   static let maximumProviderErrorCharacters = 1_000
 
-  private static let requestSession = URLSession(configuration: sessionConfiguration())
-
   let provider: String
   let apiKey: String
   private let requestSender: RequestSender
@@ -999,7 +997,7 @@ struct TranslationService {
   init(
     provider: String, apiKey: String,
     requestSender: @escaping RequestSender = {
-      try await TranslationService.requestSession.data(for: $0)
+      try await TranslationService.boundedData(for: $0)
     },
     sleeper: @escaping Sleeper = { try await Task.sleep(for: .seconds($0)) }
   ) {
@@ -1017,6 +1015,15 @@ struct TranslationService {
     configuration.httpShouldSetCookies = false
     configuration.urlCredentialStorage = nil
     return configuration
+  }
+
+  static func boundedData(
+    for request: URLRequest,
+    configuration: URLSessionConfiguration = sessionConfiguration(),
+    maximumBytes: Int = maximumResponseBytes
+  ) async throws -> (Data, URLResponse) {
+    try await BoundedResponseLoader(maximumBytes: maximumBytes).data(
+      for: request, configuration: configuration)
   }
 
   func translate(_ text: String, source: String, target: String, glossary: String) async throws
@@ -1121,8 +1128,7 @@ struct TranslationService {
         guard data.count <= Self.maximumResponseBytes,
           expectedBytes < 0 || expectedBytes <= Int64(Self.maximumResponseBytes)
         else {
-          throw NativeDocumentError.provider(
-            "翻译服务响应内容超过 \(Self.maximumResponseBytes / 1_024 / 1_024) MB，已停止当前任务。")
+          throw Self.oversizedResponseError(maximumBytes: Self.maximumResponseBytes)
         }
         guard let http = response as? HTTPURLResponse else {
           throw NativeDocumentError.provider("翻译服务返回了无效响应。")
@@ -1165,6 +1171,11 @@ struct TranslationService {
   private static let retryableNetworkErrors: Set<URLError.Code> = [
     .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost,
   ]
+
+  static func oversizedResponseError(maximumBytes: Int) -> NativeDocumentError {
+    let megabytes = max(1, maximumBytes / 1_024 / 1_024)
+    return .provider("翻译服务响应内容超过 \(megabytes) MB，已停止当前任务。")
+  }
 
   private static func retryDelay(after attempt: Int, response: HTTPURLResponse?) -> TimeInterval {
     if let value = response?.value(forHTTPHeaderField: "Retry-After"),
@@ -1223,5 +1234,148 @@ struct TranslationService {
     default:
       .provider("翻译服务连接失败：\(error.localizedDescription)")
     }
+  }
+}
+
+private struct BoundedResponseBuffer {
+  let maximumBytes: Int
+  private(set) var data = Data()
+
+  mutating func append(_ chunk: Data) throws {
+    guard maximumBytes >= 0, data.count <= maximumBytes,
+      chunk.count <= maximumBytes - data.count
+    else {
+      throw TranslationService.oversizedResponseError(maximumBytes: maximumBytes)
+    }
+    data.append(chunk)
+  }
+}
+
+private final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+  private let lock = NSLock()
+  private var buffer: BoundedResponseBuffer
+  private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
+  private var response: URLResponse?
+  private var session: URLSession?
+  private var task: URLSessionDataTask?
+  private var cancellationRequested = false
+  private var finished = false
+
+  init(maximumBytes: Int) {
+    buffer = BoundedResponseBuffer(maximumBytes: maximumBytes)
+  }
+
+  func data(
+    for request: URLRequest, configuration: URLSessionConfiguration
+  ) async throws -> (Data, URLResponse) {
+    try Task.checkCancellation()
+    let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+    let task = session.dataTask(with: request)
+
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        lock.lock()
+        self.session = session
+        self.task = task
+        if cancellationRequested {
+          finished = true
+          lock.unlock()
+          task.cancel()
+          session.invalidateAndCancel()
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        self.continuation = continuation
+        lock.unlock()
+        task.resume()
+      }
+    } onCancel: {
+      self.cancel()
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+  ) {
+    if response.expectedContentLength > Int64(buffer.maximumBytes) {
+      finish(
+        .failure(
+          TranslationService.oversizedResponseError(maximumBytes: buffer.maximumBytes)))
+      completionHandler(.cancel)
+      return
+    }
+    lock.lock()
+    if !finished { self.response = response }
+    lock.unlock()
+    completionHandler(.allow)
+  }
+
+  func urlSession(
+    _ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data
+  ) {
+    let limitError: Error?
+    lock.lock()
+    if finished {
+      limitError = nil
+    } else {
+      do {
+        try buffer.append(data)
+        limitError = nil
+      } catch {
+        limitError = error
+      }
+    }
+    lock.unlock()
+
+    if let limitError {
+      finish(.failure(limitError))
+      dataTask.cancel()
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
+  ) {
+    if let error {
+      finish(.failure(error))
+      return
+    }
+
+    lock.lock()
+    let response = self.response
+    let data = buffer.data
+    lock.unlock()
+    guard let response else {
+      finish(.failure(URLError(.badServerResponse)))
+      return
+    }
+    finish(.success((data, response)))
+  }
+
+  private func cancel() {
+    lock.lock()
+    cancellationRequested = true
+    let task = self.task
+    let canFinish = continuation != nil && !finished
+    lock.unlock()
+
+    task?.cancel()
+    if canFinish { finish(.failure(CancellationError())) }
+  }
+
+  private func finish(_ result: Result<(Data, URLResponse), Error>) {
+    lock.lock()
+    guard !finished, let continuation else {
+      lock.unlock()
+      return
+    }
+    finished = true
+    self.continuation = nil
+    let session = self.session
+    lock.unlock()
+
+    continuation.resume(with: result)
+    session?.invalidateAndCancel()
   }
 }

@@ -2631,6 +2631,52 @@ struct ModelsTests {
   }
 
   @Test
+  func translationDefaultTransportEnforcesResponseByteLimitWhileReceiving() async throws {
+    let configuration = TranslationService.sessionConfiguration()
+    configuration.protocolClasses = [StreamingResponseURLProtocol.self]
+
+    StreamingResponseURLProtocol.probe.reset()
+    let acceptedRequest = URLRequest(
+      url: try #require(URL(string: "https://translation.test/stream?chunks=1")))
+    let (accepted, response) = try await TranslationService.boundedData(
+      for: acceptedRequest, configuration: configuration, maximumBytes: 700)
+    #expect(accepted.count == StreamingResponseURLProtocol.chunkSize)
+    #expect((response as? HTTPURLResponse)?.statusCode == 200)
+
+    StreamingResponseURLProtocol.probe.reset()
+    let declaredOversizedRequest = URLRequest(
+      url: try #require(
+        URL(string: "https://translation.test/stream?chunks=8&length=701")))
+    do {
+      _ = try await TranslationService.boundedData(
+        for: declaredOversizedRequest, configuration: configuration, maximumBytes: 700)
+      Issue.record("Declared oversized responses should stop before receiving their body")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("响应内容超过") == true)
+    }
+    try await Task.sleep(for: .milliseconds(20))
+    var snapshot = StreamingResponseURLProtocol.probe.snapshot()
+    #expect(snapshot.deliveredChunks == 0)
+    #expect(snapshot.wasStopped)
+
+    StreamingResponseURLProtocol.probe.reset()
+    let oversizedRequest = URLRequest(
+      url: try #require(URL(string: "https://translation.test/stream?chunks=8")))
+    do {
+      _ = try await TranslationService.boundedData(
+        for: oversizedRequest, configuration: configuration, maximumBytes: 700)
+      Issue.record("Chunked responses should stop as soon as their byte limit is exceeded")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("响应内容超过") == true)
+    }
+
+    try await Task.sleep(for: .milliseconds(40))
+    snapshot = StreamingResponseURLProtocol.probe.snapshot()
+    #expect(snapshot.deliveredChunks == 2)
+    #expect(snapshot.wasStopped)
+  }
+
+  @Test
   func translationRejectsPathologicallyExpandedContent() async throws {
     let source = "short source"
     let maximum = TranslationService.maximumTranslatedCharacters(for: source)
@@ -2992,6 +3038,106 @@ private actor TranslationResponseSequence {
 
   func snapshot() -> (requestCount: Int, delays: [TimeInterval]) {
     (requestCount, delays)
+  }
+}
+
+private final class StreamingResponseProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var deliveredChunks = 0
+  private var wasStopped = false
+
+  func reset() {
+    lock.lock()
+    deliveredChunks = 0
+    wasStopped = false
+    lock.unlock()
+  }
+
+  func recordChunk() {
+    lock.lock()
+    deliveredChunks += 1
+    lock.unlock()
+  }
+
+  func recordStop() {
+    lock.lock()
+    wasStopped = true
+    lock.unlock()
+  }
+
+  func snapshot() -> (deliveredChunks: Int, wasStopped: Bool) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (deliveredChunks, wasStopped)
+  }
+}
+
+private final class StreamingResponseURLProtocol: URLProtocol, @unchecked Sendable {
+  static let chunkSize = 512
+  static let probe = StreamingResponseProbe()
+
+  private let stateLock = NSLock()
+  private let queue = DispatchQueue(label: "com.transall.tests.streaming-response")
+  private var stopped = false
+
+  override class func canInit(with request: URLRequest) -> Bool {
+    request.url?.host == "translation.test"
+  }
+
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    request
+  }
+
+  override func startLoading() {
+    guard let url = request.url else {
+      client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+      return
+    }
+    let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    let queryItems = components?.queryItems ?? []
+    var headers = ["Content-Type": "application/json"]
+    if let length = queryItems.first(where: { $0.name == "length" })?.value {
+      headers["Content-Length"] = length
+    }
+    guard
+      let response = HTTPURLResponse(
+        url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+        headerFields: headers)
+    else {
+      client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+      return
+    }
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    let chunkCount = queryItems.first(where: { $0.name == "chunks" })
+      .flatMap { Int($0.value ?? "") } ?? 1
+    sendChunk(index: 0, count: chunkCount)
+  }
+
+  override func stopLoading() {
+    stateLock.lock()
+    stopped = true
+    stateLock.unlock()
+    Self.probe.recordStop()
+  }
+
+  private func sendChunk(index: Int, count: Int) {
+    guard index < count else {
+      client?.urlProtocolDidFinishLoading(self)
+      return
+    }
+    queue.asyncAfter(deadline: .now() + .milliseconds(5)) { [weak self] in
+      guard let self, self.isRunning else { return }
+      Self.probe.recordChunk()
+      self.client?.urlProtocol(
+        self, didLoad: Data(repeating: 0x20, count: Self.chunkSize))
+      self.sendChunk(index: index + 1, count: count)
+    }
+  }
+
+  private var isRunning: Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return !stopped
   }
 }
 

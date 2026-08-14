@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 80/80 Swift package tests, 80/80 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 82/82 Swift package tests, 82/82 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -42,6 +42,8 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Vision OCR converted the image-only review sample into a one-page searchable PDF with extractable text.
 - Translation clearly discloses that extracted text is sent to the selected provider while the PDF file remains local.
 - Starting translation without a configured provider key stops with an actionable local error before any request is sent.
+- PDF translation first extracts and checks the entire document locally. A provider request begins only after the document is confirmed to contain no more than 200 pages and 200,000 source characters; exceeding either limit produces a specific split-document recovery instruction without paid network work.
+- The translation processor independently requires exactly one PDF, so non-UI callers cannot silently pass extra files that would otherwise be ignored. The workbench shows the page and character limits beside the provider disclosure.
 - Translation retries only temporary network failures and HTTP 408, 425, 429, 500, 502, 503, and 504 responses. It honors bounded `Retry-After` delays, stops after two retries, cancels during backoff, and does not retry authentication failures.
 - Translation uses a dedicated ephemeral network session with URL caching, cookies, and shared URL credential storage disabled; individual requests also reject caching and cookies.
 - Task-state writes no longer fail silently: processing does not start until the running state is saved, completion/failure/cancellation write errors remain visible, and a complete output can restore its finished state without reprocessing.

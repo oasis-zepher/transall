@@ -260,6 +260,246 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func processingStopsBeforeWorkWhenRunningStateCannotBeSaved() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-running-state-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("input.png")
+    try writeTestImage(to: input, color: CGColor(red: 0.3, green: 0.5, blue: 0.7, alpha: 1))
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobPersister: { job, directory in
+        if job.status == "running" { throw TestPersistenceError.unavailable }
+        try persistTestJob(job, in: directory)
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "failed")
+    #expect(job.errorCode == "job_state_persistence_failed")
+    #expect(job.errorHint?.contains("磁盘") == true)
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
+    let persisted: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+    #expect(persisted.status == "queued")
+    #expect(
+      !FileManager.default.fileExists(atPath: jobDirectory.appendingPathComponent("input.pdf").path)
+    )
+  }
+
+  @Test @MainActor
+  func processingFailureRemainsVisibleWhenFailureStateCannotBeSaved() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-failed-state-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("broken.png")
+    try Data("not an image".utf8).write(to: input, options: .atomic)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobPersister: { job, directory in
+        if job.status == "failed" { throw TestPersistenceError.unavailable }
+        try persistTestJob(job, in: directory)
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "failed")
+    #expect(job.errorCode == "job_state_persistence_failed")
+    #expect(job.error?.contains("无法保存失败状态") == true)
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
+    let persisted: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+    #expect(persisted.status == "running")
+  }
+
+  @Test @MainActor
+  func cancellationRemainsVisibleWhenCancelledStateCannotBeSaved() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-cancel-state-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("input.png")
+    try writeTestImage(to: input, color: CGColor(red: 0.6, green: 0.3, blue: 0.2, alpha: 1))
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobPersister: { job, directory in
+        if job.status == "cancelled" { throw TestPersistenceError.unavailable }
+        try persistTestJob(job, in: directory)
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let inputs = (0..<20).map { _ in SelectedDocument(url: input, size: 1) }
+
+    let created = try await engine.createJob(
+      route: route, files: inputs, options: JobOptions())
+    let cancelled = try engine.cancelJob(id: created.id)
+
+    #expect(cancelled.status == "failed")
+    #expect(cancelled.cancelRequested)
+    #expect(cancelled.errorCode == "job_state_persistence_failed")
+    #expect(cancelled.error?.contains("无法保存取消状态") == true)
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(created.id)", isDirectory: true)
+    let persisted: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+    #expect(["queued", "running"].contains(persisted.status))
+  }
+
+  @Test @MainActor
+  func completedOutputRecoversWithoutRepeatingWorkWhenFinalStateCannotBeSaved() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-complete-state-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("input.png")
+    try writeTestImage(to: input, color: CGColor(red: 0.2, green: 0.6, blue: 0.4, alpha: 1))
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobPersister: { job, directory in
+        if job.status == "done" { throw TestPersistenceError.unavailable }
+        try persistTestJob(job, in: directory)
+      })
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "done")
+    #expect(job.logs.contains { $0.contains("完成状态未能保存") })
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
+    let stale: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+    #expect(stale.status == "running")
+    let output = try #require(job.output)
+    #expect(
+      (try NativeDocumentProcessor.previewPageCount(
+        pdfURL: jobDirectory.appendingPathComponent(output), limit: 1)) == 1)
+
+    let restoredEngine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await restoredEngine.start()
+    let restored = try restoredEngine.job(id: job.id)
+    let persisted: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+
+    #expect(restored.status == "done")
+    #expect(restored.logs.contains { $0.contains("从完整结果恢复") })
+    #expect(persisted.status == "done")
+  }
+
+  @Test @MainActor
+  func interruptedTranslationIsNotAutomaticallyRetried() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-interrupted-translation-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: route.kind, status: "running", inputs: ["source.pdf"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    var options = JobOptions()
+    options.provider = "openai"
+    try persistTestJob(job, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(route: route, options: options, inputNames: ["1-source.pdf"])
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+    try Data("incomplete".utf8).write(
+      to: jobDirectory.appendingPathComponent("source-translated.pdf"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+    let persisted: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "task_interrupted")
+    #expect(restored.error?.contains("没有自动重试") == true)
+    #expect(persisted.status == "failed")
+    #expect(engine.serviceLog.contains { $0.contains("未自动重新执行") })
+  }
+
+  @Test @MainActor
+  func interruptedLocalTaskStillResumesAutomatically() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-local-recovery-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    let inputDirectory = jobDirectory.appendingPathComponent("Input", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+    try writeTestImage(
+      to: inputDirectory.appendingPathComponent("1-input.png"),
+      color: CGColor(red: 0.4, green: 0.2, blue: 0.7, alpha: 1))
+    let now = ISO8601DateFormatter().string(from: Date())
+    let running = JobResponse(
+      id: jobID, kind: route.kind, status: "running", inputs: ["input.png"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    try persistTestJob(running, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(route: route, options: JobOptions(), inputNames: ["1-input.png"])
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    var restored = try engine.job(id: jobID)
+    for _ in 0..<200 where !restored.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      restored = try engine.job(id: jobID)
+    }
+
+    #expect(restored.status == "done")
+    #expect(restored.output == "input.pdf")
+    #expect(engine.serviceLog.contains { $0.contains("恢复上次未完成的本地任务") })
+  }
+
+  @Test @MainActor
   func corruptJobMetadataCanStillBeDeleted() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-corrupt-job-test-\(UUID().uuidString)", isDirectory: true)
@@ -776,4 +1016,25 @@ private actor TranslationResponseSequence {
   func snapshot() -> (requestCount: Int, delays: [TimeInterval]) {
     (requestCount, delays)
   }
+}
+
+private enum TestPersistenceError: LocalizedError {
+  case unavailable
+
+  var errorDescription: String? { "测试写盘失败" }
+}
+
+private struct PersistedJobMetadata: Encodable {
+  let route: RouteDefinition
+  let options: JobOptions
+  let inputNames: [String]
+}
+
+private func persistTestJob(_ job: JobResponse, in directory: URL) throws {
+  try JSONEncoder().encode(job).write(
+    to: directory.appendingPathComponent("job.json"), options: .atomic)
+}
+
+private func loadTestJSON<T: Decodable>(_ name: String, from directory: URL) throws -> T {
+  try JSONDecoder().decode(T.self, from: Data(contentsOf: directory.appendingPathComponent(name)))
 }

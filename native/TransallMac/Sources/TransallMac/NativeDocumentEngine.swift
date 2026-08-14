@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 final class NativeDocumentEngine: ObservableObject {
+  typealias JobPersister = (JobResponse, URL) throws -> Void
+
   enum State: Equatable {
     case starting
     case running
@@ -25,10 +27,15 @@ final class NativeDocumentEngine: ObservableObject {
   private var deletingJobs: Set<String> = []
   private var dataDirectory: URL?
   private let dataDirectoryOverride: URL?
+  private let jobPersister: JobPersister
   private var isTerminating = false
 
-  init(dataDirectoryOverride: URL? = nil) {
+  init(dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil) {
     self.dataDirectoryOverride = dataDirectoryOverride
+    self.jobPersister =
+      jobPersister ?? { job, directory in
+        try Self.persistJob(job, in: directory)
+      }
   }
 
   func start() async {
@@ -166,8 +173,8 @@ final class NativeDocumentEngine: ObservableObject {
       let metadata = NativeJobMetadata(
         route: route, options: options, inputNames: copiedInputs.map(\.lastPathComponent))
       jobs[id] = job
-      try persist(job, in: directory)
-      try persist(metadata, in: directory)
+      try jobPersister(job, directory)
+      try persistMetadata(metadata, in: directory)
       launch(jobID: id, metadata: metadata, directory: directory)
       return job
     } catch {
@@ -186,8 +193,19 @@ final class NativeDocumentEngine: ObservableObject {
     jobs[id] = job
     if job.isRunning, tasks[id] == nil {
       let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
-      appendLog("正在恢复上次未完成的任务 \(id.prefix(8))。")
-      launch(jobID: id, metadata: metadata, directory: directory)
+      if let recovered = recoveredState(job, metadata: metadata, directory: directory) {
+        jobs[id] = recovered
+        do {
+          try jobPersister(recovered, directory)
+        } catch {
+          jobs[id] = appendingLog(
+            "警告：任务恢复状态未能保存：\(error.localizedDescription)", to: recovered)
+          appendPersistenceWarning(jobID: id, action: "保存恢复状态", error: error)
+        }
+      } else {
+        appendLog("正在恢复上次未完成的本地任务 \(id.prefix(8))。")
+        launch(jobID: id, metadata: metadata, directory: directory)
+      }
     }
     return jobs[id] ?? job
   }
@@ -199,10 +217,19 @@ final class NativeDocumentEngine: ObservableObject {
     job = replacing(
       job, status: "cancelled", stage: "cancelled", message: "任务已取消。", progress: job.progress,
       cancelRequested: true, logs: job.logs + ["已收到取消请求。"])
-    jobs[id] = job
     tasks[id]?.cancel()
     tasks[id] = nil
-    try persist(job, in: try jobDirectory(id))
+    let directory = try jobDirectory(id)
+    do {
+      try jobPersister(job, directory)
+      jobs[id] = job
+    } catch {
+      job = persistenceFailure(
+        from: job, action: "任务已停止，但无法保存取消状态", error: error,
+        cancelRequested: true)
+      jobs[id] = job
+      appendPersistenceWarning(jobID: id, action: "保存取消状态", error: error)
+    }
     return job
   }
 
@@ -276,7 +303,7 @@ final class NativeDocumentEngine: ObservableObject {
         for: metadata.route, options: metadata.options, inputNames: metadata.inputNames))
 
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
-      await self?.markRunning(jobID: jobID, directory: directory)
+      guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
       do {
         let result = try await NativeDocumentProcessor.process(
           route: metadata.route, inputs: inputURLs, options: metadata.options,
@@ -293,13 +320,21 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
-  private func markRunning(jobID: String, directory: URL) {
-    guard let job = jobs[jobID], job.status != "cancelled" else { return }
+  private func markRunning(jobID: String, directory: URL) -> Bool {
+    guard let job = jobs[jobID], job.status != "cancelled" else { return false }
     let updated = replacing(
       job, status: "running", stage: "processing", message: "原生引擎正在处理。", progress: 12,
       logs: job.logs + ["开始使用 macOS 原生框架处理。"])
-    jobs[jobID] = updated
-    try? persist(updated, in: directory)
+    do {
+      try jobPersister(updated, directory)
+      jobs[jobID] = updated
+      return true
+    } catch {
+      jobs[jobID] = persistenceFailure(from: job, action: "无法保存任务启动状态", error: error)
+      tasks[jobID] = nil
+      appendPersistenceWarning(jobID: jobID, action: "保存任务启动状态", error: error)
+      return false
+    }
   }
 
   private func markCompleted(jobID: String, output: String, logs: [String], directory: URL) {
@@ -307,9 +342,15 @@ final class NativeDocumentEngine: ObservableObject {
     let updated = replacing(
       job, status: "done", stage: "complete", message: "任务完成。", output: output,
       progress: 100, logs: job.logs + logs)
-    jobs[jobID] = updated
     tasks[jobID] = nil
-    try? persist(updated, in: directory)
+    do {
+      try jobPersister(updated, directory)
+      jobs[jobID] = updated
+    } catch {
+      jobs[jobID] = appendingLog(
+        "警告：结果已生成，但任务完成状态未能保存：\(error.localizedDescription)", to: updated)
+      appendPersistenceWarning(jobID: jobID, action: "保存任务完成状态", error: error)
+    }
   }
 
   private func markCancelled(jobID: String, directory: URL) {
@@ -318,9 +359,16 @@ final class NativeDocumentEngine: ObservableObject {
     let updated = replacing(
       job, status: "cancelled", stage: "cancelled", message: "任务已取消。", progress: job.progress,
       cancelRequested: true, logs: job.logs + ["任务已安全停止。"])
-    jobs[jobID] = updated
     tasks[jobID] = nil
-    try? persist(updated, in: directory)
+    do {
+      try jobPersister(updated, directory)
+      jobs[jobID] = updated
+    } catch {
+      jobs[jobID] = persistenceFailure(
+        from: updated, action: "任务已停止，但无法保存取消状态", error: error,
+        cancelRequested: true)
+      appendPersistenceWarning(jobID: jobID, action: "保存取消状态", error: error)
+    }
   }
 
   private func markFailed(jobID: String, error: Error, directory: URL) {
@@ -331,9 +379,64 @@ final class NativeDocumentEngine: ObservableObject {
       errorCode: nativeError?.code ?? "native_processing_failed",
       errorHint: nativeError?.recoverySuggestion ?? "检查输入文件和参数后重试。",
       retryable: true, progress: job.progress, logs: job.logs)
-    jobs[jobID] = updated
     tasks[jobID] = nil
-    try? persist(updated, in: directory)
+    do {
+      try jobPersister(updated, directory)
+      jobs[jobID] = updated
+    } catch {
+      let processingError = updated.error ?? "未知处理错误"
+      jobs[jobID] = persistenceFailure(
+        from: updated, action: "任务失败：\(processingError)。同时无法保存失败状态", error: error)
+      appendPersistenceWarning(jobID: jobID, action: "保存任务失败状态", error: error)
+    }
+  }
+
+  private func recoveredState(
+    _ job: JobResponse, metadata: NativeJobMetadata, directory: URL
+  ) -> JobResponse? {
+    let output = OutputFileNamer.name(
+      for: metadata.route, options: metadata.options, inputNames: metadata.inputNames)
+    let outputURL = directory.appendingPathComponent(output)
+    if Self.isCompleteResult(outputURL) {
+      appendLog("已从完整结果恢复任务 \(job.id.prefix(8))，未重新执行处理。")
+      return replacing(
+        job, status: "done", stage: "complete", message: "任务完成。", output: output,
+        progress: 100, logs: job.logs + ["应用重启后从完整结果恢复完成状态。"])
+    }
+
+    guard metadata.route.kind == "pdf_translate" else { return nil }
+
+    appendLog("任务 \(job.id.prefix(8)) 上次运行被中断，未自动重新执行。")
+    return replacing(
+      job, status: "failed", stage: "failed", message: "上次任务被中断。",
+      error: "应用退出前未能确认任务完成。为避免重复处理或重复调用翻译服务，任务没有自动重试。",
+      errorCode: "task_interrupted",
+      errorHint: "确认输入和设置后重新运行。", retryable: true, progress: job.progress,
+      logs: job.logs + ["检测到未完成状态，已停止自动恢复。"])
+  }
+
+  private func persistenceFailure(
+    from job: JobResponse, action: String, error: Error, cancelRequested: Bool = false
+  ) -> JobResponse {
+    replacing(
+      job, status: "failed", stage: "failed", message: "任务状态保存失败。",
+      error: "\(action)：\(error.localizedDescription)", errorCode: "job_state_persistence_failed",
+      errorHint: "请检查磁盘可用空间和应用数据目录权限后重试。", retryable: true,
+      progress: job.progress, cancelRequested: cancelRequested,
+      logs: job.logs + ["任务状态未能写入磁盘。"])
+  }
+
+  private func appendPersistenceWarning(jobID: String, action: String, error: Error) {
+    appendLog("任务 \(jobID.prefix(8)) \(action)失败：\(error.localizedDescription)")
+  }
+
+  private func appendingLog(_ text: String, to job: JobResponse) -> JobResponse {
+    JobResponse(
+      id: job.id, kind: job.kind, status: job.status, inputs: job.inputs,
+      createdAt: job.createdAt, updatedAt: job.updatedAt, output: job.output, error: job.error,
+      stage: job.stage, message: job.message, errorCode: job.errorCode, errorHint: job.errorHint,
+      retryable: job.retryable, progress: job.progress, cancelRequested: job.cancelRequested,
+      logs: job.logs + [text])
   }
 
   private func replacing(
@@ -451,10 +554,24 @@ final class NativeDocumentEngine: ObservableObject {
     return directory
   }
 
-  private func persist<T: Encodable>(_ value: T, in directory: URL) throws {
-    let name = value is NativeJobMetadata ? "metadata.json" : "job.json"
-    let data = try JSONEncoder().encode(value)
-    try data.write(to: directory.appendingPathComponent(name), options: .atomic)
+  private func persistMetadata(_ metadata: NativeJobMetadata, in directory: URL) throws {
+    let data = try JSONEncoder().encode(metadata)
+    try data.write(to: directory.appendingPathComponent("metadata.json"), options: .atomic)
+  }
+
+  private nonisolated static func persistJob(_ job: JobResponse, in directory: URL) throws {
+    let data = try JSONEncoder().encode(job)
+    try data.write(to: directory.appendingPathComponent("job.json"), options: .atomic)
+  }
+
+  private nonisolated static func isCompleteResult(_ url: URL) -> Bool {
+    guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+      return false
+    }
+    if url.pathExtension.lowercased() == "pdf" {
+      return ((try? NativeDocumentProcessor.previewPageCount(pdfURL: url, limit: 1)) ?? 0) > 0
+    }
+    return true
   }
 
   private func load<T: Decodable>(_ name: String, from directory: URL) throws -> T {

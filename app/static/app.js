@@ -17,6 +17,7 @@ const routeKind = document.querySelector("#routeKind");
 const routeSummary = document.querySelector("#routeSummary");
 const routeInput = document.querySelector("#routeInput");
 const routeOutput = document.querySelector("#routeOutput");
+const routeLimit = document.querySelector("#routeLimit");
 const diagnosticsList = document.querySelector("#diagnosticsList");
 const formTitle = document.querySelector("#formTitle");
 const sourcePick = document.querySelector("#sourcePick");
@@ -58,6 +59,7 @@ let diagnosticsReady = false;
 let capabilityFormats = null;
 let capabilityRoutes = [];
 let capabilitiesLoadFailed = false;
+let maxUploadMB = null;
 let preflightResult = null;
 let preflightRequestId = 0;
 let preflightTimer = null;
@@ -148,6 +150,7 @@ function renderCapabilitiesFailure() {
   routeKind.textContent = "未加载";
   routeInput.textContent = "能力表不可用";
   routeOutput.textContent = "能力表不可用";
+  routeLimit.textContent = "无法读取上传限制；请刷新页面或重启服务。";
   formTitle.textContent = "能力加载失败";
   coreStatus.textContent = "不可用";
   submitButton.disabled = true;
@@ -393,6 +396,10 @@ async function loadCapabilities() {
     const data = await res.json();
     capabilityFormats = data.formats || null;
     capabilityRoutes = data.routes || [];
+    maxUploadMB = Number(data.limits?.maxUploadMB);
+    routeLimit.textContent = Number.isFinite(maxUploadMB)
+      ? `单次上传 ${maxUploadMB} MB；OCR 需要 Tesseract；MD/HTML 转 PDF 需要 Playwright Chromium。`
+      : "上传限制配置不可用；OCR 需要 Tesseract；MD/HTML 转 PDF 需要 Playwright Chromium。";
     capabilitiesLoadFailed = false;
   } catch (error) {
     capabilityFormats = null;
@@ -564,10 +571,13 @@ function renderJob(job) {
   jobState.className = `job-state ${job.status === "done" ? "is-ready" : ""} ${["failed", "cancelled"].includes(job.status) ? "is-error" : ""}`;
   cancelButton.hidden = !["queued", "running"].includes(job.status);
   if (Number.isFinite(job.progress)) {
+    const progress = Math.max(0, Math.min(100, job.progress));
     progressTrack.hidden = false;
-    progressBar.style.width = `${Math.max(0, Math.min(100, job.progress))}%`;
+    progressTrack.setAttribute("aria-valuenow", String(progress));
+    progressBar.style.width = `${progress}%`;
   } else {
     progressTrack.hidden = true;
+    progressTrack.removeAttribute("aria-valuenow");
   }
   log.textContent = [
     Number.isFinite(job.progress) ? `进度: ${job.progress}%` : "",

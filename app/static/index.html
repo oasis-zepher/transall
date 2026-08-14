@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="本机文档转换、PDF 修改、翻译与 OCR 工作台。" />
     <title>transall</title>
-    <link rel="stylesheet" href="/static/styles.css?v=workbench-6" />
+    <link rel="stylesheet" href="/static/styles.css?v=workbench-7" />
   </head>
   <body>
     <main class="shell">
@@ -63,12 +64,12 @@
 
           <div class="route-slots" aria-live="polite">
             <div class="route-slot" data-route-slot="source" role="button" tabindex="0" aria-label="源格式槽">
-              <span class="slot-label">Source</span>
+              <span class="slot-label">源格式</span>
               <strong id="sourcePick"></strong>
             </div>
             <b>↓</b>
             <div class="route-slot" data-route-slot="target" role="button" tabindex="0" aria-label="目标格式槽">
-              <span class="slot-label">Target</span>
+              <span class="slot-label">目标格式</span>
               <strong id="targetPick"></strong>
             </div>
             <small id="coreStatus"></small>
@@ -105,7 +106,7 @@
               </div>
               <div>
                 <dt>限制</dt>
-                <dd id="routeLimit">单次上传默认 200 MB；OCR 需要 Tesseract；MD/HTML 转 PDF 需要 Playwright Chromium。</dd>
+                <dd id="routeLimit">正在读取上传限制；OCR 需要 Tesseract；MD/HTML 转 PDF 需要 Playwright Chromium。</dd>
               </div>
             </dl>
             <div class="diagnostics-list" id="diagnosticsList" aria-live="polite"></div>
@@ -122,7 +123,7 @@
               </div>
 
               <div class="file-slot file-well" id="dropzone">
-                <input id="files" name="files" type="file" multiple />
+                <input id="files" name="files" type="file" multiple aria-labelledby="slotTitle slotHint" />
                 <div class="slot-copy">
                   <strong id="slotTitle">放入文件</strong>
                   <span id="slotHint">支持 PDF、Word、PPT、Excel、Markdown、HTML、图片、Data、中文PDF</span>
@@ -161,6 +162,10 @@
                   </select>
                 </label>
               </div>
+
+              <p class="external-service-note" data-panel="translate" role="note">
+                翻译时，PDF 中需要翻译的内容会发送给所选外部服务商（DeepSeek 或 OpenAI）；文件处理和结果仍保存在本机。
+              </p>
 
               <button type="button" id="advancedToggle" class="quiet-button advanced-toggle" hidden>高级选项</button>
               <div class="settings-grid advanced control-strip parameter-strip" id="advanced">
@@ -236,7 +241,7 @@
                 </div>
                 <span id="jobState" class="job-state" aria-live="polite">未开始</span>
               </div>
-              <div class="progress-track" id="progressTrack" hidden>
+              <div class="progress-track" id="progressTrack" role="progressbar" aria-label="任务进度" aria-valuemin="0" aria-valuemax="100" hidden>
                 <div class="progress-fill" id="progressBar"></div>
               </div>
 
@@ -264,6 +269,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=workbench-6"></script>
+    <script src="/static/app.js?v=workbench-7"></script>
   </body>
 </html>

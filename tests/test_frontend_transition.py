@@ -1,7 +1,6 @@
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -264,8 +263,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=workbench-6", html)
-        self.assertIn("/static/app.js?v=workbench-6", html)
+        self.assertIn("/static/styles.css?v=workbench-7", html)
+        self.assertIn("/static/app.js?v=workbench-7", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -355,8 +354,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=workbench-6", html)
-        self.assertIn("/static/app.js?v=workbench-6", html)
+        self.assertIn("/static/styles.css?v=workbench-7", html)
+        self.assertIn("/static/app.js?v=workbench-7", html)
 
     def test_document_workbench_tokens_exist(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -404,6 +403,45 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn(".progress-track", css)
         self.assertIn("progressBar.style.width", js)
         self.assertIn("progressTrack.hidden", js)
+        self.assertIn('role="progressbar"', html)
+        self.assertIn('aria-valuemin="0"', html)
+        self.assertIn('aria-valuemax="100"', html)
+        self.assertIn('progressTrack.setAttribute("aria-valuenow"', js)
+
+    def test_visible_route_labels_match_accessible_names(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('<span class="slot-label">源格式</span>', html)
+        self.assertIn('<span class="slot-label">目标格式</span>', html)
+        self.assertIn('aria-label="源格式槽"', html)
+        self.assertIn('aria-label="目标格式槽"', html)
+        self.assertIn('isSourceSlot ? "源" : "目标"', js)
+
+    def test_upload_control_and_translation_disclosure_are_accessible(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('aria-labelledby="slotTitle slotHint"', html)
+        self.assertIn(".file-slot:focus-within", css)
+        self.assertIn("PDF 中需要翻译的内容会发送给所选外部服务商", html)
+        self.assertIn('role="note"', html)
+
+    def test_upload_limit_is_loaded_from_capabilities(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("单次上传默认 200 MB", html)
+        self.assertIn("data.limits?.maxUploadMB", js)
+        self.assertIn("单次上传 ${maxUploadMB} MB", js)
+
+    def test_mobile_active_workspace_override_matches_desktop_specificity(self):
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+        responsive = css[css.index("@media (max-width: 980px)"):css.index("@media (max-width: 640px)")]
+
+        self.assertIn(".shell.is-route-active .workspace", responsive)
+        self.assertIn("grid-template-columns: 1fr", responsive)
+        self.assertIn("min-width: 0", responsive)
 
     def test_route_entry_uses_original_orbit_transition(self):
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")

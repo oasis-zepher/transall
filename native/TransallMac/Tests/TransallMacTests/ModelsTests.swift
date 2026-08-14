@@ -546,10 +546,72 @@ struct ModelsTests {
 
     #expect(settings.isLoaded)
     #expect(settings.messageIsError)
-    #expect(settings.message.contains("已撤销本次更改"))
+    #expect(settings.message.contains("已验证钥匙串已恢复到保存前状态"))
     #expect(store.values[.deepseek] == "old-deepseek")
     #expect(store.values[.openAI] == "old-openai")
-    #expect(store.writes.map(\.credential) == [.deepseek, .deepseek])
+    #expect(store.writes.map(\.credential) == [.deepseek, .openAI, .deepseek])
+  }
+
+  @Test @MainActor
+  func credentialSettingsRollBackWriteThatMutatesBeforeThrowing() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "old-deepseek", .openAI: "old-openai"],
+      postWriteFailures: [.openAI: 1])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    settings.deepseekKey = "new-deepseek"
+    settings.openAIKey = "new-openai"
+
+    await settings.save(appModel: appModel)
+
+    #expect(settings.isLoaded)
+    #expect(settings.messageIsError)
+    #expect(settings.message.contains("已验证钥匙串已恢复到保存前状态"))
+    #expect(settings.deepseekKey == "old-deepseek")
+    #expect(settings.openAIKey == "old-openai")
+    #expect(store.values[.deepseek] == "old-deepseek")
+    #expect(store.values[.openAI] == "old-openai")
+    #expect(store.writes.map(\.credential) == [.deepseek, .openAI, .openAI, .deepseek])
+  }
+
+  @Test @MainActor
+  func credentialSettingsReconcilesRollbackFailureFromKeychainState() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "old-deepseek", .openAI: "old-openai"],
+      writeFailureCalls: [.openAI: [2]], postWriteFailures: [.openAI: 1])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    settings.deepseekKey = "new-deepseek"
+    settings.openAIKey = "new-openai"
+
+    await settings.save(appModel: appModel)
+
+    #expect(settings.isLoaded)
+    #expect(settings.messageIsError)
+    #expect(settings.message.contains("OpenAI 未恢复到保存前状态"))
+    #expect(settings.message.contains("已重新读取钥匙串当前值"))
+    #expect(settings.deepseekKey == "old-deepseek")
+    #expect(settings.openAIKey == "new-openai")
+    #expect(store.values[.deepseek] == "old-deepseek")
+    #expect(store.values[.openAI] == "new-openai")
+    #expect(store.writes.map(\.credential) == [.deepseek, .openAI, .deepseek])
+  }
+
+  @Test @MainActor
+  func credentialSettingsReconcilesDeletionThatMutatesBeforeThrowing() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "old-deepseek", .openAI: "old-openai"],
+      postWriteFailures: [.deepseek: 1])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+
+    await settings.remove(.deepseek, appModel: appModel)
+
+    #expect(settings.isLoaded)
+    #expect(settings.messageIsError)
+    #expect(settings.message.contains("实际已删除"))
+    #expect(settings.deepseekKey.isEmpty)
+    #expect(store.values[.deepseek]?.isEmpty == true)
   }
 
   @Test @MainActor
@@ -571,6 +633,22 @@ struct ModelsTests {
       keychain.protected[ProviderCredential.deepseek.rawValue] == Data("updated-key".utf8))
     try store.setValue("", for: .deepseek)
     #expect(keychain.protected[ProviderCredential.deepseek.rawValue] == nil)
+  }
+
+  @Test @MainActor
+  func keychainRejectsMalformedCredentialData() {
+    let keychain = SimulatedKeychain()
+    keychain.protected[ProviderCredential.deepseek.rawValue] = Data([0xFF])
+    let store = ProviderCredentialStore(client: keychain.client)
+
+    do {
+      _ = try store.value(for: .deepseek)
+      Issue.record("Malformed Keychain data should not become an API key")
+    } catch ProviderCredentialStoreError.keychain(let status) {
+      #expect(status == errSecDecode)
+    } catch {
+      Issue.record("Unexpected error: \(error.localizedDescription)")
+    }
   }
 
   @Test @MainActor
@@ -2683,15 +2761,22 @@ private final class TestCredentialStore: ProviderCredentialStoring {
   private(set) var writes: [Write] = []
   private var readFailures: Set<ProviderCredential>
   private var writeFailures: [ProviderCredential: Int]
+  private var writeFailureCalls: [ProviderCredential: Set<Int>]
+  private var postWriteFailures: [ProviderCredential: Int]
+  private var writeAttempts: [ProviderCredential: Int] = [:]
 
   init(
     values: [ProviderCredential: String] = [:],
     readFailures: Set<ProviderCredential> = [],
-    writeFailures: [ProviderCredential: Int] = [:]
+    writeFailures: [ProviderCredential: Int] = [:],
+    writeFailureCalls: [ProviderCredential: Set<Int>] = [:],
+    postWriteFailures: [ProviderCredential: Int] = [:]
   ) {
     self.values = values
     self.readFailures = readFailures
     self.writeFailures = writeFailures
+    self.writeFailureCalls = writeFailureCalls
+    self.postWriteFailures = postWriteFailures
   }
 
   func value(for credential: ProviderCredential) throws -> String {
@@ -2701,6 +2786,11 @@ private final class TestCredentialStore: ProviderCredentialStoring {
   }
 
   func setValue(_ value: String, for credential: ProviderCredential) throws {
+    let attempt = writeAttempts[credential, default: 0] + 1
+    writeAttempts[credential] = attempt
+    if writeFailureCalls[credential]?.contains(attempt) == true {
+      throw TestCredentialError.unavailable
+    }
     if let failures = writeFailures[credential], failures > 0 {
       writeFailures[credential] = failures - 1
       throw TestCredentialError.unavailable
@@ -2708,6 +2798,10 @@ private final class TestCredentialStore: ProviderCredentialStoring {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     values[credential] = trimmed
     writes.append(Write(credential: credential, value: trimmed))
+    if let failures = postWriteFailures[credential], failures > 0 {
+      postWriteFailures[credential] = failures - 1
+      throw TestCredentialError.unavailable
+    }
   }
 }
 

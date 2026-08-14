@@ -125,8 +125,10 @@ struct ProviderCredentialStore: ProviderCredentialStoring {
   }
 
   private func decodedValue(_ data: Data?) throws -> String {
-    guard let data else { throw ProviderCredentialStoreError.keychain(errSecDecode) }
-    return String(decoding: data, as: UTF8.self)
+    guard let data, let value = String(data: data, encoding: .utf8) else {
+      throw ProviderCredentialStoreError.keychain(errSecDecode)
+    }
+    return value
   }
 
   private func legacyValue(for credential: ProviderCredential) throws -> String {

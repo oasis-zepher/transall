@@ -23,19 +23,11 @@ final class ProviderSettingsModel: ObservableObject {
   func reload(showSuccess: Bool = true) {
     guard !isSaving else { return }
     do {
-      let deepseek = try store.value(for: .deepseek)
-      let openAI = try store.value(for: .openAI)
-      deepseekKey = deepseek
-      openAIKey = openAI
-      storedValues = [.deepseek: deepseek, .openAI: openAI]
-      isLoaded = true
+      applyLoadedValues(try readStoredValues())
       messageIsError = false
       message = showSuccess ? "已重新读取钥匙串。" : ""
     } catch {
-      deepseekKey = ""
-      openAIKey = ""
-      storedValues = [:]
-      isLoaded = false
+      clearLoadedValues()
       messageIsError = true
       message = "无法读取钥匙串，现有 API Key 未被更改：\(error.localizedDescription)"
     }
@@ -61,34 +53,52 @@ final class ProviderSettingsModel: ObservableObject {
       return
     }
 
-    var applied: [ProviderCredential] = []
+    let previousValues = storedValues
+    var attempted: [ProviderCredential] = []
     do {
       for credential in changed {
+        attempted.append(credential)
         try store.setValue(values[credential] ?? "", for: credential)
-        applied.append(credential)
       }
-      deepseekKey = values[.deepseek] ?? ""
-      openAIKey = values[.openAI] ?? ""
-      storedValues = values
+      applyLoadedValues(values)
       messageIsError = false
       message = await appModel.applyCredentialChanges()
     } catch {
       let saveError = error.localizedDescription
       var rollbackErrors: [String] = []
-      for credential in applied.reversed() {
+      for credential in attempted.reversed() {
         do {
-          try store.setValue(storedValues[credential] ?? "", for: credential)
+          try store.setValue(previousValues[credential] ?? "", for: credential)
         } catch {
           rollbackErrors.append("\(credential.displayName)：\(error.localizedDescription)")
         }
       }
       messageIsError = true
-      if rollbackErrors.isEmpty {
-        message = "API Key 保存失败，已撤销本次更改：\(saveError)"
-      } else {
-        isLoaded = false
+      do {
+        let actualValues = try readStoredValues()
+        applyLoadedValues(actualValues)
+        if actualValues == previousValues {
+          message = "API Key 保存失败，但已验证钥匙串已恢复到保存前状态：\(saveError)"
+        } else {
+          _ = await appModel.applyCredentialChanges()
+          let changedProviders =
+            ProviderCredential.allCases
+            .filter { actualValues[$0] != previousValues[$0] }
+            .map(\.displayName)
+            .joined(separator: "、")
+          let rollbackDetail =
+            rollbackErrors.isEmpty
+            ? "" : "；回滚错误：\(rollbackErrors.joined(separator: "；"))"
+          message =
+            "API Key 保存失败，\(changedProviders) 未恢复到保存前状态；已重新读取钥匙串当前值，请检查后重试：\(saveError)\(rollbackDetail)"
+        }
+      } catch {
+        clearLoadedValues()
+        let rollbackDetail =
+          rollbackErrors.isEmpty
+          ? "" : "；回滚错误：\(rollbackErrors.joined(separator: "；"))"
         message =
-          "API Key 保存失败，部分更改可能未撤销：\(saveError)；\(rollbackErrors.joined(separator: "；"))"
+          "API Key 保存失败，且无法确认钥匙串当前状态：\(saveError)；重新读取失败：\(error.localizedDescription)\(rollbackDetail)"
       }
     }
   }
@@ -116,8 +126,44 @@ final class ProviderSettingsModel: ObservableObject {
       message = "\(credential.displayName) API Key 已从钥匙串删除。"
     } catch {
       messageIsError = true
-      message = error.localizedDescription
+      let removalError = error.localizedDescription
+      do {
+        let actualValues = try readStoredValues()
+        applyLoadedValues(actualValues)
+        _ = await appModel.applyCredentialChanges()
+        if actualValues[credential]?.isEmpty != false {
+          message =
+            "\(credential.displayName) API Key 实际已删除，但钥匙串清理返回错误；已重新读取当前状态：\(removalError)"
+        } else {
+          message =
+            "\(credential.displayName) API Key 删除失败；已重新读取钥匙串当前状态：\(removalError)"
+        }
+      } catch {
+        clearLoadedValues()
+        message =
+          "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(removalError)；重新读取失败：\(error.localizedDescription)"
+      }
     }
+  }
+
+  private func readStoredValues() throws -> [ProviderCredential: String] {
+    let deepseek = try store.value(for: .deepseek)
+    let openAI = try store.value(for: .openAI)
+    return [.deepseek: deepseek, .openAI: openAI]
+  }
+
+  private func applyLoadedValues(_ values: [ProviderCredential: String]) {
+    deepseekKey = values[.deepseek] ?? ""
+    openAIKey = values[.openAI] ?? ""
+    storedValues = values
+    isLoaded = true
+  }
+
+  private func clearLoadedValues() {
+    deepseekKey = ""
+    openAIKey = ""
+    storedValues = [:]
+    isLoaded = false
   }
 }
 

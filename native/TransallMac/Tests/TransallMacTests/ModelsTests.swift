@@ -1160,6 +1160,61 @@ struct ModelsTests {
     #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
   }
 
+  @Test @MainActor
+  func deletingJobWaitsForCancelledPreviewBeforeRemovingData() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-delete-preview-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let gate = PreviewDeletionGate()
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      previewGenerator: { _, directory in
+        await gate.markStarted()
+        await withTaskCancellationHandler(
+          operation: { await gate.waitForRelease() },
+          onCancel: { Task { await gate.markCancelled() } })
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let page = directory.appendingPathComponent("page-1.png")
+        try Data("late preview".utf8).write(to: page, options: .atomic)
+        return [page]
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    try Data("preview source".utf8).write(
+      to: jobDirectory.appendingPathComponent("result.pdf"), options: .atomic)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: "result.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+
+    let previewTask = Task { try await engine.previewPages(jobID: jobID) }
+    await gate.waitUntilStarted()
+    let deletionTask = Task { try await engine.deleteJob(id: jobID) }
+    await gate.waitUntilCancelled()
+    #expect(FileManager.default.fileExists(atPath: jobDirectory.path))
+
+    await gate.release()
+    try await deletionTask.value
+    do {
+      _ = try await previewTask.value
+      Issue.record("A preview cancelled for task deletion must not finish successfully")
+    } catch is CancellationError {
+      // Expected: deletion cancels the in-flight preview before removing the directory.
+    }
+
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
   @Test
   func imageToPDFProcessesEveryInputPage() async throws {
     let temporary = FileManager.default.temporaryDirectory
@@ -1624,6 +1679,48 @@ struct ModelsTests {
       CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
     #expect(CGImageDestinationFinalize(destination))
+  }
+}
+
+private actor PreviewDeletionGate {
+  private var started = false
+  private var cancelled = false
+  private var released = false
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+  private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func markStarted() {
+    started = true
+    for waiter in startWaiters { waiter.resume() }
+    startWaiters.removeAll()
+  }
+
+  func waitUntilStarted() async {
+    guard !started else { return }
+    await withCheckedContinuation { startWaiters.append($0) }
+  }
+
+  func markCancelled() {
+    cancelled = true
+    for waiter in cancellationWaiters { waiter.resume() }
+    cancellationWaiters.removeAll()
+  }
+
+  func waitUntilCancelled() async {
+    guard !cancelled else { return }
+    await withCheckedContinuation { cancellationWaiters.append($0) }
+  }
+
+  func waitForRelease() async {
+    guard !released else { return }
+    await withCheckedContinuation { releaseWaiters.append($0) }
+  }
+
+  func release() {
+    released = true
+    for waiter in releaseWaiters { waiter.resume() }
+    releaseWaiters.removeAll()
   }
 }
 

@@ -4,6 +4,12 @@ import Foundation
 @MainActor
 final class NativeDocumentEngine: ObservableObject {
   typealias JobPersister = (JobResponse, URL) throws -> Void
+  typealias PreviewGenerator = @Sendable (URL, URL) async throws -> [URL]
+
+  private struct PreviewOperation {
+    let token: UUID
+    let task: Task<[URL], Error>
+  }
 
   enum State: Equatable {
     case starting
@@ -24,19 +30,26 @@ final class NativeDocumentEngine: ObservableObject {
 
   private var jobs: [String: JobResponse] = [:]
   private var tasks: [String: Task<Void, Never>] = [:]
+  private var previewOperations: [String: PreviewOperation] = [:]
   private var deletingJobs: Set<String> = []
   private var dataDirectory: URL?
   private let dataDirectoryOverride: URL?
   private let jobPersister: JobPersister
   private let credentialStore: any ProviderCredentialStoring
+  private let previewGenerator: PreviewGenerator
   private var isTerminating = false
 
   init(
     dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil,
-    credentialStore: (any ProviderCredentialStoring)? = nil
+    credentialStore: (any ProviderCredentialStoring)? = nil,
+    previewGenerator: PreviewGenerator? = nil
   ) {
     self.dataDirectoryOverride = dataDirectoryOverride
     self.credentialStore = credentialStore ?? ProviderCredentialStore.shared
+    self.previewGenerator =
+      previewGenerator ?? { pdfURL, directory in
+        try await PreviewCache.pages(pdfURL: pdfURL, directory: directory)
+      }
     self.jobPersister =
       jobPersister ?? { job, directory in
         try Self.persistJob(job, in: directory)
@@ -69,6 +82,8 @@ final class NativeDocumentEngine: ObservableObject {
     isTerminating = true
     for task in tasks.values { task.cancel() }
     tasks.removeAll()
+    for operation in previewOperations.values { operation.task.cancel() }
+    previewOperations.removeAll()
   }
 
   func capabilities() -> CapabilitiesResponse { NativeCapabilities.response }
@@ -317,6 +332,14 @@ final class NativeDocumentEngine: ObservableObject {
     }
     defer { deletingJobs.remove(id) }
 
+    if let operation = previewOperations[id] {
+      operation.task.cancel()
+      _ = try? await operation.task.value
+      if previewOperations[id]?.token == operation.token {
+        previewOperations[id] = nil
+      }
+    }
+
     let deletion = Task.detached(priority: .utility) {
       try Task.checkCancellation()
       if FileManager.default.fileExists(atPath: directory.path) {
@@ -357,7 +380,25 @@ final class NativeDocumentEngine: ObservableObject {
     let previewDirectory = directory.appendingPathComponent("Preview", isDirectory: true)
     let outputURL = try Self.validatedRegularFile(
       named: output, in: directory, description: "任务结果")
-    let urls = try await PreviewCache.pages(pdfURL: outputURL, directory: previewDirectory)
+    guard previewOperations[jobID] == nil else {
+      throw NativeDocumentError.processing("这个任务的 PDF 预览正在生成。")
+    }
+    let token = UUID()
+    let previewGenerator = self.previewGenerator
+    let operation = Task.detached(priority: .userInitiated) {
+      let pages = try await previewGenerator(outputURL, previewDirectory)
+      try Task.checkCancellation()
+      return pages
+    }
+    previewOperations[jobID] = PreviewOperation(token: token, task: operation)
+    defer {
+      if previewOperations[jobID]?.token == token {
+        previewOperations[jobID] = nil
+      }
+    }
+    let urls = try await withTaskCancellationHandler(
+      operation: { try await operation.value },
+      onCancel: { operation.cancel() })
     return PreviewResponse(
       pages: urls.enumerated().map { index, url in
         PreviewPage(page: index + 1, url: url.absoluteString)

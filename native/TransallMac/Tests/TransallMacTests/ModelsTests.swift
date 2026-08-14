@@ -559,6 +559,113 @@ struct ModelsTests {
   }
 
   @Test
+  func translationRetriesRateLimitUsingRetryAfter() async throws {
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 429, headers: ["Retry-After": "2"],
+        body: Data(#"{"error":{"message":"busy"}}"#.utf8)),
+      .http(
+        status: 200, headers: [:],
+        body: Data(#"{"choices":[{"message":{"content":"译文"}}]}"#.utf8)),
+    ])
+    let service = TranslationService(
+      provider: "openai", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    let translated = try await service.translate(
+      "source", source: "en", target: "zh", glossary: "")
+    let snapshot = await responses.snapshot()
+
+    #expect(translated == "译文")
+    #expect(snapshot.requestCount == 2)
+    #expect(snapshot.delays == [2])
+  }
+
+  @Test
+  func translationDoesNotRetryAuthenticationFailure() async throws {
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 401, headers: [:],
+        body: Data(#"{"error":{"message":"invalid key"}}"#.utf8))
+    ])
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    do {
+      _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+      Issue.record("Authentication failures should not be retried")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("invalid key") == true)
+    }
+    let snapshot = await responses.snapshot()
+    #expect(snapshot.requestCount == 1)
+    #expect(snapshot.delays.isEmpty)
+  }
+
+  @Test
+  func translationStopsAfterBoundedNetworkRetries() async throws {
+    let responses = TranslationResponseSequence([
+      .network(.timedOut), .network(.timedOut), .network(.timedOut),
+    ])
+    let service = TranslationService(
+      provider: "openai", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    do {
+      _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+      Issue.record("Repeated network timeouts should eventually fail")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("超时") == true)
+      #expect(error.errorDescription?.contains("已重试 2 次") == true)
+    }
+    let snapshot = await responses.snapshot()
+    #expect(snapshot.requestCount == TranslationService.maximumAttempts)
+    #expect(snapshot.delays == [0.5, 1])
+  }
+
+  @Test
+  func translationCancellationStopsRetryBackoff() async throws {
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 503, headers: [:],
+        body: Data(#"{"error":{"message":"temporarily unavailable"}}"#.utf8))
+    ])
+    let service = TranslationService(
+      provider: "openai", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: {
+        await responses.record(delay: $0)
+        throw CancellationError()
+      })
+
+    do {
+      _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+      Issue.record("Cancellation should stop retry backoff")
+    } catch is CancellationError {
+      // Expected.
+    }
+    let snapshot = await responses.snapshot()
+    #expect(snapshot.requestCount == 1)
+    #expect(snapshot.delays == [0.5])
+  }
+
+  @Test
+  func retryAfterHTTPDateIsParsed() throws {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+    let now = try #require(formatter.date(from: "Wed, 21 Oct 2015 07:27:58 GMT"))
+
+    #expect(
+      TranslationService.retryAfterDelay("Wed, 21 Oct 2015 07:28:00 GMT", now: now) == 2)
+  }
+
+  @Test
   func nativePDFEditDeletesAndRotatesPages() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-native-test-\(UUID().uuidString)", isDirectory: true)
@@ -627,5 +734,46 @@ struct ModelsTests {
       CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
     #expect(CGImageDestinationFinalize(destination))
+  }
+}
+
+private actor TranslationResponseSequence {
+  enum Outcome: Sendable {
+    case http(status: Int, headers: [String: String], body: Data)
+    case network(URLError.Code)
+  }
+
+  private var outcomes: [Outcome]
+  private var requestCount = 0
+  private var delays: [TimeInterval] = []
+
+  init(_ outcomes: [Outcome]) {
+    self.outcomes = outcomes
+  }
+
+  func send(_ request: URLRequest) throws -> (Data, URLResponse) {
+    requestCount += 1
+    guard !outcomes.isEmpty else { throw URLError(.unknown) }
+    let outcome = outcomes.removeFirst()
+    switch outcome {
+    case .network(let code):
+      throw URLError(code)
+    case .http(let status, let headers, let body):
+      guard let url = request.url,
+        let response = HTTPURLResponse(
+          url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)
+      else {
+        throw URLError(.badServerResponse)
+      }
+      return (body, response)
+    }
+  }
+
+  func record(delay: TimeInterval) {
+    delays.append(delay)
+  }
+
+  func snapshot() -> (requestCount: Int, delays: [TimeInterval]) {
+    (requestCount, delays)
   }
 }

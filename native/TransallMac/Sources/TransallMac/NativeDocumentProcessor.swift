@@ -637,10 +637,28 @@ enum NativeDocumentProcessor {
 }
 
 struct TranslationService {
+  typealias RequestSender = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+  typealias Sleeper = @Sendable (TimeInterval) async throws -> Void
+
   static let maximumGlossaryCharacters = 20_000
+  static let maximumAttempts = 3
+  static let maximumRetryDelay: TimeInterval = 30
 
   let provider: String
   let apiKey: String
+  private let requestSender: RequestSender
+  private let sleeper: Sleeper
+
+  init(
+    provider: String, apiKey: String,
+    requestSender: @escaping RequestSender = { try await URLSession.shared.data(for: $0) },
+    sleeper: @escaping Sleeper = { try await Task.sleep(for: .seconds($0)) }
+  ) {
+    self.provider = provider
+    self.apiKey = apiKey
+    self.requestSender = requestSender
+    self.sleeper = sleeper
+  }
 
   func translate(_ text: String, source: String, target: String, glossary: String) async throws
     -> String
@@ -719,22 +737,7 @@ struct TranslationService {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 120
     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-    let data: Data
-    let response: URLResponse
-    do {
-      (data, response) = try await URLSession.shared.data(for: request)
-    } catch let error as URLError {
-      if Task.isCancelled || error.code == .cancelled { throw CancellationError() }
-      throw Self.providerError(for: error)
-    }
-    try Task.checkCancellation()
-    guard let http = response as? HTTPURLResponse else {
-      throw NativeDocumentError.provider("翻译服务返回了无效响应。")
-    }
-    guard (200..<300).contains(http.statusCode) else {
-      let message = Self.errorMessage(data) ?? "HTTP \(http.statusCode)"
-      throw NativeDocumentError.provider("翻译服务请求失败：\(message)")
-    }
+    let data = try await responseData(for: request)
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
       let choices = object["choices"] as? [[String: Any]],
       let message = choices.first?["message"] as? [String: Any],
@@ -743,6 +746,78 @@ struct TranslationService {
       throw NativeDocumentError.provider("翻译服务没有返回译文。")
     }
     return content
+  }
+
+  private func responseData(for request: URLRequest) async throws -> Data {
+    for attempt in 0..<Self.maximumAttempts {
+      do {
+        let (data, response) = try await requestSender(request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+          throw NativeDocumentError.provider("翻译服务返回了无效响应。")
+        }
+        if (200..<300).contains(http.statusCode) { return data }
+
+        let canRetry =
+          Self.retryableStatusCodes.contains(http.statusCode)
+          && attempt + 1 < Self.maximumAttempts
+        if canRetry {
+          try await sleeper(Self.retryDelay(after: attempt, response: http))
+          continue
+        }
+
+        let message = Self.errorMessage(data) ?? "HTTP \(http.statusCode)"
+        throw NativeDocumentError.provider(
+          "翻译服务请求失败：\(message)\(Self.retrySuffix(attempt: attempt))")
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch let error as URLError {
+        if Task.isCancelled || error.code == .cancelled { throw CancellationError() }
+        let canRetry =
+          Self.retryableNetworkErrors.contains(error.code)
+          && attempt + 1 < Self.maximumAttempts
+        if canRetry {
+          try await sleeper(Self.retryDelay(after: attempt, response: nil))
+          continue
+        }
+        let providerError = Self.providerError(for: error)
+        let message = providerError.errorDescription ?? error.localizedDescription
+        throw NativeDocumentError.provider(
+          "\(message)\(Self.retrySuffix(attempt: attempt))")
+      }
+    }
+    throw NativeDocumentError.provider("翻译服务请求失败。")
+  }
+
+  private static let retryableStatusCodes: Set<Int> = [408, 425, 429, 500, 502, 503, 504]
+
+  private static let retryableNetworkErrors: Set<URLError.Code> = [
+    .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost,
+  ]
+
+  private static func retryDelay(after attempt: Int, response: HTTPURLResponse?) -> TimeInterval {
+    if let value = response?.value(forHTTPHeaderField: "Retry-After"),
+      let delay = retryAfterDelay(value)
+    {
+      return min(max(0, delay), maximumRetryDelay)
+    }
+    return min(0.5 * pow(2, Double(attempt)), maximumRetryDelay)
+  }
+
+  static func retryAfterDelay(_ value: String, now: Date = Date()) -> TimeInterval? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let seconds = TimeInterval(trimmed) { return max(0, seconds) }
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+    guard let date = formatter.date(from: trimmed) else { return nil }
+    return max(0, date.timeIntervalSince(now))
+  }
+
+  private static func retrySuffix(attempt: Int) -> String {
+    attempt == 0 ? "" : "（已重试 \(attempt) 次）"
   }
 
   private static func errorMessage(_ data: Data) -> String? {

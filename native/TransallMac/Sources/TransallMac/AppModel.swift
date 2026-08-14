@@ -130,6 +130,10 @@ final class AppModel: ObservableObject {
       errorMessage = "正在读取文件，请稍后再更换路径。"
       return
     }
+    guard !isSubmitting else {
+      errorMessage = "正在创建任务，请稍后再更换路径。"
+      return
+    }
     guard currentJob?.isRunning != true else {
       errorMessage = "任务运行中，请先取消任务再更换路径。"
       return
@@ -150,6 +154,10 @@ final class AppModel: ObservableObject {
   func resetRoute(animated: Bool = true) {
     guard !isImporting else {
       errorMessage = "正在读取文件，请稍后再重选路径。"
+      return
+    }
+    guard !isSubmitting else {
+      errorMessage = "正在创建任务，请稍后再重选路径。"
       return
     }
     guard currentJob?.isRunning != true else {
@@ -181,6 +189,10 @@ final class AppModel: ObservableObject {
       return
     }
     guard !isImporting else { return }
+    guard !isSubmitting else {
+      errorMessage = "正在创建任务，请稍后再修改输入文件。"
+      return
+    }
 
     isImporting = true
     errorMessage = nil
@@ -255,6 +267,7 @@ final class AppModel: ObservableObject {
   }
 
   func removeDocument(_ document: SelectedDocument) {
+    guard !isImporting, !isSubmitting else { return }
     documents.removeAll { $0.id == document.id }
   }
 

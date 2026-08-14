@@ -19,6 +19,7 @@ struct InputWorkbenchView: View {
 
         if let route = model.route, route.enabled {
           routeOptions(route)
+            .disabled(model.isSubmitting)
           actionBar(route)
         } else {
           unavailableHint
@@ -100,7 +101,7 @@ struct InputWorkbenchView: View {
                 .padding(5)
             }
             .buttonStyle(.plain)
-            .disabled(model.isImporting)
+            .disabled(inputIsLocked)
             .accessibilityLabel("移除\(document.name)")
           }
         }
@@ -110,7 +111,7 @@ struct InputWorkbenchView: View {
           viewState.showImporter = true
         }
         .buttonStyle(QuietButtonStyle())
-        .disabled(model.isImporting)
+        .disabled(inputIsLocked)
       }
     }
     .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty || model.isImporting ? 116 : 76)
@@ -128,13 +129,13 @@ struct InputWorkbenchView: View {
     }
     .contentShape(Rectangle())
     .onTapGesture {
-      if model.documents.isEmpty, !model.isImporting {
+      if model.documents.isEmpty, !inputIsLocked {
         viewState.isAppending = false
         viewState.showImporter = true
       }
     }
     .dropDestination(for: URL.self) { urls, _ in
-      guard !model.isImporting, !urls.isEmpty else { return false }
+      guard !inputIsLocked, !urls.isEmpty else { return false }
       let appending = !model.documents.isEmpty
       Task { await model.importDocuments(urls, appending: appending) }
       return !urls.isEmpty
@@ -144,21 +145,17 @@ struct InputWorkbenchView: View {
     .accessibilityElement(children: .contain)
     .accessibilityLabel("文件选择区")
     .accessibilityHint(
-      model.isImporting
-        ? "全部文件通过校验后才会加入列表"
-        : (model.documents.isEmpty
-          ? "按回车键选择文件，也可以将文件拖到这里"
-          : "可继续添加或移除文件")
+      inputAccessibilityHint
     )
-    .accessibilityAddTraits(model.documents.isEmpty && !model.isImporting ? .isButton : [])
+    .accessibilityAddTraits(model.documents.isEmpty && !inputIsLocked ? .isButton : [])
     .accessibilityAction(named: "选择文件") {
-      guard !model.isImporting else { return }
+      guard !inputIsLocked else { return }
       viewState.isAppending = !model.documents.isEmpty
       viewState.showImporter = true
     }
-    .focusable(model.documents.isEmpty && !model.isImporting)
+    .focusable(model.documents.isEmpty && !inputIsLocked)
     .onKeyPress(keys: [.return, .space]) { _ in
-      guard model.documents.isEmpty, !model.isImporting else { return .ignored }
+      guard model.documents.isEmpty, !inputIsLocked else { return .ignored }
       viewState.isAppending = false
       viewState.showImporter = true
       return .handled
@@ -333,6 +330,18 @@ struct InputWorkbenchView: View {
   private var fileHint: String {
     guard let route = model.route, route.enabled else { return "路径确定后会校验文件类型" }
     return "接受 \(route.accept)"
+  }
+
+  private var inputIsLocked: Bool {
+    model.isImporting || model.isSubmitting
+  }
+
+  private var inputAccessibilityHint: String {
+    if model.isImporting { return "全部文件通过校验后才会加入列表" }
+    if model.isSubmitting { return "正在创建任务，完成后可修改文件" }
+    return model.documents.isEmpty
+      ? "按回车键选择文件，也可以将文件拖到这里"
+      : "可继续添加或移除文件"
   }
 
   private var allowedContentTypes: [UTType] {

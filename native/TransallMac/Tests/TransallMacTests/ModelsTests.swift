@@ -1396,6 +1396,43 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func submittingJobLocksRouteAndInputChanges() async throws {
+    let suiteName = "transall-submit-lock-test-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+
+    let jobID = UUID().uuidString.lowercased()
+    preferences.set(jobID, forKey: "transall.native.lastJobId")
+    let model = AppModel(
+      backend: NativeDocumentEngine(), preferences: preferences)
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
+    let original = SelectedDocument(
+      url: URL(fileURLWithPath: "/tmp/original.pdf"), size: 128)
+    model.documents = [original]
+    model.isSubmitting = true
+
+    model.chooseFormat("image", animated: false)
+    #expect(model.selection.source == "pdf")
+    #expect(model.selection.target == "pdf")
+    #expect(model.errorMessage == "正在创建任务，请稍后再更换路径。")
+
+    model.resetRoute(animated: false)
+    #expect(model.selection.source == "pdf")
+    #expect(model.selection.target == "pdf")
+    #expect(preferences.string(forKey: "transall.native.lastJobId") == jobID)
+    #expect(model.errorMessage == "正在创建任务，请稍后再重选路径。")
+
+    await model.importDocuments(
+      [URL(fileURLWithPath: "/tmp/replacement.pdf")], appending: false)
+    #expect(model.documents.map(\.id) == [original.id])
+    #expect(model.errorMessage == "正在创建任务，请稍后再修改输入文件。")
+
+    model.removeDocument(original)
+    #expect(model.documents.map(\.id) == [original.id])
+  }
+
+  @Test @MainActor
   func runtimeCleanupRemovesExpiredCurrentJobButKeepsRunningWork() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(

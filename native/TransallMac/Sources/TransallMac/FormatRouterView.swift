@@ -16,7 +16,7 @@ struct FormatRouterView: View {
 
       orbit
         .frame(height: 348)
-        .disabled(model.isImporting)
+        .disabled(model.isImporting || model.isSubmitting)
 
       routeDetails
     }
@@ -177,6 +177,7 @@ struct FormatRouterView: View {
 
   private var selectionHint: String {
     if model.isImporting { return "正在读取文件" }
+    if model.isSubmitting { return "正在创建任务" }
     if model.selection.source == nil { return "① 源格式" }
     if model.selection.target == nil { return "② 目标格式" }
     return "路径已选"

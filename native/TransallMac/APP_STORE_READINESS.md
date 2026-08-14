@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 73/73 Swift package tests, 73/73 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 75/75 Swift package tests, 75/75 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -49,6 +49,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - After a restart, interrupted translation tasks stop with a retryable explanation instead of automatically issuing another provider request. Interrupted local-only tasks still resume automatically.
 - Choosing **Reselect Route** clears the current task's restoration reference, so a task the user dismissed does not reappear on the next launch. This action does not immediately delete its local files; they remain covered by manual deletion and the 24-hour automatic retention cleanup.
 - Stored task identifiers, input and output names, route-specific input counts, options, state files, and task directories are validated before recovery, preview, or export. Path traversal, symbolic-link substitutions, invalid options, and impossible input counts are rejected, while damaged running metadata becomes a visible, deletable failed task instead of resuming work from unsafe state.
+- New task metadata retains only option values used by the selected conversion path. A local text or image task therefore does not carry forward a glossary, watermark, provider choice, or OCR setting entered for another route; the route-relevant values remain available to processing and recovery.
 - Settings state that provider keys are stored only in macOS Keychain; delete controls are disabled when no key exists.
 - If Keychain reads fail, Settings identifies the read failure, disables credential edits, and offers a retry instead of treating existing keys as empty. Multi-provider saves roll back earlier writes if a later write fails.
 - Distribution-signed builds request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; legacy entries migrate after a successful protected write. Unsigned development builds fall back to the legacy keychain when the application-identifier entitlement is unavailable. Both branches have simulated regression coverage; the signed path still requires validation after signing assets exist.

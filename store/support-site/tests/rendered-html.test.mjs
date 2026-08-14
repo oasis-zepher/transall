@@ -46,7 +46,9 @@ test("server-renders the bilingual privacy policy", async () => {
   const html = await response.text();
   assert.match(html, /Transall 隐私政策/);
   assert.match(html, /PDF 原文件不会上传/);
+  assert.match(html, /任务元数据只保留当前转换实际使用的设置/);
   assert.match(html, /Local files and retention/);
+  assert.match(html, /Task metadata retains only settings used by the selected conversion/);
   assert.match(html, /during hourly checks while it remains open/);
   assert.match(html, /macOS Keychain/);
   assert.match(html, /DeepSeek 隐私政策/);

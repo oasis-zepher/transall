@@ -1,0 +1,167 @@
+import SwiftUI
+
+struct ResultWorkbenchView: View {
+  @EnvironmentObject private var model: AppModel
+
+  var body: some View {
+    WorkbenchPanel {
+      VStack(alignment: .leading, spacing: 14) {
+        header
+
+        if let job = model.currentJob {
+          ProgressView(value: Double(job.progress), total: 100)
+            .tint(statusColor(job.status))
+            .accessibilityLabel("任务进度")
+            .accessibilityValue("百分之\(job.progress)")
+        }
+
+        warnings
+
+        HStack(alignment: .top, spacing: 12) {
+          logPane
+          artifactPane
+            .frame(width: 188)
+        }
+
+        if !model.previewPages.isEmpty {
+          Divider().overlay(TransallTheme.line)
+          PreviewGridView(pages: model.previewPages, client: model.backend.client)
+        }
+      }
+    }
+  }
+
+  private var header: some View {
+    HStack(alignment: .top) {
+      VStack(alignment: .leading, spacing: 3) {
+        SectionLabel(text: "Output")
+        Text("任务输出")
+          .font(.system(size: 18, weight: .semibold, design: .serif))
+      }
+      Spacer()
+      if let job = model.currentJob {
+        HStack(spacing: 6) {
+          Circle()
+            .fill(statusColor(job.status))
+            .frame(width: 6, height: 6)
+          Text(statusLabel(job.status))
+        }
+        .font(.system(size: 10, weight: .bold))
+        .foregroundStyle(statusColor(job.status))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(statusColor(job.status).opacity(0.08))
+        .clipShape(Capsule())
+      } else {
+        Text("未开始")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(TransallTheme.muted)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var warnings: some View {
+    if !model.preflightWarnings.isEmpty {
+      VStack(alignment: .leading, spacing: 5) {
+        ForEach(model.preflightWarnings) { warning in
+          Label(
+            [warning.message, warning.hint].compactMap { $0 }.joined(separator: " "),
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .font(.system(size: 10))
+          .foregroundStyle(TransallTheme.warning)
+        }
+      }
+      .padding(9)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(TransallTheme.warning.opacity(0.07))
+      .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+  }
+
+  private var logPane: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      Text("运行日志")
+        .font(.system(size: 11, weight: .semibold))
+      ScrollView {
+        Text(model.logText)
+          .font(.system(size: 10, design: .monospaced))
+          .foregroundStyle(TransallTheme.inkSoft)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+          .padding(10)
+      }
+      .frame(minHeight: 112, maxHeight: 190)
+      .background(TransallTheme.paper.opacity(0.78))
+      .overlay {
+        RoundedRectangle(cornerRadius: 4)
+          .stroke(TransallTheme.line, lineWidth: 1)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+  }
+
+  private var artifactPane: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      Text("结果文件")
+        .font(.system(size: 11, weight: .semibold))
+
+      if let job = model.currentJob, job.status == "done", let output = job.output {
+        Image(systemName: "doc.circle.fill")
+          .font(.system(size: 24))
+          .foregroundStyle(TransallTheme.source)
+        Text(output)
+          .font(.system(size: 10, weight: .medium))
+          .lineLimit(3)
+        Button(model.isSaving ? "正在保存" : "保存结果…") {
+          Task { await model.saveResult() }
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .disabled(model.isSaving)
+
+        if !model.previewPages.isEmpty {
+          Button("刷新预览") {
+            Task { await model.refreshPreview() }
+          }
+          .buttonStyle(QuietButtonStyle())
+        }
+      } else {
+        Text("完成后可在这里保存，不会覆盖原文件。")
+          .font(.system(size: 10))
+          .foregroundStyle(TransallTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .padding(11)
+    .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+    .background(TransallTheme.panelMuted.opacity(0.58))
+    .overlay {
+      RoundedRectangle(cornerRadius: 4)
+        .stroke(TransallTheme.line, lineWidth: 1)
+    }
+    .clipShape(RoundedRectangle(cornerRadius: 4))
+  }
+
+  private func statusLabel(_ status: String) -> String {
+    switch status {
+    case "queued": "排队中"
+    case "running": "处理中"
+    case "done": "已完成"
+    case "failed": "失败"
+    case "cancelled": "已取消"
+    default: status
+    }
+  }
+
+  private func statusColor(_ status: String) -> Color {
+    switch status {
+    case "done": TransallTheme.source
+    case "failed": TransallTheme.danger
+    case "cancelled": TransallTheme.muted
+    case "queued", "running": TransallTheme.accent
+    default: TransallTheme.lineStrong
+    }
+  }
+}

@@ -1,0 +1,306 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+private final class InputViewState: ObservableObject {
+  @Published var showImporter = false
+  @Published var isDropTargeted = false
+}
+
+struct InputWorkbenchView: View {
+  @EnvironmentObject private var model: AppModel
+  @StateObject private var viewState = InputViewState()
+
+  var body: some View {
+    WorkbenchPanel {
+      VStack(alignment: .leading, spacing: 16) {
+        panelHeader
+        fileWell
+
+        if let route = model.route, route.enabled {
+          routeOptions(route)
+          actionBar(route)
+        } else {
+          unavailableHint
+        }
+      }
+    }
+    .fileImporter(
+      isPresented: $viewState.showImporter,
+      allowedContentTypes: [.item],
+      allowsMultipleSelection: true
+    ) { result in
+      switch result {
+      case .success(let urls): model.importDocuments(urls)
+      case .failure(let error): model.errorMessage = error.localizedDescription
+      }
+    }
+  }
+
+  private var panelHeader: some View {
+    HStack(alignment: .top) {
+      VStack(alignment: .leading, spacing: 3) {
+        SectionLabel(text: "Input")
+        Text(model.route?.enabled == true ? model.routeTitle : "选择路径后上传")
+          .font(.system(size: 18, weight: .semibold, design: .serif))
+      }
+      Spacer()
+      Text("\(model.documents.count) FILES")
+        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .tracking(0.7)
+        .foregroundStyle(TransallTheme.muted)
+    }
+  }
+
+  private var fileWell: some View {
+    VStack(spacing: model.documents.isEmpty ? 7 : 10) {
+      if model.documents.isEmpty {
+        Image(systemName: "doc.badge.plus")
+          .font(.system(size: 23, weight: .light))
+          .foregroundStyle(TransallTheme.accent)
+        Text("拖入文件，或点击选择")
+          .font(.system(size: 13, weight: .semibold))
+        Text(fileHint)
+          .font(.system(size: 10))
+          .foregroundStyle(TransallTheme.muted)
+          .multilineTextAlignment(.center)
+      } else {
+        ForEach(model.documents) { document in
+          HStack(spacing: 10) {
+            Image(systemName: "doc.text")
+              .foregroundStyle(TransallTheme.source)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(document.name)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+              Text(document.formattedSize)
+                .font(.system(size: 9))
+                .foregroundStyle(TransallTheme.muted)
+            }
+            Spacer()
+            Button {
+              model.removeDocument(document)
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(TransallTheme.muted)
+                .padding(5)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("移除\(document.name)")
+          }
+        }
+
+        Button("继续添加文件") { viewState.showImporter = true }
+          .buttonStyle(QuietButtonStyle())
+      }
+    }
+    .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty ? 116 : 76)
+    .padding(13)
+    .background(
+      viewState.isDropTargeted
+        ? TransallTheme.accentSoft.opacity(0.44) : TransallTheme.paper.opacity(0.72)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 6)
+        .stroke(
+          viewState.isDropTargeted ? TransallTheme.accent : TransallTheme.lineStrong,
+          style: StrokeStyle(lineWidth: 1, dash: [5, 5])
+        )
+    }
+    .contentShape(Rectangle())
+    .onTapGesture {
+      if model.documents.isEmpty { viewState.showImporter = true }
+    }
+    .dropDestination(for: URL.self) { urls, _ in
+      model.importDocuments(urls)
+      return !urls.isEmpty
+    } isTargeted: { targeted in
+      viewState.isDropTargeted = targeted
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("文件选择区")
+  }
+
+  @ViewBuilder
+  private func routeOptions(_ route: RouteDefinition) -> some View {
+    if route.optionPanels.contains("translate") {
+      translationOptions
+    }
+
+    if route.optionPanels.contains("edit") {
+      editOptions
+    }
+
+    if route.optionPanels.contains("ocr") {
+      ocrOptions
+    }
+
+    if route.optionPanels.contains("advanced") {
+      Divider().overlay(TransallTheme.line)
+      DisclosureGroup("高级参数", isExpanded: $model.showAdvanced) {
+        advancedOptions(route)
+          .padding(.top, 12)
+      }
+      .font(.system(size: 11, weight: .semibold))
+      .foregroundStyle(TransallTheme.inkSoft)
+    }
+  }
+
+  private var translationOptions: some View {
+    VStack(alignment: .leading, spacing: 11) {
+      SectionLabel(text: "Translation")
+      optionGrid {
+        Picker("翻译服务", selection: $model.options.provider) {
+          ForEach(model.providers) { provider in
+            Text("\(provider.name.capitalized)\(provider.configured ? "" : "（未配置）")")
+              .tag(provider.name)
+          }
+        }
+        .controlSize(.small)
+
+        Picker("输出", selection: $model.options.outputMode) {
+          Text("纯译文 PDF").tag("translated")
+          Text("双语对照 PDF").tag("bilingual")
+        }
+        .controlSize(.small)
+      }
+
+      Label {
+        Text("翻译内容会发送给所选服务商（DeepSeek 或 OpenAI）；任务文件和结果保存在本机。")
+      } icon: {
+        Image(systemName: "network")
+      }
+      .font(.system(size: 10))
+      .foregroundStyle(TransallTheme.warning)
+      .padding(9)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(TransallTheme.warning.opacity(0.075))
+      .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+  }
+
+  private var editOptions: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      SectionLabel(text: "PDF operation")
+      Picker("PDF 操作", selection: $model.options.editAction) {
+        Text("编辑单个 PDF").tag("edit")
+        Text("按列表顺序合并 PDF").tag("merge")
+      }
+      .pickerStyle(.segmented)
+      .controlSize(.small)
+    }
+  }
+
+  private var ocrOptions: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      SectionLabel(text: "OCR")
+      optionGrid {
+        TextField("OCR 语言", text: $model.options.ocrLanguage)
+          .textFieldStyle(.roundedBorder)
+          .controlSize(.small)
+        Picker("输出", selection: $model.options.ocrOutputFormat) {
+          Text("可搜索 PDF").tag("searchable_pdf")
+          Text("纯文本").tag("text")
+        }
+        .controlSize(.small)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func advancedOptions(_ route: RouteDefinition) -> some View {
+    if route.optionPanels.contains("translate") {
+      VStack(alignment: .leading, spacing: 10) {
+        optionGrid {
+          TextField("源语言（如 en）", text: $model.options.sourceLanguage)
+            .textFieldStyle(.roundedBorder)
+            .controlSize(.small)
+          TextField("目标语言（如 zh）", text: $model.options.targetLanguage)
+            .textFieldStyle(.roundedBorder)
+            .controlSize(.small)
+        }
+        TextField("术语表：每行一个术语映射", text: $model.options.glossary, axis: .vertical)
+          .textFieldStyle(.roundedBorder)
+          .lineLimit(2...5)
+          .controlSize(.small)
+      }
+    }
+
+    if route.optionPanels.contains("edit"), model.options.editAction == "edit" {
+      LazyVGrid(columns: fieldColumns, alignment: .leading, spacing: 9) {
+        compactField("删除页，如 2,4-6", text: $model.options.deletePages)
+        compactField("旋转页，如 1,3-5", text: $model.options.rotatePages)
+        TextField("旋转角度", value: $model.options.rotateDegrees, format: .number)
+          .textFieldStyle(.roundedBorder)
+          .controlSize(.small)
+        compactField("页面顺序，如 3,1,2", text: $model.options.reorderPages)
+        compactField("裁剪页，如 1,3-5", text: $model.options.cropPages)
+        compactField("裁剪区域 x0,y0,x1,y1", text: $model.options.cropBox)
+        compactField("查找文字", text: $model.options.replaceFind)
+        compactField("替换为", text: $model.options.replaceWith)
+        compactField("水印文字", text: $model.options.watermark)
+      }
+    }
+  }
+
+  private func actionBar(_ route: RouteDefinition) -> some View {
+    HStack(spacing: 10) {
+      Button {
+        Task { await model.runJob() }
+      } label: {
+        if model.isSubmitting {
+          HStack(spacing: 7) {
+            ProgressView().controlSize(.small)
+            Text("正在预检")
+          }
+        } else {
+          Text("开始\(route.kindLabel)")
+        }
+      }
+      .buttonStyle(PrimaryButtonStyle())
+      .disabled(!model.canRun)
+
+      if model.currentJob?.isRunning == true {
+        Button("取消任务") {
+          Task { await model.cancelJob() }
+        }
+        .buttonStyle(QuietButtonStyle())
+      }
+
+      Spacer()
+
+      if let limit = model.capabilities?.limits.maxUploadMB {
+        Text("上限 \(limit) MB")
+          .font(.system(size: 9))
+          .foregroundStyle(TransallTheme.muted)
+      }
+    }
+  }
+
+  private var unavailableHint: some View {
+    Text(model.selection.target == nil ? "在左侧选择源格式和目标格式。" : "这条转换路径尚未接入，请重新选择。")
+      .font(.system(size: 11))
+      .foregroundStyle(TransallTheme.muted)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.vertical, 4)
+  }
+
+  private var fileHint: String {
+    guard let route = model.route, route.enabled else { return "路径确定后会校验文件类型" }
+    return "接受 \(route.accept)"
+  }
+
+  private var fieldColumns: [GridItem] {
+    [GridItem(.adaptive(minimum: 170), spacing: 9)]
+  }
+
+  private func compactField(_ prompt: String, text: Binding<String>) -> some View {
+    TextField(prompt, text: text)
+      .textFieldStyle(.roundedBorder)
+      .controlSize(.small)
+  }
+
+  private func optionGrid<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    LazyVGrid(columns: fieldColumns, alignment: .leading, spacing: 9, content: content)
+  }
+}

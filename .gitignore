@@ -8,3 +8,5 @@ outputs/
 .uvicorn.pid
 .superpowers/
 .playwright-cli/
+native/TransallMac/.build/
+native/TransallMac/.swiftpm/

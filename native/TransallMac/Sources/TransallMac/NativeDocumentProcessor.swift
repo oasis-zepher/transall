@@ -40,10 +40,30 @@ enum NativeDocumentError: LocalizedError {
 }
 
 enum PageSelectionParser {
+  private struct PageRange {
+    let first: Int
+    let last: Int
+  }
+
   static func indexes(_ specification: String, pageCount: Int) throws -> [Int] {
+    let ranges = try ranges(specification)
+    var result: [Int] = []
+    for range in ranges {
+      for page in range.first...range.last {
+        try append(page, pageCount: pageCount, to: &result)
+      }
+    }
+    return result
+  }
+
+  static func validateSyntax(_ specification: String) throws {
+    _ = try ranges(specification)
+  }
+
+  private static func ranges(_ specification: String) throws -> [PageRange] {
     let text = specification.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return [] }
-    var result: [Int] = []
+    var result: [PageRange] = []
     for rawPart in text.split(separator: ",", omittingEmptySubsequences: false) {
       let part = rawPart.trimmingCharacters(in: .whitespaces)
       guard !part.isEmpty else {
@@ -51,13 +71,11 @@ enum PageSelectionParser {
       }
       let bounds = part.split(separator: "-", omittingEmptySubsequences: false)
       if bounds.count == 1, let page = Int(bounds[0]) {
-        try append(page, pageCount: pageCount, to: &result)
+        result.append(PageRange(first: page, last: page))
       } else if bounds.count == 2, let first = Int(bounds[0]), let last = Int(bounds[1]),
         first <= last
       {
-        for page in first...last {
-          try append(page, pageCount: pageCount, to: &result)
-        }
+        result.append(PageRange(first: first, last: last))
       } else {
         throw NativeDocumentError.invalidOption("页码格式无效：\(part)。")
       }
@@ -603,7 +621,7 @@ enum NativeDocumentProcessor {
     return normalized < 0 ? normalized + 360 : normalized
   }
 
-  private static func parseCropBox(_ value: String) throws -> CGRect {
+  static func parseCropBox(_ value: String) throws -> CGRect {
     let values = value.split(separator: ",").compactMap {
       Double($0.trimmingCharacters(in: .whitespaces))
     }

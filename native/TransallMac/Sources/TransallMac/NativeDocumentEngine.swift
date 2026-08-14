@@ -164,6 +164,49 @@ final class NativeDocumentEngine: ObservableObject {
           "single_file_required", "编辑单个 PDF 时只能选择一个文件。",
           hint: "如需合并多个 PDF，请选择“按列表顺序合并 PDF”。"))
     }
+    if route.kind == "pdf_edit" {
+      if !["edit", "merge"].contains(options.editAction) {
+        blocking.append(
+          issue(
+            "invalid_edit_action", "PDF 操作无效。",
+            hint: "请重新选择编辑单个 PDF 或按列表顺序合并 PDF。"))
+      } else if options.editAction == "edit" {
+        let pageSelections = [
+          ("删除页", options.deletePages),
+          ("旋转页", options.rotatePages),
+          ("页面顺序", options.reorderPages),
+          ("裁剪页", options.cropPages),
+        ]
+        for (label, specification) in pageSelections {
+          do {
+            try PageSelectionParser.validateSyntax(specification)
+          } catch {
+            blocking.append(
+              issue(
+                "invalid_page_selection", "\(label)格式无效。",
+                hint: error.localizedDescription))
+          }
+        }
+        if !options.rotatePages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          ![90, 180, 270, -90, -180, -270].contains(options.rotateDegrees)
+        {
+          blocking.append(
+            issue(
+              "invalid_rotation", "旋转角度无效。",
+              hint: "旋转角度必须是 90、180 或 270。"))
+        }
+        if !options.cropPages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          do {
+            _ = try NativeDocumentProcessor.parseCropBox(options.cropBox)
+          } catch {
+            blocking.append(
+              issue(
+                "invalid_crop_box", "裁剪区域无效。",
+                hint: error.localizedDescription))
+          }
+        }
+      }
+    }
     if route.kind == "pdf_translate" {
       if files.count != 1 {
         blocking.append(

@@ -179,6 +179,49 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func invalidPDFEditOptionsAreRejectedBeforeTaskCreation() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-edit-preflight-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let input = temporary.appendingPathComponent("source.pdf")
+    let files = [SelectedDocument(url: input, size: 4)]
+    var options = JobOptions()
+    options.deletePages = "1,,2"
+    options.rotatePages = "1"
+    options.rotateDegrees = 45
+    options.cropPages = "1"
+    options.cropBox = "0,0,0,20"
+
+    let preflight = engine.preflight(route: route, files: files, options: options)
+    #expect(!preflight.ok)
+    #expect(preflight.blockingIssues.contains { $0.code == "invalid_page_selection" })
+    #expect(preflight.blockingIssues.contains { $0.code == "invalid_rotation" })
+    #expect(preflight.blockingIssues.contains { $0.code == "invalid_crop_box" })
+
+    do {
+      _ = try await engine.createJob(route: route, files: files, options: options)
+      Issue.record("Invalid PDF edit options must be rejected before task creation")
+    } catch {
+      #expect(error.localizedDescription.contains("页码格式无效"))
+    }
+
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    let entries = try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path)
+    #expect(entries.isEmpty)
+
+    options = JobOptions()
+    options.editAction = "unknown"
+    let invalidAction = engine.preflight(route: route, files: files, options: options)
+    #expect(invalidAction.blockingIssues.contains { $0.code == "invalid_edit_action" })
+  }
+
+  @Test @MainActor
   func preflightRejectsOversizedTranslationGlossary() throws {
     let route = try #require(
       NativeCapabilities.routes.first { $0.kind == "pdf_translate" })

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Unsigned Debug and universal Release builds pass for arm64 and x86_64. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 27 beta passes 13 Swift tests, the Xcode scheme tests, static analysis, and an unsigned universal Release archive for arm64 and x86_64. Xcode 26.6 is installed and selected, but production-toolchain verification is blocked until the account holder accepts its license. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -10,7 +10,7 @@ The native SwiftUI app is self-contained and uses only Apple system frameworks f
 | --- | --- | --- |
 | P1 | Individual membership | Complete identity verification, pay for the Apple Developer Program, and wait for the individual's membership to become active. The seller name will be the verified legal name; `Zephyr` remains the brand. |
 | P1 | Signing identity | Set the individual's approved Apple Developer Team and final unique bundle identifier, then create the Mac App Store distribution identities/profile. This Mac currently has no valid signing identity. |
-| P1 | Production Xcode | Build and upload with an Apple-supported release Xcode. Current verification used Xcode 27 Beta. |
+| P1 | Production Xcode license | The account holder must accept the installed Xcode 26.6 and Apple SDK license, then rerun tests, analysis, and archive with `/Applications/Xcode.app`. Current complete verification used Xcode 27 beta. |
 | P1 | Commercial agreements | Account Holder must accept the Paid Apps Agreement and complete tax and banking setup. |
 | P1 | Published URLs | Publish the prepared support/privacy site after replacing legal-name, domain, and email placeholders. |
 | P1 | Store record | Create the App Store Connect app, age rating, categories, pricing, territories, DSA trader status, metadata, screenshots, and App Privacy answers. |
@@ -36,6 +36,16 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - `Transall.xcodeproj` is generated and committed for direct use in Xcode.
 - Debug and Release builds both run in App Sandbox.
 - Release archives contain one universal native executable and Apple-owned system-framework links only.
+
+## Verified release candidate behavior
+
+- PDF editing produced a two-page result and PDF merge produced the expected three-page result.
+- Vision OCR converted the image-only review sample into a one-page searchable PDF with extractable text.
+- Translation clearly discloses that extracted text is sent to the selected provider while the PDF file remains local.
+- Starting translation without a configured provider key stops with an actionable local error before any request is sent.
+- Settings state that provider keys are stored only in macOS Keychain; delete controls are disabled when no key exists.
+- Launch and quit leave no Transall process and no TCP listener on port 8765.
+- The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
 
 ## Prepared submission material
 

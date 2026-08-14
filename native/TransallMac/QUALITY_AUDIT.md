@@ -1,0 +1,66 @@
+# Transall release quality audit
+
+Audit date: 2026-08-14
+Quality bar: App Store-ready version 1.0
+Surfaces: native SwiftUI app and local support/privacy website
+
+## Result
+
+All P1, P2, and P3 product-quality findings from the baseline audit are resolved. The remaining work is account-holder work: accept the production Xcode license, activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+
+## Health score
+
+| # | Dimension | Baseline | Final | Evidence |
+| --- | --- | ---: | ---: | --- |
+| 1 | Accessibility | 3/4 | 4/4 | Support-site small text reaches WCAG AA contrast and navigation targets are at least 44 px; native controls expose labels, values, focus, and reduced-motion behavior. |
+| 2 | Performance | 2/4 | 4/4 | OCR renders, recognizes, and writes one page at a time instead of retaining every raster page. |
+| 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
+| 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
+| 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
+| **Total** |  | **16/20** | **20/20** | **Internal product-quality findings resolved; external submission prerequisites remain.** |
+
+## Resolved P1 findings
+
+1. **OCR memory growth** — `NativeDocumentProcessor` now handles PDF pages sequentially, releases each raster image after recognition, and writes searchable pages incrementally.
+2. **Ambiguous multiple-file routes** — preflight requires exactly one input for PDF translation and single-document PDF editing; merge mode still accepts multiple PDFs.
+3. **Unsafe overwrite saving** — result saving copies to a sibling temporary file and uses atomic replacement, preserving an existing destination if the new copy fails.
+4. **Website contrast** — the muted text token now meets WCAG AA for its rendered small-text usage.
+
+## Resolved P2 findings
+
+1. **Image orientation** — ImageIO applies JPEG and HEIC orientation metadata before OCR or PDF generation; a regression test verifies rotated dimensions.
+2. **Completed-route format state** — after a route is complete, only formats that are valid enabled sources remain selectable.
+3. **Website target size** — navigation and language links provide at least a 44 px block-size target without increasing visible density.
+
+## Resolved P3 findings
+
+1. Removed the unused `AppModel.isImporting` state.
+2. Removed unsupported PDF replacement fields from the job model.
+3. Updated the native README from the beta-era requirement to Xcode 26.6 or a compatible newer release.
+4. Added Open Graph assets, per-page social metadata, App Privacy Required Reason coverage for file timestamps, and synthetic review files.
+
+## Verification
+
+| Check | Result |
+| --- | --- |
+| Swift package tests with Xcode 27 beta | 13/13 passed |
+| Xcode scheme tests with Xcode 27 beta | Passed |
+| Xcode static analyzer with Xcode 27 beta | Passed with no code findings |
+| Unsigned Release archive with Xcode 27 beta | Passed; universal `arm64` + `x86_64` executable |
+| Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
+| Archive resources | AppIcon and `PrivacyInfo.xcprivacy` present; privacy manifest passes `plutil` |
+| Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, and Keychain settings verified |
+| OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
+| Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
+| Support website | ESLint passed; production build passed; 4/4 rendered HTML tests passed |
+| Xcode 26.6 production verification | Blocked before compilation with exit code 69 because the account holder has not accepted the Xcode license |
+| Code signing | Blocked; this Mac reports zero valid code-signing identities |
+
+## Submission blockers outside the repository
+
+- Accept the Xcode 26.6 and Apple SDK license as the Mac administrator, then rerun package tests, scheme tests, analysis, and archive under `/Applications/Xcode.app`.
+- Activate the individual Apple Developer membership and finish identity verification.
+- Register the final unique bundle identifier; `com.transall.mac` remains provisional.
+- Create the Mac App Distribution and installer signing assets and validate a signed archive in Organizer.
+- Supply the verified legal seller name, public support email, domain, Paid Apps Agreement, tax, banking, pricing, territories, and DSA declaration.
+- Publish the prepared support/privacy site and provide a rate-limited review API key through App Store Connect.

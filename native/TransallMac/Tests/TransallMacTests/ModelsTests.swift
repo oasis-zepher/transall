@@ -1103,6 +1103,56 @@ struct ModelsTests {
     #expect(pages.allSatisfy(NativeDocumentProcessor.isReadableImage))
   }
 
+  @Test
+  func symbolicLinkPreviewCacheEntriesAreRegenerated() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-preview-link-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let image = temporary.appendingPathComponent("source.png")
+    try writeTestImage(to: image, color: CGColor(red: 0.4, green: 0.6, blue: 0.2, alpha: 1))
+    let pdf = temporary.appendingPathComponent("source.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [image], options: JobOptions(), outputURL: pdf, apiKey: nil)
+
+    let externalDirectory = temporary.appendingPathComponent("External", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: externalDirectory, withIntermediateDirectories: true)
+    let externalPage = externalDirectory.appendingPathComponent("page-1.png")
+    try writeTestImage(
+      to: externalPage, color: CGColor(red: 0.8, green: 0.1, blue: 0.2, alpha: 1))
+    let externalData = try Data(contentsOf: externalPage)
+    let previewDirectory = temporary.appendingPathComponent("Preview", isDirectory: true)
+    try FileManager.default.createSymbolicLink(
+      at: previewDirectory, withDestinationURL: externalDirectory)
+
+    var pages = try await PreviewCache.pages(pdfURL: pdf, directory: previewDirectory)
+    var directoryValues = try previewDirectory.resourceValues(
+      forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+    #expect(directoryValues.isDirectory == true)
+    try #require(directoryValues.isSymbolicLink != true)
+    #expect(try Data(contentsOf: externalPage) == externalData)
+    #expect(pages.count == 1)
+
+    try FileManager.default.removeItem(at: pages[0])
+    try FileManager.default.createSymbolicLink(at: pages[0], withDestinationURL: externalPage)
+    pages = try await PreviewCache.pages(pdfURL: pdf, directory: previewDirectory)
+    directoryValues = try previewDirectory.resourceValues(
+      forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+    let pageValues = try pages[0].resourceValues(
+      forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+
+    #expect(directoryValues.isSymbolicLink != true)
+    #expect(pageValues.isRegularFile == true)
+    #expect(pageValues.isSymbolicLink != true)
+    #expect(NativeDocumentProcessor.isReadableImage(pages[0]))
+    #expect(try Data(contentsOf: externalPage) == externalData)
+  }
+
   @Test @MainActor
   func previewFailureIsVisibleAndCanBeRetried() async throws {
     let temporary = FileManager.default.temporaryDirectory

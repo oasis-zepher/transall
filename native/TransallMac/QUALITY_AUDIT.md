@@ -13,7 +13,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Support-site small text reaches WCAG AA contrast and navigation targets are at least 44 px; native controls expose labels, values, focus, and reduced-motion behavior. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time instead of retaining every decoded image. |
+| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
@@ -43,8 +43,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 19/19 passed |
-| Xcode scheme tests with Xcode 26.6 | Passed |
+| Swift package tests with Xcode 26.6 | 23/23 passed |
+| Xcode scheme tests with Xcode 26.6 | 23/23 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
@@ -56,7 +56,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, and corrupt task metadata does not prevent local deletion.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, and corrupt task metadata does not prevent local deletion. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction.
 
 ## Submission blockers outside the repository
 

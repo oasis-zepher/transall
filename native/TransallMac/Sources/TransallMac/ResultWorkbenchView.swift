@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private final class ResultViewState: ObservableObject {
@@ -53,6 +54,16 @@ struct ResultWorkbenchView: View {
       Button("取消", role: .cancel) {}
     } message: {
       Text("上传副本、结果和预览会从本机删除；原始文件不受影响。")
+    }
+    .onChange(of: model.previewError) { _, error in
+      guard let error else { return }
+      NSAccessibility.post(
+        element: NSApplication.shared,
+        notification: .announcementRequested,
+        userInfo: [
+          .announcement: error,
+          .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
     }
   }
 
@@ -190,6 +201,8 @@ struct ResultWorkbenchView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(TransallTheme.warning.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 4))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(error)
     }
   }
 

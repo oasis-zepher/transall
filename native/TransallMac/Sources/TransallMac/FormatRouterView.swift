@@ -92,7 +92,7 @@ struct FormatRouterView: View {
       Text(format.map { model.capabilities?.formats[$0]?.label ?? fallbackLabel(for: $0) } ?? "待选择")
         .font(.callout.weight(.bold))
         .minimumScaleFactor(0.75)
-        .foregroundStyle(format == nil ? TransallTheme.lineStrong : color)
+        .foregroundStyle(format == nil ? TransallTheme.muted : color)
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 6)

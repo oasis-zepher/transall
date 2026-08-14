@@ -1,6 +1,6 @@
 # Transall release quality audit
 
-Audit date: 2026-08-14
+Audit date: 2026-08-15
 Quality bar: App Store-ready version 1.0
 Surfaces: native SwiftUI app and local support/privacy website
 
@@ -49,13 +49,14 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Preview failures remain visible with a specific message and a retry action instead of silently clearing the preview area.
 - Preview results are applied only to the job that requested them, preventing an older task from overwriting a newer task's state.
 - Startup removes only task directories older than 24 hours on a utility-priority task; manual deletion exposes a busy state and blocks conflicting result operations until removal finishes.
+- Translation retries temporary network failures and selected transient HTTP responses at most twice, honors bounded `Retry-After` values, remains cancellable during backoff, and fails authentication errors immediately.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 27/27 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 27/27 passed |
+| Swift package tests with Xcode 26.6 | 32/32 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 32/32 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
@@ -67,7 +68,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Translation coverage verifies `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
 
 ## Submission blockers outside the repository
 

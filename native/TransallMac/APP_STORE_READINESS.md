@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 27 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 32 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -42,6 +42,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Vision OCR converted the image-only review sample into a one-page searchable PDF with extractable text.
 - Translation clearly discloses that extracted text is sent to the selected provider while the PDF file remains local.
 - Starting translation without a configured provider key stops with an actionable local error before any request is sent.
+- Translation retries only temporary network failures and HTTP 408, 425, 429, 500, 502, 503, and 504 responses. It honors bounded `Retry-After` delays, stops after two retries, cancels during backoff, and does not retry authentication failures.
 - Settings state that provider keys are stored only in macOS Keychain; delete controls are disabled when no key exists.
 - Launch and quit leave no Transall process and no TCP listener on port 8765.
 - The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.

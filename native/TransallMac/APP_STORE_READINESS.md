@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 88/88 Swift package tests, 88/88 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 89/89 Swift package tests, 89/89 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -47,7 +47,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Translation retries only temporary network failures and HTTP 408, 425, 429, 500, 502, 503, and 504 responses. It honors bounded `Retry-After` delays, stops after two retries, cancels during backoff, and does not retry authentication failures.
 - Translation uses a dedicated ephemeral network session with URL caching, cookies, and shared URL credential storage disabled; individual requests also reject caching and cookies.
 - Task-state writes no longer fail silently: processing does not start until the running state is saved, completion/failure/cancellation write errors remain visible, and a complete output can restore its finished state without reprocessing.
-- Restart recovery requires a completion receipt written only after the processor returns successfully. A readable but partial PDF without that receipt is never presented as a completed result.
+- Restart recovery requires a completion receipt written only after the processor returns successfully. The receipt records the output name, byte count, and a bounded SHA-256 content fingerprint; recovery rechecks all three plus the output's structural validity. Missing, legacy filename-only, or mismatched receipts cannot present a readable but replaced or partial PDF as completed.
 - If processing fails or is cancelled after writing part of its result, the incomplete output is removed on a utility-priority task. Cleanup failures are visible in the engine log. A successfully generated result is still retained when only its completion receipt or final task-state write fails, preserving restart recovery.
 - Before a task is marked complete, the engine verifies that the processor returned the exact expected task-local path and that the output is a regular, non-symbolic-link file; PDF results must also contain a readable page. Missing, damaged, or unexpectedly located results fail instead of appearing as successful tasks.
 - After a restart, interrupted translation tasks stop with a retryable explanation instead of automatically issuing another provider request. Interrupted local-only tasks still resume automatically.

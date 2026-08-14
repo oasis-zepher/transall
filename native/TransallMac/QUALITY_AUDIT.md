@@ -59,7 +59,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Translation requests use a dedicated ephemeral `URLSession`; URL caching, cookies, and shared URL credential storage are disabled so provider traffic is not retained by those stores.
 - PDF translation extracts and validates all source pages locally before constructing any provider request. It rejects documents over 200 pages or 200,000 source characters with an actionable split-document error, and the processor independently rejects every input count other than one. The workbench discloses these limits next to the provider privacy notice.
 - Job-state persistence failures are surfaced for start, completion, processing failure, and cancellation. Work cannot begin before its running state is saved, complete outputs recover without reprocessing, and interrupted translation jobs never auto-resubmit a paid provider request.
-- Completed-result recovery now requires both a valid output and a post-processing completion receipt, preventing a readable partial PDF from being misclassified as finished after a failed state write.
+- Completed-result recovery now requires a structurally valid output plus a post-processing receipt whose output name, byte count, and bounded SHA-256 content fingerprint still match. A readable replacement with the same filename and size, a partial PDF, or a legacy filename-only receipt cannot be misclassified as finished after a failed state write.
 - Failed and cancelled processors remove any incomplete expected output on a utility-priority task, and a cleanup failure is recorded in the visible engine log. Complete results remain intact when only the receipt or final-state persistence step fails, so the existing recovery behavior is preserved.
 - Processor success is accepted only when it returns the exact expected task-local path and that path contains a regular, non-symbolic-link result. PDF outputs must also contain a readable page, preventing a missing, damaged, or unexpectedly located file from being marked complete.
 - Choosing **Reselect Route** removes the dismissed task's restoration reference, preventing it from returning after relaunch. The task directory is not deleted by this navigation action and remains subject to manual deletion or the 24-hour automatic retention policy.
@@ -79,8 +79,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 88/88 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 88/88 passed |
+| Swift package tests with Xcode 26.6 | 89/89 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 89/89 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; 5.4 MB universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

@@ -43,7 +43,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 17/17 passed |
+| Swift package tests with Xcode 26.6 | 19/19 passed |
 | Xcode scheme tests with Xcode 26.6 | Passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
@@ -56,7 +56,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, and unknown translation providers are rejected before processing.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, and corrupt task metadata does not prevent local deletion.
 
 ## Submission blockers outside the repository
 

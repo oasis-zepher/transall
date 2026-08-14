@@ -49,6 +49,7 @@ Why the privacy label is conservative: Apple defines collection as data transmit
 - [ ] Set the individual's Apple Developer Team and final bundle identifier in Xcode.
 - [ ] Create or allow Xcode to manage the Mac App Distribution certificate and Mac Installer Distribution certificate/profile required by the current workflow.
 - [ ] Archive a distribution-signed Release with App Sandbox enabled; the unsigned universal preflight archive already passes.
+- [ ] In the distribution-signed build, save, reload, and delete a disposable review API key to verify Data Protection Keychain access and legacy-key migration under the final application identifier.
 - [ ] Validate the archive in Organizer.
 - [x] Confirm the unsigned preflight archive has no Python, Homebrew paths, local server, prohibited private frameworks, or nested executables.
 - [ ] Upload the archive and wait for processing before attaching it to version 1.0.0.

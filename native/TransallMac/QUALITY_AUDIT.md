@@ -56,14 +56,15 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Job-state persistence failures are surfaced for start, completion, processing failure, and cancellation. Work cannot begin before its running state is saved, complete outputs recover without reprocessing, and interrupted translation jobs never auto-resubmit a paid provider request.
 - Completed-result recovery now requires both a valid output and a post-processing completion receipt, preventing a readable partial PDF from being misclassified as finished after a failed state write.
 - Keychain read failures disable credential editing until a successful reload, and a partial multi-provider save is rolled back. Local-only jobs no longer read translation credentials; translation jobs report Keychain access errors before network work.
+- Provider keys request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; existing legacy entries migrate without losing the credential, while unsigned development builds retain a tested legacy fallback when the application identity entitlement is unavailable.
 - Image-to-PDF conversion caps decoded images at 3,508 pixels, while OCR and image-to-Markdown cap them at 2,400 pixels; EXIF orientation remains applied during thumbnail decoding.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 47/47 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 47/47 passed |
+| Swift package tests with Xcode 26.6 | 49/49 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 49/49 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
@@ -75,12 +76,12 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, oversized images are downsampled with their aspect ratio intact, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Persistence fault injection covers running, completion, failure, and cancellation state writes; restart coverage verifies receipt-backed complete-output recovery, rejection of readable partial PDFs without a receipt, local-task resumption, and suppression of automatic translation retries. Credential fault injection verifies load-failure write blocking, partial-save rollback, preflight error classification, no credential access for local jobs, and clear translation failure before network work. Translation coverage verifies the non-persistent session configuration, `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, oversized images are downsampled with their aspect ratio intact, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Persistence fault injection covers running, completion, failure, and cancellation state writes; restart coverage verifies receipt-backed complete-output recovery, rejection of readable partial PDFs without a receipt, local-task resumption, and suppression of automatic translation retries. Credential fault injection verifies load-failure write blocking, partial-save rollback, Data Protection Keychain migration, unsigned-build fallback, preflight error classification, no credential access for local jobs, and clear translation failure before network work. Translation coverage verifies the non-persistent session configuration, `Retry-After` handling, bounded retries after repeated timeouts, cancellation during backoff, and immediate failure for authentication errors without using a real provider key. Cleanup coverage verifies that startup removes expired directories without touching recent jobs and that manual deletion clears only the matching result state. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
 
 ## Submission blockers outside the repository
 
 - Activate the individual Apple Developer membership and finish identity verification.
 - Register the final unique bundle identifier; `com.transall.mac` remains provisional.
-- Create the Mac App Distribution and installer signing assets and validate a signed archive in Organizer.
+- Create the Mac App Distribution and installer signing assets, validate Data Protection Keychain save/read/delete behavior, and validate a signed archive in Organizer.
 - Supply the verified legal seller name, public support email, domain, Paid Apps Agreement, tax, banking, pricing, territories, and DSA declaration.
 - Publish the prepared support/privacy site and provide a rate-limited review API key through App Store Connect.

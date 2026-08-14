@@ -2,14 +2,14 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 47 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 49 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
 | Priority | Item | Required decision or work |
 | --- | --- | --- |
 | P1 | Individual membership | Complete identity verification, pay for the Apple Developer Program, and wait for the individual's membership to become active. The seller name will be the verified legal name; `Zephyr` remains the brand. |
-| P1 | Signing identity | Set the individual's approved Apple Developer Team and final unique bundle identifier, then create the Mac App Store distribution identities/profile. This Mac currently has no valid signing identity. |
+| P1 | Signing identity | Set the individual's approved Apple Developer Team and final unique bundle identifier, create the Mac App Store distribution identities/profile, and validate Data Protection Keychain access in the signed build. This Mac currently has no valid signing identity. |
 | P1 | Commercial agreements | Account Holder must accept the Paid Apps Agreement and complete tax and banking setup. |
 | P1 | Published URLs | Publish the prepared support/privacy site after replacing legal-name, domain, and email placeholders. |
 | P1 | Store record | Create the App Store Connect app, age rating, categories, pricing, territories, DSA trader status, metadata, screenshots, and App Privacy answers. |
@@ -49,6 +49,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - After a restart, interrupted translation tasks stop with a retryable explanation instead of automatically issuing another provider request. Interrupted local-only tasks still resume automatically.
 - Settings state that provider keys are stored only in macOS Keychain; delete controls are disabled when no key exists.
 - If Keychain reads fail, Settings identifies the read failure, disables credential edits, and offers a retry instead of treating existing keys as empty. Multi-provider saves roll back earlier writes if a later write fails.
+- Distribution-signed builds request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; legacy entries migrate after a successful protected write. Unsigned development builds fall back to the legacy keychain when the application-identifier entitlement is unavailable. Both branches have simulated regression coverage; the signed path still requires validation after signing assets exist.
 - Local-only document jobs do not access translation credentials. Translation preflight and processing surface Keychain failures separately from an unconfigured key and stop before any provider request.
 - Launch and quit leave no Transall process and no TCP listener on port 8765.
 - The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.

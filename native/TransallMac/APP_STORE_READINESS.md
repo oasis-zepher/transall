@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 86/86 Swift package tests, 86/86 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 88/88 Swift package tests, 88/88 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -69,6 +69,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Image decoding is bounded to 3,508 pixels for PDF generation and 2,400 pixels for OCR/Markdown extraction, preserving practical output resolution without fully materializing oversized source images.
 - Incomplete, corrupt, or symbolic-link preview caches are regenerated as regular files inside the task directory; corrupt task metadata no longer prevents the user from deleting local task data. Successful, failed, cancelled, and otherwise non-running tasks all expose the same confirmed deletion control.
 - Scanned-PDF Markdown extraction and translation open each PDF once for raster access instead of reopening it for every page; damaged or empty PDFs fail with a file-specific error.
+- OCR plain-text output and Markdown extraction write each completed page directly to the result file instead of retaining all recognized page text in memory. Regression coverage verifies OCR page boundaries and Markdown page/document ordering.
 - Translation glossaries are limited to 20,000 characters in both preflight and the processing layer, and multiple text inputs are combined without retaining a second array of document contents.
 - Input inspection, input copies, and result saves run outside the main actor, preserve security-scoped access, and propagate cancellation; large transfers no longer block the SwiftUI event loop.
 - Input file rows use lazy stack rendering inside the workbench scroll view, avoiding eager row creation for large file batches.

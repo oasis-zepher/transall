@@ -13,7 +13,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Support-site and native state text reach WCAG AA contrast; navigation targets are at least 44 px, and native controls expose labels, values, focus, reduced-motion behavior, preview-error announcements, and Keychain status announcements. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one bounded raster page at a time; PDF translation bounds source buffering and paid provider work before network access; single-document PDF editing avoids a redundant full-document copy; oversized images are downsampled for their target use; input metadata inspection is asynchronous and input rows are lazy; scanned-PDF routes reuse one raster document handle per input; and large file transfers, PDF previews, retention checks, and task deletion run outside the main actor. |
+| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one bounded raster page at a time; OCR text and Markdown extraction stream page text to disk; PDF translation bounds source buffering and paid provider work before network access; single-document PDF editing avoids a redundant full-document copy; oversized images are downsampled for their target use; input metadata inspection is asynchronous and input rows are lazy; scanned-PDF routes reuse one raster document handle per input; and large file transfers, PDF previews, retention checks, and task deletion run outside the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
@@ -72,14 +72,15 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Task creation runs structural preflight before writing task data. Empty inputs, mismatched extensions, invalid file sizes, overflowing or oversized totals, invalid merge counts, unregistered routes, and malformed PDF edit, translation, or OCR options cannot create a task directory; persisted metadata stores only the matching canonical capability route. Preflight, the processor, and restart recovery share the same route-option validation rules.
 - PDF edit validation caps page-selection text at 4,096 characters, crop-box text at 256 characters, and watermark text at 512 characters. Crop coordinates must be finite, preventing unbounded option parsing, oversized repeated annotations, and infinite PDF page bounds.
 - Image-to-PDF conversion caps decoded images at 3,508 pixels, while OCR and image-to-Markdown cap them at 2,400 pixels; EXIF orientation remains applied during thumbnail decoding.
+- OCR plain-text output and Markdown extraction write recognized pages incrementally instead of retaining the full document text in memory. Multi-page and multi-document regression tests preserve page boundaries, order, and Markdown separators.
 - Single-document PDF editing mutates the processor-owned in-memory document instead of cloning every page before applying an operation. Merge retains independent per-page copies, source PDFs remain unchanged on disk, and delete, rotate, reorder, crop, and watermark loops propagate cancellation between pages.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 86/86 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 86/86 passed |
+| Swift package tests with Xcode 26.6 | 88/88 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 88/88 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; 5.4 MB universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

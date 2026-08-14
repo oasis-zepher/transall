@@ -19,6 +19,24 @@ enum NativeDocumentError: LocalizedError {
       message
     }
   }
+
+  var code: String {
+    switch self {
+    case .invalidFile: "invalid_file"
+    case .invalidOption: "invalid_option"
+    case .processing: "native_processing_failed"
+    case .provider: "translation_provider_failed"
+    }
+  }
+
+  var recoverySuggestion: String {
+    switch self {
+    case .invalidFile: "确认文件没有损坏，并与所选输入格式一致。"
+    case .invalidOption: "修改任务参数后重新运行。"
+    case .processing: "检查输入文件后重试；问题持续时可保留日志用于反馈。"
+    case .provider: "检查网络、API Key、服务余额和服务商状态后重试。"
+    }
+  }
 }
 
 enum PageSelectionParser {
@@ -617,7 +635,14 @@ struct TranslationService {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 120
     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let data: Data
+    let response: URLResponse
+    do {
+      (data, response) = try await URLSession.shared.data(for: request)
+    } catch let error as URLError {
+      if Task.isCancelled || error.code == .cancelled { throw CancellationError() }
+      throw Self.providerError(for: error)
+    }
     try Task.checkCancellation()
     guard let http = response as? HTTPURLResponse else {
       throw NativeDocumentError.provider("翻译服务返回了无效响应。")
@@ -641,5 +666,21 @@ struct TranslationService {
       let error = object["error"] as? [String: Any]
     else { return nil }
     return error["message"] as? String
+  }
+
+  static func providerError(for error: URLError) -> NativeDocumentError {
+    switch error.code {
+    case .notConnectedToInternet:
+      .provider("当前没有网络连接，联网后再试。")
+    case .timedOut:
+      .provider("翻译服务响应超时，请稍后重试或减少单次处理内容。")
+    case .cannotFindHost, .cannotConnectToHost, .networkConnectionLost:
+      .provider("无法连接翻译服务，请检查网络、代理或 VPN。")
+    case .secureConnectionFailed, .serverCertificateHasBadDate,
+      .serverCertificateUntrusted, .serverCertificateHasUnknownRoot:
+      .provider("无法建立安全连接，请检查系统时间和网络证书。")
+    default:
+      .provider("翻译服务连接失败：\(error.localizedDescription)")
+    }
   }
 }

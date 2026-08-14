@@ -73,6 +73,8 @@ struct InputWorkbenchView: View {
               Text(document.name)
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
+                .truncationMode(.middle)
+                .help(document.name)
               Text(document.formattedSize)
                 .font(.caption2)
                 .foregroundStyle(TransallTheme.muted)

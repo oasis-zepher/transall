@@ -27,7 +27,6 @@ struct TransallApp: App {
       SettingsView()
         .environmentObject(model)
         .preferredColorScheme(.light)
-        .frame(width: 500)
     }
   }
 }

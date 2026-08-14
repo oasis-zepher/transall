@@ -104,6 +104,28 @@ struct ModelsTests {
         == "paper-translated.pdf")
   }
 
+  @Test @MainActor
+  func preflightRejectsEmptyFilesBeforeProcessing() throws {
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let document = SelectedDocument(url: URL(fileURLWithPath: "/tmp/empty.pdf"), size: 0)
+    let result = NativeDocumentEngine().preflight(
+      route: route, files: [document], options: JobOptions())
+
+    #expect(!result.ok)
+    #expect(result.blockingIssues.contains { $0.code == "empty_file" })
+  }
+
+  @Test
+  func translationNetworkErrorsHaveActionableMessages() {
+    let offline = TranslationService.providerError(
+      for: URLError(.notConnectedToInternet))
+    let timedOut = TranslationService.providerError(for: URLError(.timedOut))
+
+    #expect(offline.errorDescription?.contains("没有网络") == true)
+    #expect(timedOut.errorDescription?.contains("超时") == true)
+    #expect(offline.code == "translation_provider_failed")
+  }
+
   @Test
   func nativePDFEditDeletesAndRotatesPages() async throws {
     let temporary = FileManager.default.temporaryDirectory

@@ -55,7 +55,7 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   func applyCredentialChanges() async -> String {
-    "密钥已保存到钥匙串。"
+    "翻译服务配置已更新。"
   }
 
   func preflight(
@@ -71,6 +71,10 @@ final class NativeDocumentEngine: ObservableObject {
     }
 
     let allowed = allowedExtensions(for: route.source)
+    for file in files where file.size == 0 {
+      blocking.append(
+        issue("empty_file", "\(file.name) 是空文件。", hint: "请选择包含内容的文件。"))
+    }
     for file in files where !allowed.contains(file.url.pathExtension.lowercased()) {
       blocking.append(
         issue(
@@ -289,9 +293,11 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func markFailed(jobID: String, error: Error, directory: URL) {
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
+    let nativeError = error as? NativeDocumentError
     let updated = replacing(
       job, status: "failed", stage: "failed", message: "任务失败。", error: error.localizedDescription,
-      errorCode: "native_processing_failed", errorHint: "检查输入文件和参数后重试。",
+      errorCode: nativeError?.code ?? "native_processing_failed",
+      errorHint: nativeError?.recoverySuggestion ?? "检查输入文件和参数后重试。",
       retryable: true, progress: job.progress, logs: job.logs)
     jobs[jobID] = updated
     tasks[jobID] = nil

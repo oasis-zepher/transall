@@ -138,6 +138,8 @@ struct ResultWorkbenchView: View {
         Text(output)
           .font(.caption2.weight(.medium))
           .lineLimit(3)
+          .truncationMode(.middle)
+          .help(output)
         Button(model.isSaving ? "正在保存" : "保存结果…") {
           Task { await model.saveResult() }
         }

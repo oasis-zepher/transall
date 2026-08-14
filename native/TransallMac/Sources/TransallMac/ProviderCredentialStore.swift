@@ -7,6 +7,13 @@ enum ProviderCredential: String, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
+  var displayName: String {
+    switch self {
+    case .deepseek: "DeepSeek"
+    case .openAI: "OpenAI"
+    }
+  }
+
   var environmentVariable: String {
     switch self {
     case .deepseek: "DEEPSEEK_API_KEY"

@@ -205,7 +205,9 @@ struct FormatRouterView: View {
       return isSource ? .available : .unavailable
     }
     guard model.selection.target == nil else {
-      return .available
+      let isSource =
+        model.capabilities?.routes.contains { $0.source == format && $0.enabled } == true
+      return isSource ? .available : .unavailable
     }
     let isAvailable =
       model.capabilities?.routes.contains {

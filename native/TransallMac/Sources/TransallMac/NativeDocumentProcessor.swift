@@ -92,6 +92,9 @@ enum NativeDocumentProcessor {
     apiKey: String?
   ) async throws -> Result {
     try Task.checkCancellation()
+    guard !inputs.isEmpty else {
+      throw NativeDocumentError.invalidFile("没有可处理的输入文件。")
+    }
     switch route.kind {
     case "pdf_edit":
       try editPDF(inputs: inputs, options: options, outputURL: outputURL)
@@ -126,7 +129,9 @@ enum NativeDocumentProcessor {
     guard let document = CGPDFDocument(pdfURL as CFURL) else { return [] }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     var urls: [URL] = []
-    for pageNumber in 1...min(document.numberOfPages, limit) {
+    let pageCount = min(document.numberOfPages, limit)
+    guard pageCount > 0 else { return [] }
+    for pageNumber in 1...pageCount {
       try Task.checkCancellation()
       guard let page = document.page(at: pageNumber),
         let image = render(page: page, maximumDimension: 1100)
@@ -180,6 +185,10 @@ enum NativeDocumentProcessor {
       let reorder = try PageSelectionParser.indexes(
         options.reorderPages, pageCount: document.pageCount)
       if !reorder.isEmpty {
+        guard reorder.count == document.pageCount, Set(reorder).count == document.pageCount else {
+          throw NativeDocumentError.invalidOption(
+            "页面顺序必须包含当前每一页且每页只出现一次；如需删除页面，请使用删除页。")
+        }
         let reordered = PDFDocument()
         for index in reorder {
           guard let page = document.page(at: index)?.copy() as? PDFPage else { continue }
@@ -255,18 +264,18 @@ enum NativeDocumentProcessor {
   }
 
   private static func performOCR(inputs: [URL], options: JobOptions, outputURL: URL) async throws {
-    let pages = try imagePages(inputs: inputs)
-    var recognized: [[OCRLine]] = []
-    for page in pages {
-      try Task.checkCancellation()
-      recognized.append(
-        try recognize(page.image, languages: recognitionLanguages(options.ocrLanguage)))
-    }
+    let languages = recognitionLanguages(options.ocrLanguage)
     if options.ocrOutputFormat == "text" {
-      let text = recognized.map { $0.map(\.text).joined(separator: "\n") }.joined(separator: "\n\n")
+      var recognizedPages: [String] = []
+      try forEachRasterPage(inputs: inputs) { image in
+        try Task.checkCancellation()
+        let text = try recognize(image, languages: languages).map(\.text).joined(separator: "\n")
+        recognizedPages.append(text)
+      }
+      let text = recognizedPages.joined(separator: "\n\n")
       try Data(text.utf8).write(to: outputURL, options: .atomic)
     } else {
-      try writeSearchablePDF(pages: pages, recognized: recognized, outputURL: outputURL)
+      try writeSearchablePDF(inputs: inputs, languages: languages, outputURL: outputURL)
     }
   }
 
@@ -339,29 +348,38 @@ enum NativeDocumentProcessor {
     try writeTextPDF(pages.joined(separator: "\n\n────────\n\n"), to: outputURL)
   }
 
-  private struct RasterPage {
-    let image: CGImage
-  }
-
-  private static func imagePages(inputs: [URL]) throws -> [RasterPage] {
-    var result: [RasterPage] = []
+  private static func forEachRasterPage(
+    inputs: [URL], body: (CGImage) throws -> Void
+  ) throws {
+    var processedPageCount = 0
     for input in inputs {
       try Task.checkCancellation()
       if input.pathExtension.lowercased() == "pdf" {
         guard let document = CGPDFDocument(input as CFURL) else {
           throw NativeDocumentError.invalidFile("无法打开 \(input.lastPathComponent)。")
         }
+        guard document.numberOfPages > 0 else {
+          throw NativeDocumentError.invalidFile("\(input.lastPathComponent) 没有可识别的页面。")
+        }
         for pageNumber in 1...document.numberOfPages {
+          try Task.checkCancellation()
           guard let page = document.page(at: pageNumber),
             let image = render(page: page, maximumDimension: 2400)
-          else { continue }
-          result.append(RasterPage(image: image))
+          else {
+            throw NativeDocumentError.processing(
+              "无法渲染 \(input.lastPathComponent) 的第 \(pageNumber) 页。")
+          }
+          try body(image)
+          processedPageCount += 1
         }
       } else {
-        result.append(RasterPage(image: try loadImage(input)))
+        try body(loadImage(input))
+        processedPageCount += 1
       }
     }
-    return result
+    guard processedPageCount > 0 else {
+      throw NativeDocumentError.invalidFile("没有可识别的页面。")
+    }
   }
 
   private static func recognize(_ image: CGImage, languages: [String]) throws -> [OCRLine] {
@@ -378,20 +396,21 @@ enum NativeDocumentProcessor {
   }
 
   private static func writeSearchablePDF(
-    pages: [RasterPage], recognized: [[OCRLine]], outputURL: URL
+    inputs: [URL], languages: [String], outputURL: URL
   ) throws {
     let pageBox = CGRect(x: 0, y: 0, width: 595, height: 842)
     try withPDFContext(outputURL: outputURL, mediaBox: pageBox) { context in
-      for (index, page) in pages.enumerated() {
+      try forEachRasterPage(inputs: inputs) { image in
         try Task.checkCancellation()
+        let recognized = try recognize(image, languages: languages)
         context.beginPDFPage(nil)
         context.setFillColor(NSColor.white.cgColor)
         context.fill(pageBox)
-        let imageRect = aspectFit(image: page.image, inside: pageBox)
-        context.draw(page.image, in: imageRect)
+        let imageRect = aspectFit(image: image, inside: pageBox)
+        context.draw(image, in: imageRect)
         context.saveGState()
         context.setTextDrawingMode(.invisible)
-        for line in recognized[index] {
+        for line in recognized {
           let rect = CGRect(
             x: imageRect.minX + line.box.minX * imageRect.width,
             y: imageRect.minY + line.box.minY * imageRect.height,
@@ -463,15 +482,26 @@ enum NativeDocumentProcessor {
     guard let context = CGContext(consumer: consumer, mediaBox: &box, nil) else {
       throw NativeDocumentError.processing("无法创建 PDF 绘图环境。")
     }
+    defer { context.closePDF() }
     try body(context)
-    context.closePDF()
   }
 
-  private static func loadImage(_ url: URL) throws -> CGImage {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-    else {
+  static func loadImage(_ url: URL) throws -> CGImage {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
       throw NativeDocumentError.invalidFile("无法读取图片 \(url.lastPathComponent)。")
+    }
+    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 1
+    let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 1
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else {
+      throw NativeDocumentError.invalidFile("无法解码图片 \(url.lastPathComponent)。")
     }
     return image
   }

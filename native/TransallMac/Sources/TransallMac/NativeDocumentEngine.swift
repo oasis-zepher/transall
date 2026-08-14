@@ -84,7 +84,25 @@ final class NativeDocumentEngine: ObservableObject {
     if route.kind == "pdf_edit", options.editAction == "merge", files.count < 2 {
       blocking.append(issue("merge_requires_files", "合并 PDF 至少需要两个文件。"))
     }
+    if route.kind == "pdf_edit", options.editAction != "merge", files.count != 1 {
+      blocking.append(
+        issue(
+          "single_file_required", "编辑单个 PDF 时只能选择一个文件。",
+          hint: "如需合并多个 PDF，请选择“按列表顺序合并 PDF”。"))
+    }
     if route.kind == "pdf_translate" {
+      if files.count != 1 {
+        blocking.append(
+          issue(
+            "single_file_required", "PDF 翻译每次只能处理一个文件。",
+            hint: "请移除多余文件后再开始翻译。"))
+      }
+      if !["deepseek", "openai"].contains(options.provider) {
+        blocking.append(
+          issue(
+            "invalid_provider", "翻译服务无效。",
+            hint: "请在翻译选项中重新选择 DeepSeek 或 OpenAI。"))
+      }
       let credential: ProviderCredential = options.provider == "openai" ? .openAI : .deepseek
       let key = (try? ProviderCredentialStore.shared.value(for: credential)) ?? ""
       if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -98,12 +116,6 @@ final class NativeDocumentEngine: ObservableObject {
         issue(
           "remote_processing", "翻译时，提取出的文档文字会发送给所选服务商。",
           hint: "PDF 原文件不会上传。"))
-    }
-    if route.kind == "pdf_edit", !options.replaceFind.isEmpty || !options.replaceWith.isEmpty {
-      blocking.append(
-        issue(
-          "unsupported_text_replacement", "原生 PDF 编辑不支持可靠替换现有文字。",
-          hint: "请清空查找和替换字段；首版支持页面整理、裁剪和水印。"))
     }
     return PreflightResponse(
       ok: blocking.isEmpty, blockingIssues: blocking, warnings: warnings,
@@ -197,10 +209,7 @@ final class NativeDocumentEngine: ObservableObject {
     let source = try jobDirectory(jobID).appendingPathComponent(output)
     let accessing = destination.startAccessingSecurityScopedResource()
     defer { if accessing { destination.stopAccessingSecurityScopedResource() } }
-    if FileManager.default.fileExists(atPath: destination.path) {
-      try FileManager.default.removeItem(at: destination)
-    }
-    try FileManager.default.copyItem(at: source, to: destination)
+    try AtomicResultSaver.copyReplacing(source: source, destination: destination)
   }
 
   func previewPages(jobID: String) async throws -> PreviewResponse {
@@ -397,6 +406,25 @@ final class NativeDocumentEngine: ObservableObject {
     guard !text.isEmpty else { return }
     serviceLog.append(text)
     if serviceLog.count > 80 { serviceLog.removeFirst(serviceLog.count - 80) }
+  }
+}
+
+enum AtomicResultSaver {
+  static func copyReplacing(source: URL, destination: URL) throws {
+    let manager = FileManager.default
+    let temporary = destination.deletingLastPathComponent().appendingPathComponent(
+      ".transall-save-\(UUID().uuidString)", isDirectory: false)
+    do {
+      try manager.copyItem(at: source, to: temporary)
+      if manager.fileExists(atPath: destination.path) {
+        _ = try manager.replaceItemAt(destination, withItemAt: temporary)
+      } else {
+        try manager.moveItem(at: temporary, to: destination)
+      }
+    } catch {
+      try? manager.removeItem(at: temporary)
+      throw error
+    }
   }
 }
 

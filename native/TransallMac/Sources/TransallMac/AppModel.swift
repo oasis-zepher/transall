@@ -15,7 +15,6 @@ final class AppModel: ObservableObject {
   @Published var previewPages: [PreviewPage] = []
   @Published var preflightWarnings: [PreflightIssue] = []
   @Published var errorMessage: String?
-  @Published var isImporting = false
   @Published var isSubmitting = false
   @Published var isSaving = false
   @Published var showAdvanced = false

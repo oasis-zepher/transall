@@ -232,8 +232,6 @@ struct JobOptions: Codable, Equatable {
   var reorderPages = ""
   var cropPages = ""
   var cropBox = ""
-  var replaceFind = ""
-  var replaceWith = ""
   var watermark = ""
 
   var ocrLanguage = "zh-Hans,en-US"
@@ -258,8 +256,6 @@ struct JobOptions: Codable, Equatable {
         "reorder_pages": reorderPages,
         "crop_pages": cropPages,
         "crop_box": cropBox,
-        "replace_find": replaceFind,
-        "replace_with": replaceWith,
         "watermark": watermark,
       ]
     case "ocr":

@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import PDFKit
 import Testing
 
@@ -115,6 +117,75 @@ struct ModelsTests {
     #expect(result.blockingIssues.contains { $0.code == "empty_file" })
   }
 
+  @Test @MainActor
+  func preflightRejectsMultipleFilesForSingleDocumentRoutes() throws {
+    let editRoute = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let translateRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let files = [
+      SelectedDocument(url: URL(fileURLWithPath: "/tmp/first.pdf"), size: 4),
+      SelectedDocument(url: URL(fileURLWithPath: "/tmp/second.pdf"), size: 4),
+    ]
+
+    let engine = NativeDocumentEngine()
+    let edit = engine.preflight(route: editRoute, files: files, options: JobOptions())
+    let translate = engine.preflight(route: translateRoute, files: files, options: JobOptions())
+
+    #expect(edit.blockingIssues.contains { $0.code == "single_file_required" })
+    #expect(translate.blockingIssues.contains { $0.code == "single_file_required" })
+
+    var mergeOptions = JobOptions()
+    mergeOptions.editAction = "merge"
+    let merge = engine.preflight(route: editRoute, files: files, options: mergeOptions)
+    #expect(!merge.blockingIssues.contains { $0.code == "single_file_required" })
+    #expect(!merge.blockingIssues.contains { $0.code == "merge_requires_files" })
+  }
+
+  @Test
+  func resultSavingReplacesExistingFile() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-save-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.pdf")
+    let destination = temporary.appendingPathComponent("destination.pdf")
+    try Data("new result".utf8).write(to: source)
+    try Data("old result".utf8).write(to: destination)
+
+    try AtomicResultSaver.copyReplacing(source: source, destination: destination)
+
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "new result")
+    #expect(FileManager.default.fileExists(atPath: source.path))
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+    #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
+  }
+
+  @Test
+  func imageLoadingAppliesOrientationMetadata() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-orientation-test-\(UUID().uuidString).jpg")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
+        space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(red: 0.8, green: 0.2, blue: 0.1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+    let sourceImage = try #require(context.makeImage())
+    let destination = try #require(
+      CGImageDestinationCreateWithURL(temporary as CFURL, "public.jpeg" as CFString, 1, nil))
+    CGImageDestinationAddImage(
+      destination, sourceImage, [kCGImagePropertyOrientation: 6] as CFDictionary)
+    #expect(CGImageDestinationFinalize(destination))
+
+    let decoded = try NativeDocumentProcessor.loadImage(temporary)
+    #expect(decoded.width == 20)
+    #expect(decoded.height == 40)
+  }
+
   @Test
   func translationNetworkErrorsHaveActionableMessages() {
     let offline = TranslationService.providerError(
@@ -168,5 +239,16 @@ struct ModelsTests {
     let document = try #require(PDFDocument(url: output))
     #expect(document.pageCount == 1)
     #expect(document.page(at: 0)?.rotation == 90)
+
+    var invalidReorder = JobOptions()
+    invalidReorder.reorderPages = "1"
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: editRoute, inputs: [source], options: invalidReorder,
+        outputURL: temporary.appendingPathComponent("invalid-reorder.pdf"), apiKey: nil)
+      Issue.record("Incomplete page order should be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("每一页") == true)
+    }
   }
 }

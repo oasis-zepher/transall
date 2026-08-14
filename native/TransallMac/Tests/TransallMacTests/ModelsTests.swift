@@ -395,6 +395,33 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func textToPDFPreflightUsesMemorySafeInputLimit() throws {
+    let engine = NativeDocumentEngine()
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+    let imageRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let oversized = Int64(NativeCapabilities.textToPDFLimitBytes) + 1
+
+    let textResult = engine.preflight(
+      route: textRoute,
+      files: [SelectedDocument(url: URL(fileURLWithPath: "/tmp/oversized.txt"), size: oversized)],
+      options: JobOptions())
+    let imageResult = engine.preflight(
+      route: imageRoute,
+      files: [SelectedDocument(url: URL(fileURLWithPath: "/tmp/oversized.png"), size: oversized)],
+      options: JobOptions())
+
+    #expect(!textResult.ok)
+    #expect(textResult.blockingIssues.contains { $0.code == "upload_too_large" })
+    #expect(
+      textResult.blockingIssues.contains {
+        $0.message.contains("\(NativeCapabilities.textToPDFLimitMB) MB")
+      })
+    #expect(imageResult.ok)
+  }
+
+  @Test @MainActor
   func credentialSettingsBlockWritesAfterKeychainLoadFailure() async {
     let store = TestCredentialStore(
       values: [.deepseek: "existing-deepseek", .openAI: "existing-openai"],
@@ -613,10 +640,42 @@ struct ModelsTests {
     defer { try? FileManager.default.removeItem(at: temporary) }
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
 
-    let oversized = temporary.appendingPathComponent("oversized.txt")
+    let oversized = temporary.appendingPathComponent("oversized.png")
     #expect(FileManager.default.createFile(atPath: oversized.path, contents: nil))
     let handle = try FileHandle(forWritingTo: oversized)
     try handle.truncate(atOffset: UInt64(NativeCapabilities.uploadLimitBytes) + 1)
+    try handle.close()
+
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"))
+    await engine.start()
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    do {
+      _ = try await engine.createJob(
+        route: route, files: [SelectedDocument(url: oversized, size: 1)],
+        options: JobOptions())
+      Issue.record("Actual copied size should enforce the upload limit")
+    } catch {
+      #expect(error.localizedDescription.contains("250 MB"))
+    }
+
+    let jobsDirectory = temporary.appendingPathComponent("Data/Jobs")
+    let remaining = try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path)
+    #expect(remaining.isEmpty)
+  }
+
+  @Test @MainActor
+  func textJobImportRechecksRouteSpecificSizeLimit() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-text-job-size-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+
+    let oversized = temporary.appendingPathComponent("oversized.txt")
+    #expect(FileManager.default.createFile(atPath: oversized.path, contents: nil))
+    let handle = try FileHandle(forWritingTo: oversized)
+    try handle.truncate(atOffset: UInt64(NativeCapabilities.textToPDFLimitBytes) + 1)
     try handle.close()
 
     let engine = NativeDocumentEngine(
@@ -629,9 +688,10 @@ struct ModelsTests {
       _ = try await engine.createJob(
         route: route, files: [SelectedDocument(url: oversized, size: 1)],
         options: JobOptions())
-      Issue.record("Actual copied size should enforce the upload limit")
+      Issue.record("Actual copied size should enforce the text-to-PDF limit")
     } catch {
-      #expect(error.localizedDescription.contains("250 MB"))
+      #expect(
+        error.localizedDescription.contains("\(NativeCapabilities.textToPDFLimitMB) MB"))
     }
 
     let jobsDirectory = temporary.appendingPathComponent("Data/Jobs")
@@ -1747,6 +1807,34 @@ struct ModelsTests {
     let text = document.string ?? ""
     #expect(text.contains("first searchable block"))
     #expect(text.contains("second searchable block"))
+  }
+
+  @Test
+  func oversizedTextInputIsRejectedBeforeLoading() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-oversized-text-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("oversized.txt")
+    #expect(FileManager.default.createFile(atPath: input.path, contents: nil))
+    let handle = try FileHandle(forWritingTo: input)
+    try handle.truncate(atOffset: UInt64(NativeCapabilities.textToPDFLimitBytes) + 1)
+    try handle.close()
+    let output = temporary.appendingPathComponent("output.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: route, inputs: [input], options: JobOptions(), outputURL: output, apiKey: nil)
+      Issue.record("Oversized text should be rejected before loading or rendering")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(error.localizedDescription.contains("\(NativeCapabilities.textToPDFLimitMB) MB"))
+    }
+    #expect(!FileManager.default.fileExists(atPath: output.path))
   }
 
   @Test

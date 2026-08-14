@@ -316,11 +316,9 @@ struct InputWorkbenchView: View {
 
       Spacer()
 
-      if let limit = model.capabilities?.limits.maxUploadMB {
-        Text("上限 \(limit) MB")
-          .font(.caption2)
-          .foregroundStyle(TransallTheme.muted)
-      }
+      Text("上限 \(model.inputLimitMB) MB")
+        .font(.caption2)
+        .foregroundStyle(TransallTheme.muted)
     }
   }
 

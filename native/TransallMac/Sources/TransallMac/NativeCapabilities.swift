@@ -2,6 +2,8 @@ import Foundation
 
 enum NativeCapabilities {
   static let uploadLimitBytes = 250 * 1024 * 1024
+  static let textToPDFLimitBytes = 20 * 1024 * 1024
+  static let textToPDFLimitMB = 20
 
   static let response = CapabilitiesResponse(
     formats: [
@@ -60,6 +62,14 @@ enum NativeCapabilities {
       "data", "pdf", "text_to_pdf", "文本数据转 PDF", "生成 PDF", "文本数据", "PDF 文档",
       "将 TXT、CSV 或 JSON 使用原生排版生成 PDF。", "Core Text / Core Graphics"),
   ]
+
+  static func inputLimitBytes(for route: RouteDefinition) -> Int {
+    route.kind == "text_to_pdf" ? textToPDFLimitBytes : uploadLimitBytes
+  }
+
+  static func inputLimitMB(for route: RouteDefinition) -> Int {
+    route.kind == "text_to_pdf" ? textToPDFLimitMB : response.limits.maxUploadMB
+  }
 
   static func diagnostics(providerConfigured: [ProviderCredential: Bool]) -> DiagnosticsResponse {
     DiagnosticsResponse(dependencies: [

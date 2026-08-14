@@ -143,10 +143,12 @@ final class NativeDocumentEngine: ObservableObject {
       total = addition.overflow ? Int64.max : addition.partialValue
       totalOverflowed = totalOverflowed || addition.overflow
     }
+    let inputLimitBytes = NativeCapabilities.inputLimitBytes(for: route)
+    let inputLimitMB = NativeCapabilities.inputLimitMB(for: route)
     if files.isEmpty {
       blocking.append(issue("missing_files", "请选择至少一个文件。"))
-    } else if totalOverflowed || total > Int64(NativeCapabilities.uploadLimitBytes) {
-      blocking.append(issue("upload_too_large", "所选文件总计超过 250 MB。"))
+    } else if totalOverflowed || total > Int64(inputLimitBytes) {
+      blocking.append(issue("upload_too_large", "所选文件总计超过 \(inputLimitMB) MB。"))
     }
 
     let allowed = allowedExtensions(for: route.source)
@@ -226,7 +228,10 @@ final class NativeDocumentEngine: ObservableObject {
     let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
     do {
       try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
-      let copiedInputs = try await Self.copyInputs(files, to: inputDirectory)
+      let copiedInputs = try await Self.copyInputs(
+        files, to: inputDirectory,
+        maximumBytes: NativeCapabilities.inputLimitBytes(for: canonicalRoute),
+        maximumMB: NativeCapabilities.inputLimitMB(for: canonicalRoute))
 
       let now = ISO8601DateFormatter().string(from: Date())
       let job = JobResponse(
@@ -657,7 +662,7 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private nonisolated static func copyInputs(
-    _ files: [SelectedDocument], to inputDirectory: URL
+    _ files: [SelectedDocument], to inputDirectory: URL, maximumBytes: Int, maximumMB: Int
   ) async throws -> [URL] {
     let transfer = Task.detached(priority: .userInitiated) {
       var copiedInputs: [URL] = []
@@ -689,8 +694,8 @@ final class NativeDocumentEngine: ObservableObject {
           }
           let (newTotal, overflow) = copiedBytes.addingReportingOverflow(Int64(fileSize))
           copiedBytes = overflow ? Int64.max : newTotal
-          guard copiedBytes <= Int64(NativeCapabilities.uploadLimitBytes) else {
-            throw NativeDocumentError.invalidFile("复制后的文件总计超过 250 MB。")
+          guard copiedBytes <= Int64(maximumBytes) else {
+            throw NativeDocumentError.invalidFile("复制后的文件总计超过 \(maximumMB) MB。")
           }
         } catch let error as NativeDocumentError {
           throw error

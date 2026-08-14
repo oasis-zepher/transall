@@ -80,6 +80,11 @@ final class AppModel: ObservableObject {
     return !currentJob.isRunning && !isSaving && !isDeletingJob
   }
 
+  var inputLimitMB: Int {
+    guard let route else { return capabilities?.limits.maxUploadMB ?? 250 }
+    return NativeCapabilities.inputLimitMB(for: route)
+  }
+
   var logText: String {
     var lines: [String] = []
     if let job = currentJob {
@@ -203,8 +208,11 @@ final class AppModel: ObservableObject {
       let (sum, overflow) = partial.addingReportingOverflow(document.size)
       return overflow ? Int64.max : sum
     }
-    if let limit = capabilities?.limits.maxUploadBytes, total > Int64(limit) {
-      errorMessage = "所选文件超过 \(capabilities?.limits.maxUploadMB ?? 0) MB 限制。"
+    let limitBytes =
+      route.map(NativeCapabilities.inputLimitBytes(for:))
+      ?? capabilities?.limits.maxUploadBytes ?? NativeCapabilities.uploadLimitBytes
+    if total > Int64(limitBytes) {
+      errorMessage = "所选文件超过 \(inputLimitMB) MB 限制。"
       return
     }
     documents = combined

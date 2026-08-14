@@ -476,10 +476,12 @@ enum NativeDocumentProcessor {
   }
 
   private static func textFilesToPDF(inputs: [URL], source: String, outputURL: URL) throws {
+    let totalBytes = try validatedTextInputSize(inputs)
     var combined = ""
+    combined.reserveCapacity(totalBytes)
     for url in inputs {
       try Task.checkCancellation()
-      let data = try Data(contentsOf: url)
+      let data = try Data(contentsOf: url, options: .mappedIfSafe)
       guard let text = String(data: data, encoding: .utf8) else {
         throw NativeDocumentError.invalidFile("\(url.lastPathComponent) 不是 UTF-8 文本。")
       }
@@ -487,6 +489,24 @@ enum NativeDocumentProcessor {
       combined += source == "html" ? stripHTML(text) : text
     }
     try writeTextPDF(combined, to: outputURL)
+  }
+
+  private static func validatedTextInputSize(_ inputs: [URL]) throws -> Int {
+    var total = 0
+    for input in inputs {
+      try Task.checkCancellation()
+      let values = try input.resourceValues(forKeys: [.fileSizeKey])
+      guard let fileSize = values.fileSize, fileSize >= 0 else {
+        throw NativeDocumentError.invalidFile("无法读取 \(input.lastPathComponent) 的文件大小。")
+      }
+      let addition = total.addingReportingOverflow(fileSize)
+      total = addition.overflow ? Int.max : addition.partialValue
+      guard total <= NativeCapabilities.textToPDFLimitBytes else {
+        throw NativeDocumentError.invalidFile(
+          "文本转 PDF 的输入总计超过 \(NativeCapabilities.textToPDFLimitMB) MB。")
+      }
+    }
+    return total
   }
 
   private static func performOCR(inputs: [URL], options: JobOptions, outputURL: URL) async throws {

@@ -975,6 +975,88 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func failedProcessingRemovesPartialOutput() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-failed-output-cleanup-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("source.png")
+    try Data("processor fixture".utf8).write(to: input, options: .atomic)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobProcessor: { _, _, _, outputURL, _ in
+        try Data("partial result".utf8).write(to: outputURL, options: .atomic)
+        throw NativeDocumentError.processing("测试处理失败")
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    let output = dataDirectory.appendingPathComponent("Jobs/\(job.id)/source.pdf")
+    #expect(job.status == "failed")
+    #expect(!FileManager.default.fileExists(atPath: output.path))
+  }
+
+  @Test @MainActor
+  func cancelledProcessingRemovesPartialOutput() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-cancelled-output-cleanup-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let gate = DeletionRaceGate()
+    let input = temporary.appendingPathComponent("source.png")
+    try Data("processor fixture".utf8).write(to: input, options: .atomic)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      jobProcessor: { _, _, _, outputURL, _ in
+        try Data("partial result".utf8).write(to: outputURL, options: .atomic)
+        await gate.markStarted()
+        await withTaskCancellationHandler(
+          operation: { await gate.waitForRelease() },
+          onCancel: { Task { await gate.markCancelled() } })
+        await gate.markFinished()
+        try Task.checkCancellation()
+        return NativeDocumentProcessor.Result(outputURL: outputURL, logs: [])
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    let created = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
+    await gate.waitUntilStarted()
+    let output = dataDirectory.appendingPathComponent("Jobs/\(created.id)/source.pdf")
+    #expect(FileManager.default.fileExists(atPath: output.path))
+
+    let cancelled = try engine.cancelJob(id: created.id)
+    #expect(cancelled.status == "cancelled")
+    await gate.waitUntilCancelled()
+    await gate.release()
+    await gate.waitUntilFinished()
+    for _ in 0..<200 where FileManager.default.fileExists(atPath: output.path) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+
+    #expect(try engine.job(id: created.id).status == "cancelled")
+    #expect(!FileManager.default.fileExists(atPath: output.path))
+  }
+
+  @Test @MainActor
   func cancellationRemainsVisibleWhenCancelledStateCannotBeSaved() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-cancel-state-test-\(UUID().uuidString)", isDirectory: true)

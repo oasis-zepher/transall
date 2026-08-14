@@ -480,23 +480,35 @@ final class NativeDocumentEngine: ObservableObject {
     let jobProcessor = self.jobProcessor
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
       guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
+      var outputURL: URL?
       do {
         if let credentialError { throw NativeDocumentError.provider(credentialError) }
         let inputURLs = try Self.validatedStoredInputs(
           named: metadata.inputNames, in: directory)
-        let outputURL = try Self.containedFileURL(
+        let expectedOutputURL = try Self.containedFileURL(
           named: OutputFileNamer.name(
             for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
           in: directory, description: "任务结果")
+        outputURL = expectedOutputURL
         let result = try await jobProcessor(
-          metadata.route, inputURLs, metadata.options, outputURL, apiKey)
+          metadata.route, inputURLs, metadata.options, expectedOutputURL, apiKey)
         try Task.checkCancellation()
-        await self?.markCompleted(
-          jobID: jobID, output: result.outputURL.lastPathComponent, logs: result.logs,
-          directory: directory)
+        let accepted =
+          await self?.markCompleted(
+            jobID: jobID, output: result.outputURL.lastPathComponent, logs: result.logs,
+            directory: directory) == true
+        if !accepted {
+          await self?.removeIncompleteOutput(at: expectedOutputURL, jobID: jobID)
+        }
       } catch is CancellationError {
+        if let outputURL {
+          await self?.removeIncompleteOutput(at: outputURL, jobID: jobID)
+        }
         await self?.markCancelled(jobID: jobID, directory: directory)
       } catch {
+        if let outputURL {
+          await self?.removeIncompleteOutput(at: outputURL, jobID: jobID)
+        }
         await self?.markFailed(jobID: jobID, error: error, directory: directory)
       }
     }
@@ -522,9 +534,11 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
-  private func markCompleted(jobID: String, output: String, logs: [String], directory: URL) {
+  private func markCompleted(
+    jobID: String, output: String, logs: [String], directory: URL
+  ) -> Bool {
     tasks[jobID] = nil
-    guard let job = jobs[jobID], job.status != "cancelled" else { return }
+    guard let job = jobs[jobID], job.status != "cancelled" else { return false }
     var updated = replacing(
       job, status: "done", stage: "complete", message: "任务完成。", output: output,
       progress: 100, logs: job.logs + logs)
@@ -542,6 +556,23 @@ final class NativeDocumentEngine: ObservableObject {
       jobs[jobID] = appendingLog(
         "警告：结果已生成，但任务完成状态未能保存：\(error.localizedDescription)", to: updated)
       appendPersistenceWarning(jobID: jobID, action: "保存任务完成状态", error: error)
+    }
+    return true
+  }
+
+  private func removeIncompleteOutput(at outputURL: URL, jobID: String) async {
+    let removal = Task.detached(priority: .utility) {
+      do {
+        try FileManager.default.removeItem(at: outputURL)
+      } catch let error as CocoaError where error.code == .fileNoSuchFile {
+        return
+      }
+    }
+    do {
+      try await removal.value
+    } catch {
+      appendLog(
+        "任务 \(jobID.prefix(8)) 未能删除不完整结果：\(error.localizedDescription)")
     }
   }
 

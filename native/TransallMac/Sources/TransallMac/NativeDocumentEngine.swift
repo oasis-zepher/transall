@@ -241,7 +241,8 @@ final class NativeDocumentEngine: ObservableObject {
         errorCode: nil, errorHint: nil, retryable: false, progress: 0,
         cancelRequested: false, logs: ["已将输入副本保存到应用沙盒。"])
       let metadata = NativeJobMetadata(
-        route: canonicalRoute, options: options, inputNames: copiedInputs.map(\.lastPathComponent))
+        route: canonicalRoute, options: options.canonicalized(for: canonicalRoute),
+        inputNames: copiedInputs.map(\.lastPathComponent))
       jobs[id] = job
       try jobPersister(job, directory)
       try persistMetadata(metadata, in: directory)

@@ -237,6 +237,36 @@ struct JobOptions: Codable, Equatable {
   var ocrLanguage = "zh-Hans,en-US"
   var ocrOutputFormat = "searchable_pdf"
 
+  func canonicalized(for route: RouteDefinition) -> JobOptions {
+    var result = JobOptions()
+    switch route.kind {
+    case "pdf_translate":
+      result.provider = provider
+      result.outputMode = outputMode
+      result.sourceLanguage = sourceLanguage
+      result.targetLanguage = targetLanguage
+      result.glossary = glossary
+      result.ocrLanguage = ocrLanguage
+    case "pdf_edit":
+      result.editAction = editAction
+      result.deletePages = deletePages
+      result.rotatePages = rotatePages
+      result.rotateDegrees = rotateDegrees
+      result.reorderPages = reorderPages
+      result.cropPages = cropPages
+      result.cropBox = cropBox
+      result.watermark = watermark
+    case "ocr":
+      result.ocrLanguage = ocrLanguage
+      result.ocrOutputFormat = ocrOutputFormat
+    case "extract_markdown":
+      result.ocrLanguage = ocrLanguage
+    default:
+      break
+    }
+    return result
+  }
+
   func payload(for route: RouteDefinition) -> [String: Any] {
     switch route.kind {
     case "pdf_translate":

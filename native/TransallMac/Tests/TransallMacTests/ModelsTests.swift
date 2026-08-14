@@ -255,6 +255,36 @@ struct ModelsTests {
     }
   }
 
+  @Test
+  func jobOptionsCanonicalizationKeepsOnlyRouteFields() throws {
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let translationRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    var options = JobOptions()
+    options.provider = "openai"
+    options.outputMode = "bilingual"
+    options.sourceLanguage = "fr"
+    options.targetLanguage = "de"
+    options.glossary = "private glossary marker"
+    options.editAction = "merge"
+    options.deletePages = "1"
+    options.watermark = "private watermark marker"
+    options.ocrLanguage = "fr-FR"
+    options.ocrOutputFormat = "text"
+
+    #expect(options.canonicalized(for: textRoute) == JobOptions())
+
+    var expectedTranslation = JobOptions()
+    expectedTranslation.provider = "openai"
+    expectedTranslation.outputMode = "bilingual"
+    expectedTranslation.sourceLanguage = "fr"
+    expectedTranslation.targetLanguage = "de"
+    expectedTranslation.glossary = "private glossary marker"
+    expectedTranslation.ocrLanguage = "fr-FR"
+    #expect(options.canonicalized(for: translationRoute) == expectedTranslation)
+  }
+
   @Test @MainActor
   func translationAndOCROptionsAreRejectedBeforeProcessing() async throws {
     let store = TestCredentialStore(values: [.deepseek: "test-key"])
@@ -789,6 +819,48 @@ struct ModelsTests {
 
     #expect(job.status == "done")
     #expect(store.reads.isEmpty)
+  }
+
+  @Test @MainActor
+  func localJobMetadataOmitsUnrelatedOptions() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-local-metadata-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("input.txt")
+    let inputData = Data("local text".utf8)
+    try inputData.write(to: input, options: .atomic)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+    var options = JobOptions()
+    options.provider = "openai"
+    options.glossary = "private glossary marker"
+    options.watermark = "private watermark marker"
+    options.ocrLanguage = "fr-FR"
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: Int64(inputData.count))],
+      options: options)
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+    #expect(job.status == "done")
+
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
+    let metadataURL = jobDirectory.appendingPathComponent("metadata.json")
+    let metadataData = try Data(contentsOf: metadataURL)
+    let metadata = try JSONDecoder().decode(PersistedJobMetadata.self, from: metadataData)
+    #expect(metadata.options == JobOptions())
+    let metadataText = try #require(String(data: metadataData, encoding: .utf8))
+    #expect(!metadataText.contains("private glossary marker"))
+    #expect(!metadataText.contains("private watermark marker"))
   }
 
   @Test @MainActor
@@ -2339,7 +2411,7 @@ private enum TestPersistenceError: LocalizedError {
   var errorDescription: String? { "测试写盘失败" }
 }
 
-private struct PersistedJobMetadata: Encodable {
+private struct PersistedJobMetadata: Codable {
   let route: RouteDefinition
   let options: JobOptions
   let inputNames: [String]

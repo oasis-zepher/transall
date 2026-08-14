@@ -263,8 +263,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=workbench-3", html)
-        self.assertIn("/static/app.js?v=workbench-3", html)
+        self.assertIn("/static/styles.css?v=workbench-4", html)
+        self.assertIn("/static/app.js?v=workbench-4", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -326,6 +326,17 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("activeRoute?.ocrFallback", js)
         self.assertNotIn('target === "md" && ["pdf", "image"].includes(source)', js)
 
+    def test_pdf_edit_reorder_and_crop_options_are_wired(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="reorderPages"', html)
+        self.assertIn('id="cropPages"', html)
+        self.assertIn('id="cropBox"', html)
+        self.assertIn('reorder_pages: value("#reorderPages")', js)
+        self.assertIn('crop_pages: value("#cropPages")', js)
+        self.assertIn('crop_box: value("#cropBox")', js)
+
     def test_conversion_page_uses_precision_deck_structure(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -343,8 +354,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=workbench-3", html)
-        self.assertIn("/static/app.js?v=workbench-3", html)
+        self.assertIn("/static/styles.css?v=workbench-4", html)
+        self.assertIn("/static/app.js?v=workbench-4", html)
 
     def test_document_workbench_tokens_exist(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")

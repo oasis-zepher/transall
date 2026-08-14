@@ -6,8 +6,9 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -20,6 +21,10 @@ from .jobs import Job, JobCancelled, JobStore
 from .ocr import ocr_document
 from .pdf_ops import apply_pdf_edits, edit_options_from_request, merge_pdfs, pdf_page_count, render_preview_pages
 from .translation import load_provider_configs, translate_pdf
+
+
+LOCAL_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
+STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -> FastAPI:
@@ -46,6 +51,14 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
     app = FastAPI(title="transall", lifespan=lifespan)
     static_dir = APP_ROOT / "app" / "static"
+
+    @app.middleware("http")
+    async def reject_cross_origin_state_changes(request: Request, call_next):
+        if request.method in STATE_CHANGING_METHODS:
+            origin = request.headers.get("origin")
+            if origin and urlparse(origin).hostname not in LOCAL_ORIGIN_HOSTS:
+                return Response(status_code=403, content='{"detail":"Cross-origin request rejected"}', media_type="application/json")
+        return await call_next(request)
 
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -143,7 +156,7 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
         if source is None:
             raise HTTPException(status_code=400, detail="No PDF available for preview")
         preview_dir = job.path / "preview"
-        pages = sorted(preview_dir.glob("page-*.png"))
+        pages = sorted(preview_dir.glob("page-*.png"), key=_preview_page_number)
         if not pages:
             pages = render_preview_pages(source, preview_dir)
         return {
@@ -163,6 +176,12 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
     @app.delete("/api/jobs/{job_id}")
     def delete_job(job_id: str) -> dict[str, object]:
+        try:
+            job = store.get(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        if job.status in {"queued", "running"}:
+            raise HTTPException(status_code=409, detail="Job is still running; cancel it before deleting")
         store.delete(job_id)
         return {"deleted": True}
 
@@ -190,7 +209,11 @@ def run_job(store: JobStore, job_id: str) -> None:
         upload_dir = job.path / "uploads"
         output_dir = job.path / "outputs"
         output_dir.mkdir(exist_ok=True)
-        inputs = sorted(path for path in upload_dir.iterdir() if path.is_file())
+        order = {name.casefold(): index for index, name in enumerate(job.inputs)}
+        inputs = sorted(
+            (path for path in upload_dir.iterdir() if path.is_file()),
+            key=lambda path: (order.get(path.name.casefold(), len(job.inputs)), path.name),
+        )
         if not inputs:
             raise ValueError("No uploaded files")
         store.log(job, f"Task: {job.kind}")
@@ -207,7 +230,7 @@ def run_job(store: JobStore, job_id: str) -> None:
             output = _run_pdf_edit(job, inputs, output_dir)
         elif job.kind == "pdf_translate":
             store.set_progress(job, 20, stage="translating", message="正在翻译 PDF")
-            output = _run_pdf_translate(job, inputs, output_dir)
+            output = _run_pdf_translate(store, job, inputs, output_dir)
         elif job.kind == "ocr":
             store.set_progress(job, 20, stage="ocr", message="正在执行 OCR")
             output = _run_ocr(store, job, inputs, output_dir)
@@ -313,7 +336,7 @@ def _run_pdf_edit(job: Job, inputs: list[Path], output_dir: Path) -> Path:
     return apply_pdf_edits(source, output_dir / f"{source.stem}-edited.pdf", edit_options)
 
 
-def _run_pdf_translate(job: Job, inputs: list[Path], output_dir: Path) -> Path:
+def _run_pdf_translate(store: JobStore, job: Job, inputs: list[Path], output_dir: Path) -> Path:
     source = next((path for path in inputs if path.suffix.lower() == ".pdf"), None)
     if source is None:
         raise ValueError("PDF translation requires PDF input")
@@ -327,6 +350,7 @@ def _run_pdf_translate(job: Job, inputs: list[Path], output_dir: Path) -> Path:
         pages_spec=options.get("pages", ""),
         output_mode=options.get("output_mode", "translated"),
         glossary=options.get("glossary", ""),
+        on_layout_fallback=lambda detail: store.log(job, f"版式引擎不可用，回退到文本重建: {detail}"),
     )
 
 
@@ -374,6 +398,13 @@ def _unique_upload_name(name: str, used: set[str]) -> str:
         index += 1
     used.add(candidate.casefold())
     return candidate
+
+
+def _preview_page_number(path: Path) -> int:
+    try:
+        return int(path.stem.split("-")[-1])
+    except ValueError:
+        return 0
 
 
 def _run_many_with_progress(store: JobStore, job: Job, inputs: list[Path], processor, zip_path: Path) -> Path:

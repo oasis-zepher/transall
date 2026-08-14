@@ -35,7 +35,7 @@ Provider API keys are never returned by `/api/config/providers`.
 
 - Convert to PDF: Office via LibreOffice, Markdown/HTML/text/data via full Playwright Chromium print layout, images via Pillow.
 - Extract Markdown: MarkItDown with plugins enabled for common document, data, archive, and media-adjacent inputs.
-- PDF edits: merge, delete pages, reorder, rotate, crop, watermark, text find/replace.
+- PDF edits: merge (keeps upload order), delete pages, reorder, rotate, crop (x0,y0,x1,y1 in PDF points), watermark, text find/replace.
 - PDF translation: BabelDOC for layout-preserving translation, with an OpenAI-compatible DeepSeek/OpenAI text reconstruction fallback. Outputs translated or bilingual PDF.
 - OCR: OCRmyPDF for searchable PDF output when installed; Tesseract handles images, plain text output, and the compatibility fallback.
 - Files are stored under `work/docwork-data` and cleaned by the app TTL policy.

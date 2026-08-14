@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import fitz
 
@@ -96,6 +96,7 @@ def translate_pdf(
     pages_spec: str = "",
     output_mode: str = "translated",
     glossary: str = "",
+    on_layout_fallback: Callable[[str], None] | None = None,
 ) -> Path:
     provider = get_provider(provider_name)
     try:
@@ -109,8 +110,9 @@ def translate_pdf(
             output_mode=output_mode,
             glossary=glossary,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        if on_layout_fallback is not None:
+            on_layout_fallback(str(exc))
 
     original = fitz.open(source)
     translated = fitz.open()

@@ -9,6 +9,91 @@ from PIL import Image
 
 
 class ApiContractTests(unittest.TestCase):
+    def test_cross_origin_state_change_is_rejected(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp)))
+            response = client.post("/api/cleanup", headers={"Origin": "https://evil.example"})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_local_origin_state_change_is_allowed(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp)))
+            response = client.post("/api/cleanup", headers={"Origin": "http://127.0.0.1:8765"})
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_cross_origin_reads_are_not_blocked(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from app.main import create_app
+
+            client = TestClient(create_app(data_dir=Path(tmp)))
+            response = client.get("/api/diagnostics", headers={"Origin": "https://evil.example"})
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_running_job_cannot_be_deleted(self):
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.run_job"):
+            from app.main import create_app
+
+            root = Path(tmp)
+            client = TestClient(create_app(data_dir=root, run_background_inline=True))
+            created = client.post(
+                "/api/jobs",
+                data={"kind": "convert", "options": "{}"},
+                files={"files": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
+            ).json()
+
+            from app.jobs import JobStore
+
+            store = JobStore(root, ttl_hours=24)
+            store.set_status(store.get(created["id"]), "running")
+            response = client.delete(f"/api/jobs/{created['id']}")
+
+        self.assertEqual(response.status_code, 409)
+
+    def test_preview_pages_follow_natural_page_order(self):
+        import fitz
+
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            from app.main import create_app
+            from app.jobs import JobStore
+
+            root = Path(tmp)
+            client = TestClient(create_app(data_dir=root))
+            store = JobStore(root, ttl_hours=24)
+            job = store.create("convert", ["sample.pdf"])
+            upload_dir = job.path / "uploads"
+            upload_dir.mkdir()
+            doc_path = upload_dir / "sample.pdf"
+            doc = fitz.open()
+            doc.new_page()
+            doc.save(doc_path)
+            doc.close()
+            preview_dir = job.path / "preview"
+            preview_dir.mkdir()
+            for number in range(1, 13):
+                (preview_dir / f"page-{number}.png").write_bytes(b"png")
+
+            response = client.get(f"/api/jobs/{job.id}/preview/pages")
+
+        pages = response.json()["pages"]
+        self.assertEqual([Path(page["url"]).name for page in pages], [f"page-{number}.png" for number in range(1, 13)])
+
     def test_job_response_hides_absolute_storage_paths(self):
         from fastapi.testclient import TestClient
 

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>transall</title>
-    <link rel="stylesheet" href="/static/styles.css?v=workbench-3" />
+    <link rel="stylesheet" href="/static/styles.css?v=workbench-4" />
   </head>
   <body>
     <main class="shell">
@@ -177,6 +177,18 @@
                   <input id="rotateDegrees" type="number" value="90" />
                 </label>
                 <label data-panel="edit">
+                  页面顺序
+                  <input id="reorderPages" placeholder="如 3,1,2,4（列出全部页的新顺序）" />
+                </label>
+                <label data-panel="edit">
+                  裁剪页
+                  <input id="cropPages" placeholder="如 1,3-5" />
+                </label>
+                <label data-panel="edit">
+                  裁剪区域
+                  <input id="cropBox" placeholder="x0,y0,x1,y1，如 50,50,550,750（PDF 点）" />
+                </label>
+                <label data-panel="edit">
                   查找文字
                   <input id="replaceFind" />
                 </label>
@@ -249,6 +261,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=workbench-3"></script>
+    <script src="/static/app.js?v=workbench-4"></script>
   </body>
 </html>

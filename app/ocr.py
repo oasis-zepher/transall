@@ -32,9 +32,12 @@ def ocr_document(
 
     output = output_dir / f"{source.stem}-ocr.pdf"
     if ext in PDF_EXTENSIONS and shutil.which("ocrmypdf"):
-        _ocr_pdf_with_ocrmypdf(source, output, language)
-    else:
-        _ocr_to_searchable_pdf(source, output, language)
+        try:
+            _ocr_pdf_with_ocrmypdf(source, output, language)
+            return output
+        except Exception:
+            pass
+    _ocr_to_searchable_pdf(source, output, language)
     return output
 
 

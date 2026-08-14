@@ -117,6 +117,36 @@ class CoreBehaviorTests(unittest.TestCase):
             self.assertEqual(edited[0].rotation, 90)
             edited.close()
 
+    def test_edit_options_parse_reorder_and_crop(self):
+        from app.pdf_ops import edit_options_from_request
+
+        options = edit_options_from_request({"reorder_pages": "3,1,2", "crop_pages": "1-2", "crop_box": "10,20,300,400"}, 3)
+
+        self.assertEqual(options.reorder_pages, [3, 1, 2])
+        self.assertEqual(options.crop_pages, {1: (10.0, 20.0, 300.0, 400.0), 2: (10.0, 20.0, 300.0, 400.0)})
+
+    def test_pdf_edit_applies_reorder_and_crop(self):
+        from app.pdf_ops import PdfEditOptions, apply_pdf_edits
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "source.pdf"
+            out = Path(tmp) / "edited.pdf"
+            make_pdf(src)
+
+            apply_pdf_edits(src, out, PdfEditOptions(reorder_pages=[3, 1], crop_pages={1: (10.0, 10.0, 300.0, 300.0)}))
+
+            edited = fitz.open(out)
+            self.assertEqual(edited.page_count, 2)
+            self.assertIn("gamma", edited[0].get_text())
+            self.assertEqual(edited[0].cropbox, fitz.Rect(10.0, 10.0, 300.0, 300.0))
+            edited.close()
+
+    def test_edit_options_reject_invalid_crop_box(self):
+        from app.pdf_ops import edit_options_from_request
+
+        with self.assertRaisesRegex(ValueError, "裁剪区域"):
+            edit_options_from_request({"crop_pages": "1", "crop_box": "10,20,5,400"}, 3)
+
     def test_ocr_rejects_unsupported_input(self):
         from app.ocr import ocr_document
 
@@ -153,6 +183,24 @@ class CoreBehaviorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch("app.ocr.shutil.which", side_effect=lambda name: None if name == "ocrmypdf" else f"/usr/bin/{name}"), patch(
             "app.ocr._ocr_to_searchable_pdf"
         ) as fallback:
+            root = Path(tmp)
+            source = root / "scan.pdf"
+            make_pdf(source)
+            output = ocr_document(source, root / "out")
+
+        fallback.assert_called_once_with(source, output, "chi_sim+eng")
+
+    def test_pdf_searchable_ocr_falls_back_when_ocrmypdf_fails(self):
+        import subprocess
+
+        from app.ocr import ocr_document
+
+        def fake_run(command, **kwargs):
+            raise subprocess.CalledProcessError(1, command, stderr="boom")
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.ocr.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), patch(
+            "app.ocr.subprocess.run", side_effect=fake_run
+        ), patch("app.ocr._ocr_to_searchable_pdf") as fallback:
             root = Path(tmp)
             source = root / "scan.pdf"
             make_pdf(source)
@@ -346,7 +394,9 @@ class CoreBehaviorTests(unittest.TestCase):
     def test_pdf_translation_uses_layout_engines_before_fallback(self):
         from app.translation import translate_pdf
 
-        with tempfile.TemporaryDirectory() as tmp, patch("app.translation.translate_with_layout_engines") as layout_engines:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=False
+        ), patch("app.translation.translate_with_layout_engines") as layout_engines:
             source = Path(tmp) / "source.pdf"
             output = Path(tmp) / "translated.pdf"
             make_pdf(source)
@@ -356,6 +406,44 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertEqual(result, output)
         layout_engines.assert_called_once()
+
+    def test_pdf_translation_logs_layout_fallback_reason(self):
+        from app.translation import translate_pdf
+
+        fallbacks: list[str] = []
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=False
+        ), patch(
+            "app.translation.translate_with_layout_engines", side_effect=RuntimeError("babeldoc boom")
+        ), patch("app.translation.translate_text", return_value="译文"):
+            source = Path(tmp) / "source.pdf"
+            output = Path(tmp) / "translated.pdf"
+            make_pdf(source)
+            result = translate_pdf(source, output, "deepseek", "en", "zh", on_layout_fallback=fallbacks.append)
+
+        self.assertEqual(result, output)
+        self.assertTrue(any("babeldoc boom" in item for item in fallbacks))
+
+    def test_pdf_edit_merge_preserves_upload_order(self):
+        from app.jobs import JobStore
+        from app.main import run_job
+
+        with tempfile.TemporaryDirectory() as tmp, patch("app.main.merge_pdfs") as merge:
+            root = Path(tmp)
+            store = JobStore(root, ttl_hours=24)
+            job = store.create("pdf_edit", ["b.pdf", "a.pdf", "c.pdf"], {"action": "merge"})
+            upload_dir = job.path / "uploads"
+            upload_dir.mkdir()
+            for name in ("a.pdf", "b.pdf", "c.pdf"):
+                (upload_dir / name).write_bytes(b"%PDF-1.7\n")
+            merged = root / "merged.pdf"
+            merge.return_value = merged
+
+            run_job(store, job.id)
+
+            merged_sources = [path.name for path in merge.call_args.args[0]]
+            self.assertEqual(merged_sources, ["b.pdf", "a.pdf", "c.pdf"])
 
     def test_readme_documents_ocr_and_enhanced_engines(self):
         root = Path(__file__).resolve().parents[1]

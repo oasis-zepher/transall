@@ -41,6 +41,28 @@ def parse_page_spec(spec: str | None, page_count: int) -> list[int]:
     return sorted(pages)
 
 
+def parse_page_order(spec: str | None, page_count: int) -> list[int]:
+    """Order-preserving page list for reorder: input order is the new page order."""
+    if not spec or not spec.strip():
+        return []
+    pages: list[int] = []
+    for raw_part in spec.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_text, end_text = part.split("-", 1)
+            start = int(start_text) if start_text else 1
+            end = int(end_text) if end_text else page_count
+            if start <= end:
+                pages.extend(range(start, end + 1))
+            else:
+                pages.extend(range(start, end - 1, -1))
+        else:
+            pages.append(int(part))
+    return [page for page in pages if 1 <= page <= page_count]
+
+
 def pdf_page_count(source: Path) -> int:
     with fitz.open(source) as doc:
         return doc.page_count
@@ -52,7 +74,11 @@ def edit_options_from_request(options: dict[str, Any], page_count: int) -> PdfEd
         page: int(options.get("rotate_degrees", 90))
         for page in parse_page_spec(options.get("rotate_pages", ""), page_count)
     }
-    reorder_pages = parse_page_spec(options.get("reorder_pages", ""), page_count) if options.get("reorder_pages") else []
+    reorder_pages = parse_page_order(options.get("reorder_pages", ""), page_count) if options.get("reorder_pages") else []
+    crop_pages: dict[int, tuple[float, float, float, float]] = {}
+    if options.get("crop_pages"):
+        box = _parse_crop_box(str(options.get("crop_box", "")))
+        crop_pages = {page: box for page in parse_page_spec(str(options["crop_pages"]), page_count)}
     replace_text = {}
     if options.get("replace_find"):
         replace_text[str(options["replace_find"])] = str(options.get("replace_with", ""))
@@ -60,9 +86,23 @@ def edit_options_from_request(options: dict[str, Any], page_count: int) -> PdfEd
         delete_pages=delete_pages,
         rotate_pages=rotate_pages,
         reorder_pages=reorder_pages,
+        crop_pages=crop_pages,
         replace_text=replace_text,
         watermark=options.get("watermark") or None,
     )
+
+
+def _parse_crop_box(spec: str) -> tuple[float, float, float, float]:
+    parts = [part.strip() for part in spec.split(",")]
+    if len(parts) != 4:
+        raise ValueError("裁剪区域需要四个数字，格式为 x0,y0,x1,y1（PDF 点，72 点/英寸）")
+    try:
+        x0, y0, x1, y1 = (float(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError("裁剪区域需要四个数字，格式为 x0,y0,x1,y1（PDF 点，72 点/英寸）") from exc
+    if x0 >= x1 or y0 >= y1:
+        raise ValueError("裁剪区域需要满足 x0 < x1 且 y0 < y1")
+    return (x0, y0, x1, y1)
 
 
 def apply_pdf_edits(source: Path, output: Path, options: PdfEditOptions) -> Path:

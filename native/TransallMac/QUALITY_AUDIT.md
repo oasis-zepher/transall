@@ -13,7 +13,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Support-site small text reaches WCAG AA contrast and navigation targets are at least 44 px; native controls expose labels, values, focus, and reduced-motion behavior. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input, and large file transfers run outside the main actor. |
+| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input, and large file transfers and PDF previews run outside the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
@@ -41,24 +41,30 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 3. Updated the native README from the beta-era requirement to Xcode 26.6 or a compatible newer release.
 4. Added Open Graph assets, per-page social metadata, App Privacy Required Reason coverage for file timestamps, and synthetic review files.
 
+## Additional reliability hardening
+
+- PDF preview cache checks and rendering now run outside the main actor and propagate task cancellation.
+- Preview failures remain visible with a specific message and a retry action instead of silently clearing the preview area.
+- Preview results are applied only to the job that requested them, preventing an older task from overwriting a newer task's state.
+
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 24/24 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 24/24 passed |
+| Swift package tests with Xcode 26.6 | 25/25 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 25/25 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
 | Archive resources | AppIcon and `PrivacyInfo.xcprivacy` present; privacy manifest passes `plutil` |
-| Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, and Keychain settings verified |
+| Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure, and successful preview retry verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
 | Support website | ESLint passed; production build passed; 4/4 rendered HTML tests passed |
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 
-Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, and corrupt task metadata does not prevent local deletion. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
+Additional reliability coverage verifies that failed result saves preserve the existing destination, failed multi-file imports remove incomplete task directories, image conversion writes every input page, unknown translation providers are rejected before processing, corrupt preview caches are regenerated, preview failures are visible and retryable, and corrupt task metadata does not prevent local deletion. Long-document coverage also verifies the 20,000-character glossary limit, searchable output from multiple text inputs, and clear rejection of damaged PDFs during Markdown extraction. An end-to-end native-engine test covers input import, processing, and result download through the cancellable background transfer path.
 
 ## Submission blockers outside the repository
 

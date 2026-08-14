@@ -31,7 +31,9 @@ struct InputWorkbenchView: View {
       allowsMultipleSelection: true
     ) { result in
       switch result {
-      case .success(let urls): model.importDocuments(urls, appending: viewState.isAppending)
+      case .success(let urls):
+        let appending = viewState.isAppending
+        Task { await model.importDocuments(urls, appending: appending) }
       case .failure(let error): model.errorMessage = error.localizedDescription
       }
     }
@@ -53,8 +55,17 @@ struct InputWorkbenchView: View {
   }
 
   private var fileWell: some View {
-    LazyVStack(spacing: model.documents.isEmpty ? 7 : 10) {
-      if model.documents.isEmpty {
+    LazyVStack(spacing: model.documents.isEmpty || model.isImporting ? 7 : 10) {
+      if model.isImporting {
+        ProgressView()
+          .controlSize(.small)
+          .accessibilityLabel("正在读取文件")
+        Text("正在读取文件")
+          .font(.callout.weight(.semibold))
+        Text("全部文件通过校验后才会加入列表")
+          .font(.caption2)
+          .foregroundStyle(TransallTheme.muted)
+      } else if model.documents.isEmpty {
         Image(systemName: "doc.badge.plus")
           .font(.title2.weight(.light))
           .foregroundStyle(TransallTheme.accent)
@@ -89,6 +100,7 @@ struct InputWorkbenchView: View {
                 .padding(5)
             }
             .buttonStyle(.plain)
+            .disabled(model.isImporting)
             .accessibilityLabel("移除\(document.name)")
           }
         }
@@ -98,9 +110,10 @@ struct InputWorkbenchView: View {
           viewState.showImporter = true
         }
         .buttonStyle(QuietButtonStyle())
+        .disabled(model.isImporting)
       }
     }
-    .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty ? 116 : 76)
+    .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty || model.isImporting ? 116 : 76)
     .padding(13)
     .background(
       viewState.isDropTargeted
@@ -115,28 +128,34 @@ struct InputWorkbenchView: View {
     }
     .contentShape(Rectangle())
     .onTapGesture {
-      if model.documents.isEmpty {
+      if model.documents.isEmpty, !model.isImporting {
         viewState.isAppending = false
         viewState.showImporter = true
       }
     }
     .dropDestination(for: URL.self) { urls, _ in
-      model.importDocuments(urls, appending: !model.documents.isEmpty)
+      guard !model.isImporting, !urls.isEmpty else { return false }
+      let appending = !model.documents.isEmpty
+      Task { await model.importDocuments(urls, appending: appending) }
       return !urls.isEmpty
     } isTargeted: { targeted in
       viewState.isDropTargeted = targeted
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("文件选择区")
-    .accessibilityHint(model.documents.isEmpty ? "按回车键选择文件，也可以将文件拖到这里" : "可继续添加或移除文件")
-    .accessibilityAddTraits(model.documents.isEmpty ? .isButton : [])
+    .accessibilityHint(
+      model.isImporting
+        ? "全部文件通过校验后才会加入列表"
+        : (model.documents.isEmpty ? "按回车键选择文件，也可以将文件拖到这里" : "可继续添加或移除文件"))
+    .accessibilityAddTraits(model.documents.isEmpty && !model.isImporting ? .isButton : [])
     .accessibilityAction(named: "选择文件") {
+      guard !model.isImporting else { return }
       viewState.isAppending = !model.documents.isEmpty
       viewState.showImporter = true
     }
-    .focusable(model.documents.isEmpty)
+    .focusable(model.documents.isEmpty && !model.isImporting)
     .onKeyPress(keys: [.return, .space]) { _ in
-      guard model.documents.isEmpty else { return .ignored }
+      guard model.documents.isEmpty, !model.isImporting else { return .ignored }
       viewState.isAppending = false
       viewState.showImporter = true
       return .handled
@@ -268,7 +287,12 @@ struct InputWorkbenchView: View {
       Button {
         Task { await model.runJob() }
       } label: {
-        if model.isSubmitting {
+        if model.isImporting {
+          HStack(spacing: 7) {
+            ProgressView().controlSize(.small)
+            Text("正在读取文件")
+          }
+        } else if model.isSubmitting {
           HStack(spacing: 7) {
             ProgressView().controlSize(.small)
             Text("正在预检")

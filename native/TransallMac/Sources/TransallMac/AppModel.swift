@@ -3,6 +3,19 @@ import Combine
 import Foundation
 import SwiftUI
 
+private struct DocumentImportError: LocalizedError, Sendable {
+  let failures: [String]
+
+  var errorDescription: String? {
+    let visible = failures.prefix(8)
+    var lines = ["无法导入所选文件："] + visible
+    if failures.count > visible.count {
+      lines.append("另有 \(failures.count - visible.count) 个文件未通过校验。")
+    }
+    return lines.joined(separator: "\n")
+  }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
   @Published var capabilities: CapabilitiesResponse?
@@ -16,6 +29,7 @@ final class AppModel: ObservableObject {
   @Published var previewError: String?
   @Published var preflightWarnings: [PreflightIssue] = []
   @Published var errorMessage: String?
+  @Published private(set) var isImporting = false
   @Published var isSubmitting = false
   @Published var isSaving = false
   @Published var isDeletingJob = false
@@ -46,6 +60,7 @@ final class AppModel: ObservableObject {
   var canRun: Bool {
     route?.enabled == true
       && !documents.isEmpty
+      && !isImporting
       && !isSubmitting
       && !isDeletingJob
       && currentJob?.isRunning != true
@@ -96,6 +111,10 @@ final class AppModel: ObservableObject {
   }
 
   func chooseFormat(_ format: String, animated: Bool = true) {
+    guard !isImporting else {
+      errorMessage = "正在读取文件，请稍后再更换路径。"
+      return
+    }
     guard currentJob?.isRunning != true else {
       errorMessage = "任务运行中，请先取消任务再更换路径。"
       return
@@ -114,6 +133,10 @@ final class AppModel: ObservableObject {
   }
 
   func resetRoute(animated: Bool = true) {
+    guard !isImporting else {
+      errorMessage = "正在读取文件，请稍后再重选路径。"
+      return
+    }
     guard currentJob?.isRunning != true else {
       errorMessage = "任务运行中，请先取消任务再重选路径。"
       return
@@ -136,17 +159,29 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func importDocuments(_ urls: [URL], appending: Bool = false) {
-    let imported = urls.compactMap { url -> SelectedDocument? in
-      let accessing = url.startAccessingSecurityScopedResource()
-      defer {
-        if accessing { url.stopAccessingSecurityScopedResource() }
-      }
-      guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return nil }
-      return SelectedDocument(url: url, size: Int64(size))
+  func importDocuments(_ urls: [URL], appending: Bool = false) async {
+    guard !urls.isEmpty else {
+      errorMessage = "没有选择文件。"
+      return
     }
-    guard !imported.isEmpty else {
-      errorMessage = "无法读取所选文件。"
+    guard !isImporting else { return }
+
+    isImporting = true
+    errorMessage = nil
+    defer { isImporting = false }
+
+    let inspection = Task.detached(priority: .userInitiated) {
+      try Self.inspectDocuments(urls)
+    }
+    let imported: [SelectedDocument]
+    do {
+      imported = try await withTaskCancellationHandler(
+        operation: { try await inspection.value },
+        onCancel: { inspection.cancel() })
+    } catch is CancellationError {
+      return
+    } catch {
+      errorMessage = error.localizedDescription
       return
     }
 
@@ -157,13 +192,47 @@ final class AppModel: ObservableObject {
         existing.insert($0.url.standardizedFileURL.resolvingSymlinksInPath()).inserted
       })
 
-    let total = combined.reduce(Int64.zero) { $0 + $1.size }
+    let total = combined.reduce(Int64.zero) { partial, document in
+      let (sum, overflow) = partial.addingReportingOverflow(document.size)
+      return overflow ? Int64.max : sum
+    }
     if let limit = capabilities?.limits.maxUploadBytes, total > Int64(limit) {
       errorMessage = "所选文件超过 \(capabilities?.limits.maxUploadMB ?? 0) MB 限制。"
       return
     }
     documents = combined
     errorMessage = nil
+  }
+
+  private nonisolated static func inspectDocuments(_ urls: [URL]) throws
+    -> [SelectedDocument]
+  {
+    let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]
+    var imported: [SelectedDocument] = []
+    var failures: [String] = []
+
+    for url in urls {
+      try Task.checkCancellation()
+      let accessing = url.startAccessingSecurityScopedResource()
+      defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+      do {
+        let values = try url.resourceValues(forKeys: keys)
+        if values.isSymbolicLink == true {
+          failures.append("\(url.lastPathComponent)：不支持符号链接，请选择原始文件。")
+        } else if values.isRegularFile != true {
+          failures.append("\(url.lastPathComponent)：不是普通文件。")
+        } else if let size = values.fileSize {
+          imported.append(SelectedDocument(url: url, size: Int64(size)))
+        } else {
+          failures.append("\(url.lastPathComponent)：无法读取文件大小。")
+        }
+      } catch {
+        failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
+      }
+    }
+
+    guard failures.isEmpty else { throw DocumentImportError(failures: failures) }
+    return imported
   }
 
   func removeDocument(_ document: SelectedDocument) {

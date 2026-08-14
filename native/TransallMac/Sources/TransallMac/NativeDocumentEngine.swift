@@ -505,6 +505,10 @@ final class NativeDocumentEngine: ObservableObject {
   ) async throws -> [URL] {
     let transfer = Task.detached(priority: .userInitiated) {
       var copiedInputs: [URL] = []
+      var copiedBytes: Int64 = 0
+      let resourceKeys: Set<URLResourceKey> = [
+        .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey,
+      ]
       for (index, document) in files.enumerated() {
         try Task.checkCancellation()
         let safeName =
@@ -513,7 +517,26 @@ final class NativeDocumentEngine: ObservableObject {
         let accessing = document.url.startAccessingSecurityScopedResource()
         defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
         do {
+          let sourceValues = try document.url.resourceValues(forKeys: resourceKeys)
+          guard sourceValues.isSymbolicLink != true, sourceValues.isRegularFile == true else {
+            throw NativeDocumentError.invalidFile(
+              "\(document.name) 不是可复制的普通文件，请选择原始文件。")
+          }
           try FileManager.default.copyItem(at: document.url, to: destination)
+          let copiedValues = try destination.resourceValues(forKeys: resourceKeys)
+          guard copiedValues.isSymbolicLink != true, copiedValues.isRegularFile == true,
+            let fileSize = copiedValues.fileSize
+          else {
+            throw NativeDocumentError.invalidFile(
+              "\(document.name) 复制后不是有效的普通文件。")
+          }
+          let (newTotal, overflow) = copiedBytes.addingReportingOverflow(Int64(fileSize))
+          copiedBytes = overflow ? Int64.max : newTotal
+          guard copiedBytes <= Int64(NativeCapabilities.uploadLimitBytes) else {
+            throw NativeDocumentError.invalidFile("复制后的文件总计超过 250 MB。")
+          }
+        } catch let error as NativeDocumentError {
+          throw error
         } catch {
           throw NativeDocumentError.invalidFile(
             "无法读取 \(document.name)：\(error.localizedDescription)")

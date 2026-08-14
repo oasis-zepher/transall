@@ -101,8 +101,8 @@ struct ContentView: View {
         if model.selection.source != nil {
           Button("重选路径") { model.resetRoute(animated: !reduceMotion) }
             .buttonStyle(QuietButtonStyle())
-            .disabled(model.currentJob?.isRunning == true)
-            .help(model.currentJob?.isRunning == true ? "先取消正在运行的任务" : "重新选择源格式和目标格式")
+            .disabled(model.currentJob?.isRunning == true || model.isImporting)
+            .help(resetRouteHelp)
         }
       }
     }
@@ -124,6 +124,12 @@ struct ContentView: View {
     case .running: TransallTheme.source
     case .failed: TransallTheme.danger
     }
+  }
+
+  private var resetRouteHelp: String {
+    if model.isImporting { return "正在读取文件" }
+    if model.currentJob?.isRunning == true { return "先取消正在运行的任务" }
+    return "重新选择源格式和目标格式"
   }
 }
 

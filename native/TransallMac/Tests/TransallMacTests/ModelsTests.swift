@@ -79,7 +79,7 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func importingDocumentsAppendsAndDeduplicatesFiles() throws {
+  func importingDocumentsAppendsAndDeduplicatesFiles() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-import-test-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
@@ -91,11 +91,35 @@ struct ModelsTests {
     try Data("second".utf8).write(to: second)
 
     let model = AppModel()
-    model.importDocuments([first, first])
-    model.importDocuments([first, second, second], appending: true)
+    await model.importDocuments([first, first])
+    await model.importDocuments([first, second, second], appending: true)
 
     #expect(model.documents.map(\.name) == ["first.pdf", "second.pdf"])
     #expect(model.documents.map(\.size) == [5, 6])
+  }
+
+  @Test @MainActor
+  func importingDocumentsRejectsEntireBatchContainingSymbolicLink() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-import-link-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let existing = temporary.appendingPathComponent("existing.pdf")
+    let valid = temporary.appendingPathComponent("valid.pdf")
+    let symbolicLink = temporary.appendingPathComponent("linked.pdf")
+    try Data("existing".utf8).write(to: existing)
+    try Data("valid".utf8).write(to: valid)
+    try FileManager.default.createSymbolicLink(at: symbolicLink, withDestinationURL: valid)
+
+    let model = AppModel()
+    await model.importDocuments([existing])
+    await model.importDocuments([valid, symbolicLink])
+
+    #expect(model.documents.map(\.name) == ["existing.pdf"])
+    #expect(model.errorMessage?.contains("linked.pdf") == true)
+    #expect(model.errorMessage?.contains("符号链接") == true)
+    #expect(!model.isImporting)
   }
 
   @Test
@@ -343,6 +367,70 @@ struct ModelsTests {
       Issue.record("Missing second input should fail the import")
     } catch {
       #expect(error.localizedDescription.contains("missing.png"))
+    }
+
+    let jobsDirectory = temporary.appendingPathComponent("Data/Jobs")
+    let remaining = try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path)
+    #expect(remaining.isEmpty)
+  }
+
+  @Test @MainActor
+  func jobImportRejectsSymbolicLinkAndRemovesIncompleteDirectory() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-job-link-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+
+    let target = temporary.appendingPathComponent("target.png")
+    let symbolicLink = temporary.appendingPathComponent("linked.png")
+    try Data("target".utf8).write(to: target)
+    try FileManager.default.createSymbolicLink(at: symbolicLink, withDestinationURL: target)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"))
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    do {
+      _ = try await engine.createJob(
+        route: route, files: [SelectedDocument(url: symbolicLink, size: 1)],
+        options: JobOptions())
+      Issue.record("Symbolic-link input should fail before processing")
+    } catch {
+      #expect(error.localizedDescription.contains("普通文件"))
+    }
+
+    let jobsDirectory = temporary.appendingPathComponent("Data/Jobs")
+    let remaining = try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path)
+    #expect(remaining.isEmpty)
+  }
+
+  @Test @MainActor
+  func jobImportRechecksActualCopiedSize() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-job-size-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+
+    let oversized = temporary.appendingPathComponent("oversized.txt")
+    #expect(FileManager.default.createFile(atPath: oversized.path, contents: nil))
+    let handle = try FileHandle(forWritingTo: oversized)
+    try handle.truncate(atOffset: UInt64(NativeCapabilities.uploadLimitBytes) + 1)
+    try handle.close()
+
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"))
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+
+    do {
+      _ = try await engine.createJob(
+        route: route, files: [SelectedDocument(url: oversized, size: 1)],
+        options: JobOptions())
+      Issue.record("Actual copied size should enforce the upload limit")
+    } catch {
+      #expect(error.localizedDescription.contains("250 MB"))
     }
 
     let jobsDirectory = temporary.appendingPathComponent("Data/Jobs")

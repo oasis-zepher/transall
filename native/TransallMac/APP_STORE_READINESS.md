@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 60 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 61 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -59,7 +59,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - File selection metadata is read outside the main actor. A mixed valid/invalid batch leaves the existing selection unchanged, directories and symbolic links are rejected with the matching filename, and conflicting route actions remain disabled during inspection.
 - The engine independently verifies source and copied inputs are regular non-symbolic-link files, then enforces the 250 MB limit against copied file sizes so stale selection metadata cannot bypass the limit.
 - Image decoding is bounded to 3,508 pixels for PDF generation and 2,400 pixels for OCR/Markdown extraction, preserving practical output resolution without fully materializing oversized source images.
-- Incomplete, corrupt, or symbolic-link preview caches are regenerated as regular files inside the task directory; corrupt task metadata no longer prevents the user from deleting local task data.
+- Incomplete, corrupt, or symbolic-link preview caches are regenerated as regular files inside the task directory; corrupt task metadata no longer prevents the user from deleting local task data. Successful, failed, cancelled, and otherwise non-running tasks all expose the same confirmed deletion control.
 - Scanned-PDF Markdown extraction and translation open each PDF once for raster access instead of reopening it for every page; damaged or empty PDFs fail with a file-specific error.
 - Translation glossaries are limited to 20,000 characters in both preflight and the processing layer, and multiple text inputs are combined without retaining a second array of document contents.
 - Input inspection, input copies, and result saves run outside the main actor, preserve security-scoped access, and propagate cancellation; large transfers no longer block the SwiftUI event loop.

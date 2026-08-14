@@ -187,7 +187,7 @@ struct PreviewResponse: Codable, Equatable {
   let pages: [PreviewPage]
 }
 
-struct SelectedDocument: Identifiable, Equatable {
+struct SelectedDocument: Identifiable, Equatable, Sendable {
   let url: URL
   let size: Int64
 

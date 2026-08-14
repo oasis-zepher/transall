@@ -185,7 +185,10 @@ enum NativeDocumentProcessor {
         throw NativeDocumentError.invalidFile("无法打开 \(input.lastPathComponent)。")
       }
       for index in 0..<source.pageCount {
-        guard let page = source.page(at: index)?.copy() as? PDFPage else { continue }
+        guard let page = source.page(at: index)?.copy() as? PDFPage else {
+          throw NativeDocumentError.invalidFile(
+            "无法读取 \(input.lastPathComponent) 的第 \(index + 1) 页。")
+        }
         document.insert(page, at: document.pageCount)
       }
     }
@@ -219,7 +222,9 @@ enum NativeDocumentProcessor {
         }
         let reordered = PDFDocument()
         for index in reorder {
-          guard let page = document.page(at: index)?.copy() as? PDFPage else { continue }
+          guard let page = document.page(at: index)?.copy() as? PDFPage else {
+            throw NativeDocumentError.processing("无法复制第 \(index + 1) 页以调整顺序。")
+          }
           reordered.insert(page, at: reordered.pageCount)
         }
         while document.pageCount > 0 { document.removePage(at: 0) }
@@ -241,7 +246,9 @@ enum NativeDocumentProcessor {
       let watermark = options.watermark.trimmingCharacters(in: .whitespacesAndNewlines)
       if !watermark.isEmpty {
         for index in 0..<document.pageCount {
-          guard let page = document.page(at: index) else { continue }
+          guard let page = document.page(at: index) else {
+            throw NativeDocumentError.processing("无法读取第 \(index + 1) 页以添加水印。")
+          }
           let bounds = page.bounds(for: .cropBox)
           let annotationBounds = CGRect(
             x: bounds.minX + bounds.width * 0.12, y: bounds.midY - 32,

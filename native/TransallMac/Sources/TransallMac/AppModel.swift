@@ -213,7 +213,7 @@ final class AppModel: ObservableObject {
     isSaving = true
     defer { isSaving = false }
     do {
-      try backend.download(jobID: job.id, to: destination)
+      try await backend.download(jobID: job.id, to: destination)
       NSWorkspace.shared.activateFileViewerSelecting([destination])
     } catch {
       errorMessage = error.localizedDescription

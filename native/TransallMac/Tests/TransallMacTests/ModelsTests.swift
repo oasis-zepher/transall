@@ -231,6 +231,35 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func nativeJobImportsAndDownloadsResult() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-job-transfer-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("input.png")
+    try writeTestImage(to: input, color: CGColor(red: 0.2, green: 0.6, blue: 0.3, alpha: 1))
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"))
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "done")
+    let destination = temporary.appendingPathComponent("saved.pdf")
+    try await engine.download(jobID: job.id, to: destination)
+    #expect(PDFDocument(url: destination)?.pageCount == 1)
+  }
+
+  @Test @MainActor
   func corruptJobMetadataCanStillBeDeleted() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-corrupt-job-test-\(UUID().uuidString)", isDirectory: true)
@@ -455,6 +484,7 @@ struct ModelsTests {
     _ = try await NativeDocumentProcessor.process(
       route: editRoute, inputs: [firstPDF, secondPDF], options: mergeOptions, outputURL: source,
       apiKey: nil)
+    #expect(PDFDocument(url: source)?.pageCount == 2)
 
     var options = JobOptions()
     options.deletePages = "2"

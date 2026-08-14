@@ -145,20 +145,7 @@ final class NativeDocumentEngine: ObservableObject {
     let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
     do {
       try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
-      var copiedInputs: [URL] = []
-      for (index, document) in files.enumerated() {
-        let safeName = "\(index + 1)-\(document.name.replacingOccurrences(of: "/", with: "-"))"
-        let destination = inputDirectory.appendingPathComponent(safeName)
-        let accessing = document.url.startAccessingSecurityScopedResource()
-        defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
-        do {
-          try FileManager.default.copyItem(at: document.url, to: destination)
-        } catch {
-          throw NativeDocumentError.invalidFile(
-            "无法读取 \(document.name)：\(error.localizedDescription)")
-        }
-        copiedInputs.append(destination)
-      }
+      let copiedInputs = try await Self.copyInputs(files, to: inputDirectory)
 
       let now = ISO8601DateFormatter().string(from: Date())
       let job = JobResponse(
@@ -227,15 +214,20 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
-  func download(jobID: String, to destination: URL) throws {
+  func download(jobID: String, to destination: URL) async throws {
     let job = try job(id: jobID)
     guard job.status == "done", let output = job.output else {
       throw NativeDocumentError.processing("任务还没有可保存的结果。")
     }
     let source = try jobDirectory(jobID).appendingPathComponent(output)
-    let accessing = destination.startAccessingSecurityScopedResource()
-    defer { if accessing { destination.stopAccessingSecurityScopedResource() } }
-    try AtomicResultSaver.copyReplacing(source: source, destination: destination)
+    let transfer = Task.detached(priority: .userInitiated) {
+      let accessing = destination.startAccessingSecurityScopedResource()
+      defer { if accessing { destination.stopAccessingSecurityScopedResource() } }
+      try AtomicResultSaver.copyReplacing(source: source, destination: destination)
+    }
+    try await withTaskCancellationHandler(
+      operation: { try await transfer.value },
+      onCancel: { transfer.cancel() })
   }
 
   func previewPages(jobID: String) async throws -> PreviewResponse {
@@ -346,6 +338,33 @@ final class NativeDocumentEngine: ObservableObject {
       })
   }
 
+  private nonisolated static func copyInputs(
+    _ files: [SelectedDocument], to inputDirectory: URL
+  ) async throws -> [URL] {
+    let transfer = Task.detached(priority: .userInitiated) {
+      var copiedInputs: [URL] = []
+      for (index, document) in files.enumerated() {
+        try Task.checkCancellation()
+        let safeName =
+          "\(index + 1)-\(document.name.replacingOccurrences(of: "/", with: "-"))"
+        let destination = inputDirectory.appendingPathComponent(safeName)
+        let accessing = document.url.startAccessingSecurityScopedResource()
+        defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
+        do {
+          try FileManager.default.copyItem(at: document.url, to: destination)
+        } catch {
+          throw NativeDocumentError.invalidFile(
+            "无法读取 \(document.name)：\(error.localizedDescription)")
+        }
+        copiedInputs.append(destination)
+      }
+      return copiedInputs
+    }
+    return try await withTaskCancellationHandler(
+      operation: { try await transfer.value },
+      onCancel: { transfer.cancel() })
+  }
+
   private func allowedExtensions(for source: String) -> Set<String> {
     switch source {
     case "pdf": ["pdf"]
@@ -435,7 +454,9 @@ enum AtomicResultSaver {
     let temporary = destination.deletingLastPathComponent().appendingPathComponent(
       ".transall-save-\(UUID().uuidString)", isDirectory: false)
     do {
+      try Task.checkCancellation()
       try manager.copyItem(at: source, to: temporary)
+      try Task.checkCancellation()
       if manager.fileExists(atPath: destination.path) {
         _ = try manager.replaceItemAt(destination, withItemAt: temporary)
       } else {

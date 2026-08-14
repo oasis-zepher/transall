@@ -12,7 +12,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | # | Dimension | Baseline | Final | Evidence |
 | --- | --- | ---: | ---: | --- |
-| 1 | Accessibility | 3/4 | 4/4 | Support-site small text reaches WCAG AA contrast and navigation targets are at least 44 px; native controls expose labels, values, focus, and reduced-motion behavior. |
+| 1 | Accessibility | 3/4 | 4/4 | Support-site and native state text reach WCAG AA contrast; navigation targets are at least 44 px, and native controls expose labels, values, focus, reduced-motion behavior, and preview-error announcements. |
 | 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one raster page at a time; scanned-PDF routes reuse one raster document handle per input, and large file transfers, PDF previews, startup cleanup, and task deletion run outside the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
@@ -33,6 +33,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 2. **Completed-route format state** — after a route is complete, only formats that are valid enabled sources remain selectable.
 3. **Website target size** — navigation and language links provide at least a 44 px block-size target without increasing visible density.
 4. **Silent PDF page omission** — merge, reorder, and watermark operations now stop with a page-specific error when PDFKit cannot copy a page.
+5. **Native route-state contrast** — the unselected source and target labels now use the 4.95:1 muted-text token instead of the 1.99:1 border token.
+6. **Preview error announcement** — inline preview errors are exposed as one labeled accessibility element and request a high-priority VoiceOver announcement when they appear.
 
 ## Resolved P3 findings
 

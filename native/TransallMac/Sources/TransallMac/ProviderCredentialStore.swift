@@ -33,7 +33,12 @@ enum ProviderCredentialStoreError: LocalizedError {
   }
 }
 
-struct ProviderCredentialStore {
+protocol ProviderCredentialStoring {
+  func value(for credential: ProviderCredential) throws -> String
+  func setValue(_ value: String, for credential: ProviderCredential) throws
+}
+
+struct ProviderCredentialStore: ProviderCredentialStoring {
   static let shared = ProviderCredentialStore()
   private let service = "com.transall.mac.translation-providers"
 

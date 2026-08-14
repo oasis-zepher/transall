@@ -28,10 +28,15 @@ final class NativeDocumentEngine: ObservableObject {
   private var dataDirectory: URL?
   private let dataDirectoryOverride: URL?
   private let jobPersister: JobPersister
+  private let credentialStore: any ProviderCredentialStoring
   private var isTerminating = false
 
-  init(dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil) {
+  init(
+    dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil,
+    credentialStore: any ProviderCredentialStoring = ProviderCredentialStore.shared
+  ) {
     self.dataDirectoryOverride = dataDirectoryOverride
+    self.credentialStore = credentialStore
     self.jobPersister =
       jobPersister ?? { job, directory in
         try Self.persistJob(job, in: directory)
@@ -69,11 +74,11 @@ final class NativeDocumentEngine: ObservableObject {
   func capabilities() -> CapabilitiesResponse { NativeCapabilities.response }
 
   func diagnostics() -> DiagnosticsResponse {
-    NativeCapabilities.diagnostics(providerConfigured: credentialStatus())
+    NativeCapabilities.diagnostics(providerConfigured: credentialStatus(logErrors: true))
   }
 
   func providers() -> ProvidersResponse {
-    NativeCapabilities.providers(configured: credentialStatus())
+    NativeCapabilities.providers(configured: credentialStatus(logErrors: false))
   }
 
   func applyCredentialChanges() async -> String {
@@ -132,14 +137,22 @@ final class NativeDocumentEngine: ObservableObject {
             "术语表超过 \(TranslationService.maximumGlossaryCharacters) 个字符。",
             hint: "请删除不相关术语后再试。"))
       }
-      let credential: ProviderCredential = options.provider == "openai" ? .openAI : .deepseek
-      let key = (try? ProviderCredentialStore.shared.value(for: credential)) ?? ""
-      if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        blocking.append(
-          issue(
-            "provider_not_configured",
-            "\(options.provider == "openai" ? "OpenAI" : "DeepSeek") API Key 尚未配置。",
-            hint: "打开 Transall 设置并保存 API Key。"))
+      if let credential = ProviderCredential(rawValue: options.provider) {
+        do {
+          let key = try credentialStore.value(for: credential)
+          if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            blocking.append(
+              issue(
+                "provider_not_configured",
+                "\(credential.displayName) API Key 尚未配置。",
+                hint: "打开 Transall 设置并保存 API Key。"))
+          }
+        } catch {
+          blocking.append(
+            issue(
+              "provider_keychain_unavailable", "无法从 macOS 钥匙串读取翻译 API Key。",
+              hint: error.localizedDescription))
+        }
       }
       warnings.append(
         issue(
@@ -295,8 +308,17 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func launch(jobID: String, metadata: NativeJobMetadata, directory: URL) {
     guard tasks[jobID] == nil else { return }
-    let credential: ProviderCredential = metadata.options.provider == "openai" ? .openAI : .deepseek
-    let apiKey = try? ProviderCredentialStore.shared.value(for: credential)
+    var apiKey: String?
+    var credentialError: String?
+    if metadata.route.kind == "pdf_translate",
+      let credential = ProviderCredential(rawValue: metadata.options.provider)
+    {
+      do {
+        apiKey = try credentialStore.value(for: credential)
+      } catch {
+        credentialError = "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)"
+      }
+    }
     let inputURLs = metadata.inputNames.map { directory.appendingPathComponent("Input/\($0)") }
     let outputURL = directory.appendingPathComponent(
       OutputFileNamer.name(
@@ -305,6 +327,7 @@ final class NativeDocumentEngine: ObservableObject {
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
       guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
       do {
+        if let credentialError { throw NativeDocumentError.provider(credentialError) }
         let result = try await NativeDocumentProcessor.process(
           route: metadata.route, inputs: inputURLs, options: metadata.options,
           outputURL: outputURL, apiKey: apiKey)
@@ -453,12 +476,20 @@ final class NativeDocumentEngine: ObservableObject {
       cancelRequested: cancelRequested, logs: logs)
   }
 
-  private func credentialStatus() -> [ProviderCredential: Bool] {
-    Dictionary(
-      uniqueKeysWithValues: ProviderCredential.allCases.map { credential in
-        let value = (try? ProviderCredentialStore.shared.value(for: credential)) ?? ""
-        return (credential, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-      })
+  private func credentialStatus(logErrors: Bool) -> [ProviderCredential: Bool] {
+    var status: [ProviderCredential: Bool] = [:]
+    for credential in ProviderCredential.allCases {
+      do {
+        let value = try credentialStore.value(for: credential)
+        status[credential] = !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      } catch {
+        status[credential] = false
+        if logErrors {
+          appendLog("无法读取 \(credential.displayName) API Key：\(error.localizedDescription)")
+        }
+      }
+    }
+    return status
   }
 
   private nonisolated static func copyInputs(

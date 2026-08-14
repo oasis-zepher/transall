@@ -2,46 +2,119 @@ import Combine
 import SwiftUI
 
 @MainActor
-private final class ProviderSettingsModel: ObservableObject {
-  @Published var deepseekKey: String
-  @Published var openAIKey: String
+final class ProviderSettingsModel: ObservableObject {
+  @Published var deepseekKey = ""
+  @Published var openAIKey = ""
   @Published var message = ""
   @Published var isSaving = false
   @Published var pendingRemoval: ProviderCredential?
+  @Published private(set) var isLoaded = false
+  @Published private(set) var messageIsError = false
 
-  init(store: ProviderCredentialStore = .shared) {
-    deepseekKey = (try? store.value(for: .deepseek)) ?? ""
-    openAIKey = (try? store.value(for: .openAI)) ?? ""
+  private let store: any ProviderCredentialStoring
+  private var storedValues: [ProviderCredential: String] = [:]
+
+  init(store: any ProviderCredentialStoring = ProviderCredentialStore.shared) {
+    self.store = store
+    reload(showSuccess: false)
   }
 
-  func save(appModel: AppModel, store: ProviderCredentialStore = .shared) async {
+  func reload(showSuccess: Bool = true) {
+    guard !isSaving else { return }
+    do {
+      let deepseek = try store.value(for: .deepseek)
+      let openAI = try store.value(for: .openAI)
+      deepseekKey = deepseek
+      openAIKey = openAI
+      storedValues = [.deepseek: deepseek, .openAI: openAI]
+      isLoaded = true
+      messageIsError = false
+      message = showSuccess ? "已重新读取钥匙串。" : ""
+    } catch {
+      deepseekKey = ""
+      openAIKey = ""
+      storedValues = [:]
+      isLoaded = false
+      messageIsError = true
+      message = "无法读取钥匙串，现有 API Key 未被更改：\(error.localizedDescription)"
+    }
+  }
+
+  func save(appModel: AppModel) async {
+    guard isLoaded else {
+      messageIsError = true
+      message = "请先重新读取钥匙串，再保存 API Key。"
+      return
+    }
     isSaving = true
     defer { isSaving = false }
+
+    let values: [ProviderCredential: String] = [
+      .deepseek: deepseekKey.trimmingCharacters(in: .whitespacesAndNewlines),
+      .openAI: openAIKey.trimmingCharacters(in: .whitespacesAndNewlines),
+    ]
+    let changed = ProviderCredential.allCases.filter { values[$0] != storedValues[$0] }
+    guard !changed.isEmpty else {
+      messageIsError = false
+      message = "没有需要保存的更改。"
+      return
+    }
+
+    var applied: [ProviderCredential] = []
     do {
-      try store.setValue(deepseekKey, for: .deepseek)
-      try store.setValue(openAIKey, for: .openAI)
+      for credential in changed {
+        try store.setValue(values[credential] ?? "", for: credential)
+        applied.append(credential)
+      }
+      deepseekKey = values[.deepseek] ?? ""
+      openAIKey = values[.openAI] ?? ""
+      storedValues = values
+      messageIsError = false
       message = await appModel.applyCredentialChanges()
     } catch {
-      message = error.localizedDescription
+      let saveError = error.localizedDescription
+      var rollbackErrors: [String] = []
+      for credential in applied.reversed() {
+        do {
+          try store.setValue(storedValues[credential] ?? "", for: credential)
+        } catch {
+          rollbackErrors.append("\(credential.displayName)：\(error.localizedDescription)")
+        }
+      }
+      messageIsError = true
+      if rollbackErrors.isEmpty {
+        message = "API Key 保存失败，已撤销本次更改：\(saveError)"
+      } else {
+        isLoaded = false
+        message =
+          "API Key 保存失败，部分更改可能未撤销：\(saveError)；\(rollbackErrors.joined(separator: "；"))"
+      }
     }
   }
 
   func remove(
-    _ credential: ProviderCredential, appModel: AppModel,
-    store: ProviderCredentialStore = .shared
+    _ credential: ProviderCredential, appModel: AppModel
   ) async {
+    guard isLoaded else {
+      messageIsError = true
+      message = "请先重新读取钥匙串，再删除 API Key。"
+      return
+    }
     isSaving = true
     defer { isSaving = false }
+    pendingRemoval = nil
     do {
       try store.setValue("", for: credential)
       switch credential {
       case .deepseek: deepseekKey = ""
       case .openAI: openAIKey = ""
       }
-      pendingRemoval = nil
+      storedValues[credential] = ""
       _ = await appModel.applyCredentialChanges()
+      messageIsError = false
       message = "\(credential.displayName) API Key 已从钥匙串删除。"
     } catch {
+      messageIsError = true
       message = error.localizedDescription
     }
   }
@@ -97,17 +170,24 @@ struct SettingsView: View {
         if !settings.message.isEmpty {
           Text(settings.message)
             .font(.caption)
-            .foregroundStyle(TransallTheme.inkSoft)
+            .foregroundStyle(settings.messageIsError ? TransallTheme.danger : TransallTheme.inkSoft)
             .textSelection(.enabled)
         }
 
         HStack {
+          if !settings.isLoaded {
+            Button("重新读取钥匙串") {
+              settings.reload()
+            }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(settings.isSaving)
+          }
           Spacer()
           Button(settings.isSaving ? "正在保存" : "保存并应用") {
             Task { await settings.save(appModel: appModel) }
           }
           .buttonStyle(PrimaryButtonStyle())
-          .disabled(settings.isSaving)
+          .disabled(settings.isSaving || !settings.isLoaded)
         }
       }
       .padding(24)
@@ -136,30 +216,37 @@ struct SettingsView: View {
   private func providerRow(
     credential: ProviderCredential, key: Binding<String>, privacyURL: String
   ) -> some View {
-    let configured = !key.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let configured =
+      settings.isLoaded
+      && !key.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let status = settings.isLoaded ? (configured ? "已配置" : "未配置") : "读取失败"
+    let statusIcon =
+      settings.isLoaded
+      ? (configured ? "checkmark.circle.fill" : "circle")
+      : "exclamationmark.triangle.fill"
     return VStack(alignment: .leading, spacing: 9) {
       HStack {
         Text(credential.displayName)
           .font(.callout.weight(.semibold))
         Spacer()
-        Label(
-          configured ? "已配置" : "未配置",
-          systemImage: configured ? "checkmark.circle.fill" : "circle"
-        )
-        .font(.caption)
-        .foregroundStyle(configured ? TransallTheme.source : TransallTheme.muted)
+        Label(status, systemImage: statusIcon)
+          .font(.caption)
+          .foregroundStyle(
+            settings.isLoaded
+              ? (configured ? TransallTheme.source : TransallTheme.muted) : TransallTheme.danger)
       }
 
       HStack {
         SecureField("\(credential.displayName) API Key", text: key)
           .textFieldStyle(.roundedBorder)
           .accessibilityLabel("\(credential.displayName) API Key")
+          .disabled(!settings.isLoaded || settings.isSaving)
 
         Button("删除密钥", role: .destructive) {
           settings.pendingRemoval = credential
         }
         .buttonStyle(QuietButtonStyle())
-        .disabled(!configured || settings.isSaving)
+        .disabled(!configured || settings.isSaving || !settings.isLoaded)
       }
 
       if let url = URL(string: privacyURL) {

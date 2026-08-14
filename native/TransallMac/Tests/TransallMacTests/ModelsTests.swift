@@ -156,6 +156,76 @@ struct ModelsTests {
     #expect(result.blockingIssues.contains { $0.code == "glossary_too_large" })
   }
 
+  @Test @MainActor
+  func credentialSettingsBlockWritesAfterKeychainLoadFailure() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "existing-deepseek", .openAI: "existing-openai"],
+      readFailures: [.openAI])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+
+    #expect(!settings.isLoaded)
+    #expect(settings.message.contains("现有 API Key 未被更改"))
+    settings.deepseekKey = "replacement"
+    await settings.save(appModel: appModel)
+
+    #expect(store.values[.deepseek] == "existing-deepseek")
+    #expect(store.values[.openAI] == "existing-openai")
+    #expect(store.writes.isEmpty)
+    #expect(settings.message.contains("先重新读取钥匙串"))
+  }
+
+  @Test @MainActor
+  func credentialSettingsRollBackPartialSaveFailure() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "old-deepseek", .openAI: "old-openai"],
+      writeFailures: [.openAI: 1])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    settings.deepseekKey = "new-deepseek"
+    settings.openAIKey = "new-openai"
+
+    await settings.save(appModel: appModel)
+
+    #expect(settings.isLoaded)
+    #expect(settings.messageIsError)
+    #expect(settings.message.contains("已撤销本次更改"))
+    #expect(store.values[.deepseek] == "old-deepseek")
+    #expect(store.values[.openAI] == "old-openai")
+    #expect(store.writes.map(\.credential) == [.deepseek, .deepseek])
+  }
+
+  @Test @MainActor
+  func preflightReportsKeychainReadFailureSeparatelyFromMissingKey() throws {
+    let store = TestCredentialStore(readFailures: [.deepseek])
+    let engine = NativeDocumentEngine(credentialStore: store)
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 1)
+
+    let result = engine.preflight(
+      route: route, files: [file], options: JobOptions())
+
+    #expect(result.blockingIssues.contains { $0.code == "provider_keychain_unavailable" })
+    #expect(!result.blockingIssues.contains { $0.code == "provider_not_configured" })
+  }
+
+  @Test @MainActor
+  func invalidTranslationProviderDoesNotReadAnyCredential() throws {
+    let store = TestCredentialStore(readFailures: Set(ProviderCredential.allCases))
+    let engine = NativeDocumentEngine(credentialStore: store)
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 1)
+    var options = JobOptions()
+    options.provider = "unknown"
+
+    let result = engine.preflight(route: route, files: [file], options: options)
+
+    #expect(result.blockingIssues.contains { $0.code == "invalid_provider" })
+    #expect(store.reads.isEmpty)
+  }
+
   @Test
   func resultSavingReplacesExistingFile() throws {
     let temporary = FileManager.default.temporaryDirectory
@@ -257,6 +327,71 @@ struct ModelsTests {
     let destination = temporary.appendingPathComponent("saved.pdf")
     try await engine.download(jobID: job.id, to: destination)
     #expect(PDFDocument(url: destination)?.pageCount == 1)
+  }
+
+  @Test @MainActor
+  func localJobDoesNotReadTranslationCredentials() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-local-keychain-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("input.png")
+    try writeTestImage(to: input, color: CGColor(red: 0.3, green: 0.6, blue: 0.4, alpha: 1))
+    let store = TestCredentialStore(readFailures: Set(ProviderCredential.allCases))
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"), credentialStore: store)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "done")
+    #expect(store.reads.isEmpty)
+  }
+
+  @Test @MainActor
+  func translationJobFailsClearlyWhenKeychainBecomesUnavailable() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-translation-keychain-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("source.pdf")
+    try Data("not read because keychain fails first".utf8).write(to: input, options: .atomic)
+    let store = TestCredentialStore(readFailures: [.deepseek])
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory, credentialStore: store)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+
+    var job = try await engine.createJob(
+      route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "failed")
+    #expect(job.errorCode == "translation_provider_failed")
+    #expect(job.error?.contains("钥匙串") == true)
+    #expect(store.reads == [.deepseek])
+    let directory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: directory.appendingPathComponent("source-translated.pdf").path))
   }
 
   @Test @MainActor
@@ -1037,4 +1172,49 @@ private func persistTestJob(_ job: JobResponse, in directory: URL) throws {
 
 private func loadTestJSON<T: Decodable>(_ name: String, from directory: URL) throws -> T {
   try JSONDecoder().decode(T.self, from: Data(contentsOf: directory.appendingPathComponent(name)))
+}
+
+private final class TestCredentialStore: ProviderCredentialStoring {
+  struct Write: Equatable {
+    let credential: ProviderCredential
+    let value: String
+  }
+
+  var values: [ProviderCredential: String]
+  private(set) var reads: [ProviderCredential] = []
+  private(set) var writes: [Write] = []
+  private var readFailures: Set<ProviderCredential>
+  private var writeFailures: [ProviderCredential: Int]
+
+  init(
+    values: [ProviderCredential: String] = [:],
+    readFailures: Set<ProviderCredential> = [],
+    writeFailures: [ProviderCredential: Int] = [:]
+  ) {
+    self.values = values
+    self.readFailures = readFailures
+    self.writeFailures = writeFailures
+  }
+
+  func value(for credential: ProviderCredential) throws -> String {
+    reads.append(credential)
+    if readFailures.contains(credential) { throw TestCredentialError.unavailable }
+    return values[credential] ?? ""
+  }
+
+  func setValue(_ value: String, for credential: ProviderCredential) throws {
+    if let failures = writeFailures[credential], failures > 0 {
+      writeFailures[credential] = failures - 1
+      throw TestCredentialError.unavailable
+    }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    values[credential] = trimmed
+    writes.append(Write(credential: credential, value: trimmed))
+  }
+}
+
+private enum TestCredentialError: LocalizedError {
+  case unavailable
+
+  var errorDescription: String? { "测试钥匙串不可用" }
 }

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 49 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Xcode 26.6 passes 52 Swift tests, the Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -54,11 +54,13 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - Launch and quit leave no Transall process and no TCP listener on port 8765.
 - The unsigned archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
 - Image-to-PDF conversion decodes one input at a time, failed imports remove incomplete task directories, and the processor rejects unknown translation providers before network work.
+- File selection metadata is read outside the main actor. A mixed valid/invalid batch leaves the existing selection unchanged, directories and symbolic links are rejected with the matching filename, and conflicting route actions remain disabled during inspection.
+- The engine independently verifies source and copied inputs are regular non-symbolic-link files, then enforces the 250 MB limit against copied file sizes so stale selection metadata cannot bypass the limit.
 - Image decoding is bounded to 3,508 pixels for PDF generation and 2,400 pixels for OCR/Markdown extraction, preserving practical output resolution without fully materializing oversized source images.
 - Incomplete or corrupt preview caches are regenerated, and corrupt task metadata no longer prevents the user from deleting local task data.
 - Scanned-PDF Markdown extraction and translation open each PDF once for raster access instead of reopening it for every page; damaged or empty PDFs fail with a file-specific error.
 - Translation glossaries are limited to 20,000 characters in both preflight and the processing layer, and multiple text inputs are combined without retaining a second array of document contents.
-- Input imports and result saves run outside the main actor, preserve security-scoped access, and propagate cancellation; large transfers no longer block the SwiftUI event loop.
+- Input inspection, input copies, and result saves run outside the main actor, preserve security-scoped access, and propagate cancellation; large transfers no longer block the SwiftUI event loop.
 - Input file rows use lazy stack rendering inside the workbench scroll view, avoiding eager row creation for large file batches.
 - Startup cleanup and manual task deletion run outside the main actor with cancellation propagation. While deletion is active, the app disables saving, preview generation, duplicate deletion, and new task submission.
 - PDF preview cache inspection and rendering run outside the main actor with cancellation propagation. Preview failures show the exact error and keep a retry action available; a real-window test verified recovery after replacing a damaged PDF with a valid result.

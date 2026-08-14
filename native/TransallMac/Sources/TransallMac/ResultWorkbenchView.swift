@@ -35,6 +35,8 @@ struct ResultWorkbenchView: View {
             .frame(width: 188)
         }
 
+        previewFailure
+
         if !model.previewPages.isEmpty {
           Divider().overlay(TransallTheme.line)
           PreviewGridView(pages: model.previewPages)
@@ -146,11 +148,12 @@ struct ResultWorkbenchView: View {
         .buttonStyle(PrimaryButtonStyle())
         .disabled(model.isSaving)
 
-        if !model.previewPages.isEmpty {
-          Button("刷新预览") {
+        if model.hasPreviewableResult {
+          Button(previewButtonLabel) {
             Task { await model.refreshPreview() }
           }
           .buttonStyle(QuietButtonStyle())
+          .disabled(model.isLoadingPreview)
         }
 
         Button("删除任务数据", role: .destructive) {
@@ -174,6 +177,24 @@ struct ResultWorkbenchView: View {
         .stroke(TransallTheme.line, lineWidth: 1)
     }
     .clipShape(RoundedRectangle(cornerRadius: 4))
+  }
+
+  @ViewBuilder
+  private var previewFailure: some View {
+    if let error = model.previewError {
+      Label(error, systemImage: "exclamationmark.triangle.fill")
+        .font(.caption2)
+        .foregroundStyle(TransallTheme.warning)
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TransallTheme.warning.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+  }
+
+  private var previewButtonLabel: String {
+    if model.isLoadingPreview { return "正在生成预览" }
+    return model.previewPages.isEmpty ? "生成预览" : "刷新预览"
   }
 
   private func statusLabel(_ status: String) -> String {

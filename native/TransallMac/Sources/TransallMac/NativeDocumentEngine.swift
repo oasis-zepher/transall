@@ -503,6 +503,16 @@ enum OutputFileNamer {
 
 enum PreviewCache {
   static func pages(pdfURL: URL, directory: URL, limit: Int = 8) async throws -> [URL] {
+    let generation = Task.detached(priority: .userInitiated) {
+      try cachedPages(pdfURL: pdfURL, directory: directory, limit: limit)
+    }
+    return try await withTaskCancellationHandler(
+      operation: { try await generation.value },
+      onCancel: { generation.cancel() })
+  }
+
+  private static func cachedPages(pdfURL: URL, directory: URL, limit: Int) throws -> [URL] {
+    try Task.checkCancellation()
     let expectedCount = try NativeDocumentProcessor.previewPageCount(
       pdfURL: pdfURL, limit: limit)
     guard expectedCount > 0 else {
@@ -517,10 +527,8 @@ enum PreviewCache {
 
     try? FileManager.default.removeItem(at: directory)
     do {
-      let generated = try await Task.detached {
-        try NativeDocumentProcessor.makePreviews(
-          pdfURL: pdfURL, directory: directory, limit: limit)
-      }.value
+      let generated = try NativeDocumentProcessor.makePreviews(
+        pdfURL: pdfURL, directory: directory, limit: limit)
       guard isComplete(generated, expectedCount: expectedCount) else {
         throw NativeDocumentError.processing("PDF 预览生成不完整，请重试。")
       }

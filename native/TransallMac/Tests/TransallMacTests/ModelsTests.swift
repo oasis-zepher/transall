@@ -332,6 +332,51 @@ struct ModelsTests {
     #expect(pages.allSatisfy(NativeDocumentProcessor.isReadableImage))
   }
 
+  @Test @MainActor
+  func previewFailureIsVisibleAndCanBeRetried() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-preview-error-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let output = jobDirectory.appendingPathComponent("result.pdf")
+    try Data("broken pdf".utf8).write(to: output)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: output.lastPathComponent, error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try JSONEncoder().encode(job).write(
+      to: jobDirectory.appendingPathComponent("job.json"), options: .atomic)
+    let model = AppModel(backend: engine)
+    model.currentJob = job
+
+    await model.refreshPreview()
+
+    #expect(model.previewPages.isEmpty)
+    #expect(model.previewError?.contains("无法生成 PDF 预览") == true)
+    #expect(!model.isLoadingPreview)
+
+    try FileManager.default.removeItem(at: output)
+    let text = temporary.appendingPathComponent("source.txt")
+    try Data("preview recovered".utf8).write(to: text)
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [text], options: JobOptions(), outputURL: output, apiKey: nil)
+
+    await model.refreshPreview()
+
+    #expect(model.previewError == nil)
+    #expect(model.previewPages.count == 1)
+  }
+
   @Test
   func invalidTranslationProviderIsRejectedBeforeProcessing() async throws {
     let route = try #require(

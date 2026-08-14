@@ -13,15 +13,25 @@ final class AppModel: ObservableObject {
   @Published var options = JobOptions()
   @Published var currentJob: JobResponse?
   @Published var previewPages: [PreviewPage] = []
+  @Published var previewError: String?
   @Published var preflightWarnings: [PreflightIssue] = []
   @Published var errorMessage: String?
   @Published var isSubmitting = false
   @Published var isSaving = false
+  @Published var isLoadingPreview = false
   @Published var showAdvanced = false
 
-  let backend = NativeDocumentEngine()
+  let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
   private let lastJobKey = "transall.native.lastJobId"
+
+  init() {
+    backend = NativeDocumentEngine()
+  }
+
+  init(backend: NativeDocumentEngine) {
+    self.backend = backend
+  }
 
   let formatOrder = [
     "pdf", "translated_pdf", "ocr", "md", "html", "image", "data",
@@ -41,6 +51,10 @@ final class AppModel: ObservableObject {
 
   var routeTitle: String {
     route?.title ?? "选择源格式和目标格式"
+  }
+
+  var hasPreviewableResult: Bool {
+    currentJob?.status == "done" && currentJob?.output?.lowercased().hasSuffix(".pdf") == true
   }
 
   var logText: String {
@@ -108,6 +122,8 @@ final class AppModel: ObservableObject {
       documents = []
       currentJob = nil
       previewPages = []
+      previewError = nil
+      isLoadingPreview = false
       preflightWarnings = []
       errorMessage = nil
     }
@@ -170,6 +186,8 @@ final class AppModel: ObservableObject {
     isSubmitting = true
     errorMessage = nil
     previewPages = []
+    previewError = nil
+    isLoadingPreview = false
     preflightWarnings = []
     do {
       let preflight = backend.preflight(route: route, files: documents, options: options)
@@ -221,7 +239,7 @@ final class AppModel: ObservableObject {
   }
 
   func refreshPreview() async {
-    guard let job = currentJob else { return }
+    guard let job = currentJob, hasPreviewableResult else { return }
     await loadPreview(jobID: job.id)
   }
 
@@ -232,6 +250,8 @@ final class AppModel: ObservableObject {
       UserDefaults.standard.removeObject(forKey: lastJobKey)
       currentJob = nil
       previewPages = []
+      previewError = nil
+      isLoadingPreview = false
       preflightWarnings = []
     } catch {
       errorMessage = error.localizedDescription
@@ -268,10 +288,22 @@ final class AppModel: ObservableObject {
   }
 
   private func loadPreview(jobID: String) async {
+    guard currentJob?.id == jobID else { return }
+    isLoadingPreview = true
+    previewError = nil
+    defer {
+      if currentJob?.id == jobID { isLoadingPreview = false }
+    }
     do {
-      previewPages = try await backend.previewPages(jobID: jobID).pages
+      let pages = try await backend.previewPages(jobID: jobID).pages
+      guard currentJob?.id == jobID else { return }
+      previewPages = pages
+    } catch is CancellationError {
+      return
     } catch {
+      guard currentJob?.id == jobID else { return }
       previewPages = []
+      previewError = "无法生成 PDF 预览：\(error.localizedDescription)"
     }
   }
 

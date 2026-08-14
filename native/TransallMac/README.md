@@ -26,6 +26,15 @@ swift run TransallMac
 
 Local task copies, previews, logs, and results are stored in the app's Application Support container. Task data can be deleted from the result panel and is removed after it becomes more than 24 hours old, either when the app launches or during an hourly retention check while the app remains open. Active processing is never removed by a runtime retention check.
 
+Input limits are route-specific so text rendering cannot create an excessive in-memory document:
+
+| Route | Combined input limit |
+| --- | ---: |
+| Text, CSV, or JSON to PDF | 20 MB |
+| Other native routes | 250 MB |
+
+The displayed limit is enforced during file selection and task preflight, rechecked against the copied files, and checked again before text data is loaded for PDF generation.
+
 ## Tests
 
 ```bash

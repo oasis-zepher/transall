@@ -61,14 +61,15 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 - Keychain read failures disable credential editing until a successful reload, and a partial multi-provider save is rolled back. Local-only jobs no longer read translation credentials; translation jobs report Keychain access errors before network work.
 - Provider keys request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; existing legacy entries migrate without losing the credential, while unsigned development builds retain a tested legacy fallback when the application identity entitlement is unavailable.
 - Input copying rechecks regular-file status and the actual copied byte count, preventing changed files or non-UI callers from bypassing the 250 MB limit or placing symbolic links in a task directory.
+- Task creation runs structural preflight before writing task data. Empty inputs, mismatched extensions, invalid file sizes, overflowing or oversized totals, invalid merge counts, and unregistered routes cannot create a task directory; persisted metadata stores only the matching canonical capability route.
 - Image-to-PDF conversion caps decoded images at 3,508 pixels, while OCR and image-to-Markdown cap them at 2,400 pixels; EXIF orientation remains applied during thumbnail decoding.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 57/57 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 57/57 passed |
+| Swift package tests with Xcode 26.6 | 59/59 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 59/59 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; universal `arm64` + `x86_64` executable |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

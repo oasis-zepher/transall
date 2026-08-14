@@ -700,6 +700,8 @@ final class NativeDocumentEngine: ObservableObject {
         .contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey,
       ],
       options: [.skipsHiddenFiles])
+    let now = Date()
+    let dateFormatter = ISO8601DateFormatter()
     var warnings: [String] = []
     for directory in directories {
       try Task.checkCancellation()
@@ -707,15 +709,36 @@ final class NativeDocumentEngine: ObservableObject {
         let values = try directory.resourceValues(
           forKeys: [.contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey])
         guard values.isSymbolicLink != true, values.isDirectory == true,
-          let modified = values.contentModificationDate,
-          Date().timeIntervalSince(modified) > 24 * 60 * 60
+          let modified = values.contentModificationDate
         else { continue }
+        let referenceDate = cleanupReferenceDate(
+          in: directory, fallback: modified, now: now, dateFormatter: dateFormatter)
+        guard now.timeIntervalSince(referenceDate) >= 24 * 60 * 60 else { continue }
         try FileManager.default.removeItem(at: directory)
       } catch {
         warnings.append("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
       }
     }
     return (directory, warnings)
+  }
+
+  private nonisolated static func cleanupReferenceDate(
+    in directory: URL, fallback: Date, now: Date, dateFormatter: ISO8601DateFormatter
+  ) -> Date {
+    let stateURL = directory.appendingPathComponent("job.json")
+    guard
+      let values = try? stateURL.resourceValues(
+        forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+      values.isSymbolicLink != true, values.isRegularFile == true,
+      let data = try? Data(contentsOf: stateURL),
+      let job = try? JSONDecoder().decode(JobResponse.self, from: data),
+      job.id == directory.lastPathComponent,
+      let createdAt = dateFormatter.date(from: job.createdAt),
+      createdAt <= now.addingTimeInterval(5 * 60)
+    else {
+      return fallback
+    }
+    return createdAt
   }
 
   private func jobDirectory(_ id: String) throws -> URL {

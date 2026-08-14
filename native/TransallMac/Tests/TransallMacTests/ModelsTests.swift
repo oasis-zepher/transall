@@ -1252,22 +1252,45 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func startupRemovesOnlyExpiredJobDirectories() async throws {
+  func startupUsesTaskCreationTimeForRetentionCleanup() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-expired-job-test-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
 
     let jobsDirectory = temporary.appendingPathComponent("Data/Jobs", isDirectory: true)
-    let expired = jobsDirectory.appendingPathComponent("expired", isDirectory: true)
-    let recent = jobsDirectory.appendingPathComponent("recent", isDirectory: true)
+    let expiredID = UUID().uuidString.lowercased()
+    let recentID = UUID().uuidString.lowercased()
+    let expired = jobsDirectory.appendingPathComponent(expiredID, isDirectory: true)
+    let recent = jobsDirectory.appendingPathComponent(recentID, isDirectory: true)
+    let orphan = jobsDirectory.appendingPathComponent("orphan", isDirectory: true)
     try FileManager.default.createDirectory(at: expired, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: recent, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: orphan, withIntermediateDirectories: true)
+    let now = Date()
+    let formatter = ISO8601DateFormatter()
+    let expiredJob = JobResponse(
+      id: expiredID, kind: "text_to_pdf", status: "done", inputs: ["old.txt"],
+      createdAt: formatter.string(from: now.addingTimeInterval(-25 * 60 * 60)),
+      updatedAt: formatter.string(from: now), output: "old.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    let recentJob = JobResponse(
+      id: recentID, kind: "text_to_pdf", status: "done", inputs: ["recent.txt"],
+      createdAt: formatter.string(from: now.addingTimeInterval(-60 * 60)),
+      updatedAt: formatter.string(from: now), output: "recent.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try persistTestJob(expiredJob, in: expired)
+    try persistTestJob(recentJob, in: recent)
     try FileManager.default.setAttributes(
-      [.modificationDate: Date().addingTimeInterval(-25 * 60 * 60)],
+      [.modificationDate: now.addingTimeInterval(-60 * 60)],
       ofItemAtPath: expired.path)
     try FileManager.default.setAttributes(
-      [.modificationDate: Date().addingTimeInterval(-60 * 60)],
+      [.modificationDate: now.addingTimeInterval(-25 * 60 * 60)],
       ofItemAtPath: recent.path)
+    try FileManager.default.setAttributes(
+      [.modificationDate: now.addingTimeInterval(-25 * 60 * 60)],
+      ofItemAtPath: orphan.path)
 
     let engine = NativeDocumentEngine(
       dataDirectoryOverride: temporary.appendingPathComponent("Data", isDirectory: true))
@@ -1275,6 +1298,7 @@ struct ModelsTests {
 
     #expect(!FileManager.default.fileExists(atPath: expired.path))
     #expect(FileManager.default.fileExists(atPath: recent.path))
+    #expect(!FileManager.default.fileExists(atPath: orphan.path))
     #expect(engine.state == .running)
   }
 

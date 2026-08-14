@@ -53,7 +53,7 @@ All content descriptors: None. Expected rating: 4+. Confirm in App Store Connect
 | Data linked to user | Conservatively answer Yes for translated user content | The user's provider API key can associate requests with the provider account |
 | Developer-controlled collection | No | No Transall server or telemetry service |
 | Credentials | Not collected by developer; stored locally | macOS Keychain; sent only as authorization to the selected provider |
-| Local task retention | Not App Privacy “collection” | On-device App container, automatic 24-hour cleanup plus manual deletion |
+| Local task retention | Not App Privacy “collection” | On-device App container, next-launch cleanup after 24 hours plus manual deletion |
 | Tracking | No | Translation content is not used by Transall for advertising or tracking |
 
 This draft deliberately does not claim “Data Not Collected”: Apple requires disclosure of data collected by third-party partners, and translation is a normal product feature. Review the providers' current retention and account-linking terms immediately before submission.

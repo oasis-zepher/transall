@@ -15,7 +15,7 @@ The following features run entirely on the Mac using Apple frameworks:
 
 PDF translation is the only network feature. When the reviewer explicitly starts a translation task, extracted document text is sent directly to the selected DeepSeek or OpenAI API using the API key entered in Transall Settings. The original PDF file is not uploaded. API keys are stored in the macOS Keychain.
 
-Local task copies, previews, outputs, and logs are stored in the app container and automatically removed after 24 hours. The reviewer can delete the current task immediately from the result panel. Original files are never overwritten.
+Local task copies, previews, outputs, and logs are stored in the app container and automatically removed on the next app launch after the task becomes more than 24 hours old. The reviewer can delete the current task immediately from the result panel. Original files are never overwritten.
 
 ## Review test steps
 

@@ -63,7 +63,7 @@ export default function PrivacyPolicy() {
           <section>
             <h3>2. 文件与任务数据</h3>
             <p>
-              PDF 整理、OCR、文字提取和格式转换在 Mac 本机完成。App 会在自身容器内保存工作副本、结果、预览和日志，用于完成任务及恢复未完成任务。这些任务数据会在 24 小时后自动删除，也可以由用户在结果区立即删除。原始文件不会被删除或覆盖。
+              PDF 整理、OCR、文字提取和格式转换在 Mac 本机完成。App 会在自身容器内保存工作副本、结果、预览和日志，用于完成任务及恢复未完成任务。任务数据超过 24 小时后，会在下次启动 App 时自动删除；用户也可以在结果区立即删除。原始文件不会被删除或覆盖。
             </p>
           </section>
 
@@ -132,7 +132,7 @@ export default function PrivacyPolicy() {
           <section>
             <h3>2. Local files and retention</h3>
             <p>
-              PDF editing, OCR, text extraction, and format conversion run locally on the Mac. Working copies, results, previews, and logs stay in the app container and are removed after 24 hours or when the user deletes the task. Original files are never deleted or overwritten.
+              PDF editing, OCR, text extraction, and format conversion run locally on the Mac. Working copies, results, previews, and logs stay in the app container. Task data more than 24 hours old is removed the next time the app launches, or immediately when the user deletes the task. Original files are never deleted or overwritten.
             </p>
           </section>
 

@@ -115,7 +115,7 @@ class FrontendTransitionTests(unittest.TestCase):
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
         self.assertIn("moveFilledSlotToEmptySlot", js)
-        self.assertIn("clearDraggedSlot", js)
+        self.assertIn('if (fromSlotName === "source")', js)
         self.assertIn("sourceFormat = null", js)
         self.assertIn("targetFormat = null", js)
         finish_slot_block = js[js.index("function finishSlotDrag"):js.index("function endSlotDrag")]
@@ -167,7 +167,7 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("blockTextSelection", js)
         self.assertIn("unblockTextSelection", js)
         self.assertIn("removeAllRanges", js)
-        self.assertIn("event.preventDefault();", js[js.index("function updatePointerDrag"):js.index("function updateSlotDrag")])
+        self.assertIn("event.preventDefault();", js[js.index("function advanceDrag"):js.index("function endDrag")])
         self.assertIn("event.preventDefault();", js[js.index("function updateSlotDrag"):js.index("function endPointerDrag")])
         self.assertIn("body.is-format-dragging", css)
         drag_block = css[css.index("body.is-format-dragging"):css.index("button,")]

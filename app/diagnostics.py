@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import shutil
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ def python_module_available(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 
 
+@cache
 def playwright_chromium_available() -> bool:
     if not python_module_available("playwright"):
         return False

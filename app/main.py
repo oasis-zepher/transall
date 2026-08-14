@@ -101,8 +101,7 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="options must be valid JSON") from exc
 
-        original_names = [Path(file.filename or "upload").name for file in files]
-        job = store.create(kind, original_names, parsed_options)
+        job = store.create(kind, [], parsed_options)
         store.set_status(job, "queued", stage="uploading", message="正在上传文件")
         upload_dir = job.path / "uploads"
         upload_dir.mkdir(exist_ok=True)
@@ -134,10 +133,7 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str) -> dict[str, object]:
-        try:
-            return store.get(job_id).public()
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
+        return _get_job_or_404(store, job_id).public()
 
     @app.get("/api/jobs/{job_id}/download")
     def download(job_id: str) -> FileResponse:
@@ -176,10 +172,7 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
     @app.delete("/api/jobs/{job_id}")
     def delete_job(job_id: str) -> dict[str, object]:
-        try:
-            job = store.get(job_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
+        job = _get_job_or_404(store, job_id)
         if job.status in {"queued", "running"}:
             raise HTTPException(status_code=409, detail="Job is still running; cancel it before deleting")
         store.delete(job_id)
@@ -187,10 +180,8 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(job_id: str) -> dict[str, object]:
-        try:
-            return store.request_cancel(job_id).public()
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
+        _get_job_or_404(store, job_id)
+        return store.request_cancel(job_id).public()
 
     @app.post("/api/cleanup")
     def cleanup() -> dict[str, object]:

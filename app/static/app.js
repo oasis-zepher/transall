@@ -715,20 +715,16 @@ function clearFormatSlot(slotName) {
   finalizeRouteSelection();
 }
 
-function clearDraggedSlot(slotName) {
-  if (slotName === "source") {
-    sourceFormat = null;
-  } else if (slotName === "target") {
-    targetFormat = null;
-  }
-}
-
 function moveFilledSlotToEmptySlot(fromSlotName, toSlotName, format) {
   if (!format || fromSlotName === toSlotName) return;
-  clearDraggedSlot(fromSlotName);
+  if (fromSlotName === "source") {
+    sourceFormat = null;
+  } else {
+    targetFormat = null;
+  }
   if (toSlotName === "source") {
     sourceFormat = format;
-  } else if (toSlotName === "target") {
+  } else {
     targetFormat = format;
   }
   markSettlingNodes(sourceFormat, targetFormat);
@@ -790,14 +786,9 @@ function createSlotDragProxy(slot, rect) {
   return proxy;
 }
 
-function moveDragProxy(x, y) {
-  if (!pointerDragState?.proxy) return;
-  pointerDragState.proxy.style.transform = `translate3d(${x - pointerDragState.width / 2}px, ${y - pointerDragState.height / 2}px, 0)`;
-}
-
-function moveSlotDragProxy(x, y) {
-  if (!slotDragState?.proxy) return;
-  slotDragState.proxy.style.transform = `translate3d(${x - slotDragState.width / 2}px, ${y - slotDragState.height / 2}px, 0)`;
+function moveDragProxy(state, x, y) {
+  if (!state?.proxy) return;
+  state.proxy.style.transform = `translate3d(${x - state.width / 2}px, ${y - state.height / 2}px, 0)`;
 }
 
 function blockTextSelection() {
@@ -854,6 +845,7 @@ function startSlotDrag(slot, event) {
   blockTextSelection();
   const rect = slot.getBoundingClientRect();
   slotDragState = {
+    node: slot,
     slot,
     slotName: slot.dataset.routeSlot,
     format: slot.dataset.format,
@@ -869,45 +861,39 @@ function startSlotDrag(slot, event) {
 }
 
 function updatePointerDrag(event) {
-  if (!pointerDragState) return;
-  event.preventDefault();
-  const deltaX = event.clientX - pointerDragState.startX;
-  const deltaY = event.clientY - pointerDragState.startY;
-  const distance = Math.hypot(deltaX, deltaY);
-  if (!pointerDragState.started && distance < POINTER_DRAG_THRESHOLD) return;
-  if (!pointerDragState.started) {
-    pointerDragState.started = true;
-    pointerDragState.node.classList.add("is-pointer-dragging");
-    pointerDragState.proxy = createDragProxy(pointerDragState.node, pointerDragState.node.getBoundingClientRect());
-  }
-  moveDragProxy(event.clientX, event.clientY);
-  updateDragOverSlot(slotFromPoint(event.clientX, event.clientY));
+  advanceDrag(pointerDragState, event, "is-pointer-dragging", createDragProxy);
 }
 
 function updateSlotDrag(event) {
-  if (!slotDragState) return;
+  advanceDrag(slotDragState, event, "is-slot-dragging", createSlotDragProxy);
+}
+
+function advanceDrag(state, event, draggingClass, proxyFactory) {
+  if (!state) return;
   event.preventDefault();
-  const deltaX = event.clientX - slotDragState.startX;
-  const deltaY = event.clientY - slotDragState.startY;
-  const distance = Math.hypot(deltaX, deltaY);
-  if (!slotDragState.started && distance < POINTER_DRAG_THRESHOLD) return;
-  if (!slotDragState.started) {
-    slotDragState.started = true;
-    slotDragState.slot.classList.add("is-slot-dragging");
-    slotDragState.proxy = createSlotDragProxy(slotDragState.slot, slotDragState.slot.getBoundingClientRect());
+  const distance = Math.hypot(event.clientX - state.startX, event.clientY - state.startY);
+  if (!state.started && distance < POINTER_DRAG_THRESHOLD) return;
+  if (!state.started) {
+    state.started = true;
+    state.node.classList.add(draggingClass);
+    state.proxy = proxyFactory(state.node, state.node.getBoundingClientRect());
   }
-  moveSlotDragProxy(event.clientX, event.clientY);
+  moveDragProxy(state, event.clientX, event.clientY);
   updateDragOverSlot(slotFromPoint(event.clientX, event.clientY));
 }
 
-function endPointerDrag(event) {
-  if (!pointerDragState) return;
-  const wasDragging = pointerDragState.started;
+function endDrag(event, state, finish) {
+  if (!state) return;
+  const wasDragging = state.started;
   if (wasDragging) {
     event.preventDefault();
     suppressClicksTemporarily();
   }
-  finishPointerDrag(event.clientX, event.clientY);
+  finish(event.clientX, event.clientY);
+}
+
+function endPointerDrag(event) {
+  endDrag(event, pointerDragState, finishPointerDrag);
 }
 
 function finishSlotDrag(x, y) {
@@ -936,13 +922,7 @@ function finishSlotDrag(x, y) {
 }
 
 function endSlotDrag(event) {
-  if (!slotDragState) return;
-  const wasDragging = slotDragState.started;
-  if (wasDragging) {
-    event.preventDefault();
-    suppressClicksTemporarily();
-  }
-  finishSlotDrag(event.clientX, event.clientY);
+  endDrag(event, slotDragState, finishSlotDrag);
 }
 
 function suppressClicksTemporarily() {

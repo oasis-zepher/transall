@@ -41,7 +41,7 @@ def extract_markdown(
     except Exception as exc:
         if ocr_fallback and ext in PDF_EXTENSIONS:
             return ocr_to_markdown(source, output, ocr_language)
-        raise RuntimeError("MarkItDown is not installed. Run: pip install -r requirements.txt") from exc
+        raise RuntimeError("MarkItDown is not installed. Run: pip install -r requirements-optional.txt") from exc
     md = MarkItDown(enable_plugins=True)
     result = md.convert(str(source))
     text = getattr(result, "text_content", None) or getattr(result, "markdown", "")

@@ -164,68 +164,16 @@ final class NativeDocumentEngine: ObservableObject {
           "single_file_required", "编辑单个 PDF 时只能选择一个文件。",
           hint: "如需合并多个 PDF，请选择“按列表顺序合并 PDF”。"))
     }
-    if route.kind == "pdf_edit" {
-      if !["edit", "merge"].contains(options.editAction) {
-        blocking.append(
-          issue(
-            "invalid_edit_action", "PDF 操作无效。",
-            hint: "请重新选择编辑单个 PDF 或按列表顺序合并 PDF。"))
-      } else if options.editAction == "edit" {
-        let pageSelections = [
-          ("删除页", options.deletePages),
-          ("旋转页", options.rotatePages),
-          ("页面顺序", options.reorderPages),
-          ("裁剪页", options.cropPages),
-        ]
-        for (label, specification) in pageSelections {
-          do {
-            try PageSelectionParser.validateSyntax(specification)
-          } catch {
-            blocking.append(
-              issue(
-                "invalid_page_selection", "\(label)格式无效。",
-                hint: error.localizedDescription))
-          }
-        }
-        if !options.rotatePages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          ![90, 180, 270, -90, -180, -270].contains(options.rotateDegrees)
-        {
-          blocking.append(
-            issue(
-              "invalid_rotation", "旋转角度无效。",
-              hint: "旋转角度必须是 90、180 或 270。"))
-        }
-        if !options.cropPages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          do {
-            _ = try NativeDocumentProcessor.parseCropBox(options.cropBox)
-          } catch {
-            blocking.append(
-              issue(
-                "invalid_crop_box", "裁剪区域无效。",
-                hint: error.localizedDescription))
-          }
-        }
-      }
-    }
+    blocking.append(
+      contentsOf: JobOptionValidator.issues(for: route, options: options).map {
+        issue($0.code, $0.message, hint: $0.hint)
+      })
     if route.kind == "pdf_translate" {
       if files.count != 1 {
         blocking.append(
           issue(
             "single_file_required", "PDF 翻译每次只能处理一个文件。",
             hint: "请移除多余文件后再开始翻译。"))
-      }
-      if !["deepseek", "openai"].contains(options.provider) {
-        blocking.append(
-          issue(
-            "invalid_provider", "翻译服务无效。",
-            hint: "请在翻译选项中重新选择 DeepSeek 或 OpenAI。"))
-      }
-      if options.glossary.count > TranslationService.maximumGlossaryCharacters {
-        blocking.append(
-          issue(
-            "glossary_too_large",
-            "术语表超过 \(TranslationService.maximumGlossaryCharacters) 个字符。",
-            hint: "请删除不相关术语后再试。"))
       }
       if checkCredentials, let credential = ProviderCredential(rawValue: options.provider) {
         do {
@@ -844,6 +792,20 @@ final class NativeDocumentEngine: ObservableObject {
       throw NativeDocumentError.invalidFile("任务路径与任务状态不一致，数据可能已经损坏。")
     }
     try validateStoredInputNames(metadata.inputNames)
+    try JobOptionValidator.validate(route: metadata.route, options: metadata.options)
+    if metadata.route.kind == "pdf_edit", metadata.options.editAction == "merge",
+      metadata.inputNames.count < 2
+    {
+      throw NativeDocumentError.invalidFile("合并 PDF 的持久化任务缺少输入文件。")
+    }
+    if metadata.route.kind == "pdf_edit", metadata.options.editAction != "merge",
+      metadata.inputNames.count != 1
+    {
+      throw NativeDocumentError.invalidFile("单个 PDF 编辑任务的输入数量无效。")
+    }
+    if metadata.route.kind == "pdf_translate", metadata.inputNames.count != 1 {
+      throw NativeDocumentError.invalidFile("PDF 翻译任务的输入数量无效。")
+    }
   }
 
   private nonisolated static func canonicalRoute(

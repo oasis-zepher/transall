@@ -222,6 +222,53 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func translationAndOCROptionsAreRejectedBeforeProcessing() async throws {
+    let store = TestCredentialStore(values: [.deepseek: "test-key"])
+    let engine = NativeDocumentEngine(credentialStore: store)
+    let translationRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let pdf = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 4)
+    var translation = JobOptions()
+    translation.outputMode = "unknown"
+    translation.sourceLanguage = "  "
+    translation.targetLanguage = String(
+      repeating: "x", count: JobOptionValidator.maximumLanguageCharacters + 1)
+    translation.ocrLanguage = String(
+      repeating: "y", count: JobOptionValidator.maximumOCRLanguageCharacters + 1)
+
+    let translationPreflight = engine.preflight(
+      route: translationRoute, files: [pdf], options: translation)
+    #expect(
+      translationPreflight.blockingIssues.contains {
+        $0.code == "invalid_translation_output"
+      })
+    #expect(
+      translationPreflight.blockingIssues.contains { $0.code == "invalid_source_language" })
+    #expect(
+      translationPreflight.blockingIssues.contains { $0.code == "invalid_target_language" })
+    #expect(translationPreflight.blockingIssues.contains { $0.code == "invalid_ocr_language" })
+
+    do {
+      _ = try await NativeDocumentProcessor.process(
+        route: translationRoute, inputs: [pdf.url], options: translation,
+        outputURL: URL(fileURLWithPath: "/tmp/unused.pdf"), apiKey: "unused")
+      Issue.record("Invalid translation options must fail before processing")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_option")
+      #expect(error.errorDescription?.contains("翻译输出模式无效") == true)
+    }
+
+    let ocrRoute = try #require(NativeCapabilities.routes.first { $0.kind == "ocr" })
+    var ocr = JobOptions()
+    ocr.ocrOutputFormat = "unknown"
+    ocr.ocrLanguage = String(
+      repeating: "z", count: JobOptionValidator.maximumOCRLanguageCharacters + 1)
+    let ocrPreflight = engine.preflight(route: ocrRoute, files: [pdf], options: ocr)
+    #expect(ocrPreflight.blockingIssues.contains { $0.code == "invalid_ocr_output" })
+    #expect(ocrPreflight.blockingIssues.contains { $0.code == "invalid_ocr_language" })
+  }
+
+  @Test @MainActor
   func preflightRejectsOversizedTranslationGlossary() throws {
     let route = try #require(
       NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
@@ -975,6 +1022,66 @@ struct ModelsTests {
     #expect(restored.status == "done")
     #expect(restored.output == "input.pdf")
     #expect(engine.serviceLog.contains { $0.contains("恢复上次未完成的本地任务") })
+  }
+
+  @Test @MainActor
+  func invalidPersistedConfigurationDoesNotResumeLocalWork() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-invalid-recovery-options-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let running = JobResponse(
+      id: jobID, kind: route.kind, status: "running", inputs: ["source.pdf"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    var options = JobOptions()
+    options.editAction = "unknown"
+    try persistTestJob(running, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(route: route, options: options, inputNames: ["1-source.pdf"])
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+    let persisted: JobResponse = try loadTestJSON("job.json", from: jobDirectory)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "job_state_corrupt")
+    #expect(restored.error?.contains("PDF 操作无效") == true)
+    #expect(restored.logs.contains { $0.contains("本地状态校验失败") })
+    #expect(persisted.status == "failed")
+
+    let mergeJobID = UUID().uuidString.lowercased()
+    let mergeDirectory = dataDirectory.appendingPathComponent(
+      "Jobs/\(mergeJobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: mergeDirectory, withIntermediateDirectories: true)
+    let mergeJob = JobResponse(
+      id: mergeJobID, kind: route.kind, status: "running", inputs: ["source.pdf"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    var mergeOptions = JobOptions()
+    mergeOptions.editAction = "merge"
+    try persistTestJob(mergeJob, in: mergeDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(
+        route: route, options: mergeOptions, inputNames: ["1-source.pdf"])
+    ).write(to: mergeDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let invalidMerge = try engine.job(id: mergeJobID)
+
+    #expect(invalidMerge.status == "failed")
+    #expect(invalidMerge.errorCode == "job_state_corrupt")
+    #expect(invalidMerge.error?.contains("缺少输入文件") == true)
   }
 
   @Test @MainActor

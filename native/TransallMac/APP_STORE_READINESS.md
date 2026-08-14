@@ -2,14 +2,19 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Unsigned Debug and Release builds pass for arm64 and x86_64.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup. Unsigned Debug and universal Release builds pass for arm64 and x86_64. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
 | Priority | Item | Required decision or work |
 | --- | --- | --- |
-| P1 | Signing identity | Set a unique bundle identifier and Apple Developer team, then create the Mac App Store distribution profile. |
-| P1 | Store records | Create the App Store Connect app, age rating, category, support URL, published privacy-policy URL, screenshots, description, and App Privacy answers. |
+| P1 | Organization membership | Register or select a real legal entity, obtain D-U-N-S, domain email, public organization website, and Apple approval. A team display name alone is insufficient. |
+| P1 | Signing identity | Set the approved organization Team and final domain-owned bundle identifier, then create the Mac App Store distribution identities/profile. This Mac currently has no valid signing identity. |
+| P1 | Production Xcode | Build and upload with an Apple-supported release Xcode. Current verification used Xcode 27 Beta. |
+| P1 | Commercial agreements | Account Holder must accept the Paid Apps Agreement and complete tax and banking setup. |
+| P1 | Published URLs | Publish the prepared support/privacy site after replacing legal-name, domain, and email placeholders. |
+| P1 | Store record | Create the App Store Connect app, age rating, categories, pricing, territories, DSA trader status, metadata, screenshots, and App Privacy answers. |
+| P1 | Review access | Provide a new rate-limited DeepSeek or OpenAI review key through App Store Connect so translation can be tested. |
 
 The former engine, licensing, helper-signing, and feature-scope P0 items are resolved for the App Store edition: it contains no Python helper, PyMuPDF, LibreOffice, Chromium, OCRmyPDF, Tesseract, or BabelDOC. Those dependencies remain limited to the separately run browser edition.
 
@@ -31,3 +36,11 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - `Transall.xcodeproj` is generated and committed for direct use in Xcode.
 - Debug and Release builds both run in App Sandbox.
 - Release archives contain one universal native executable and Apple-owned system-framework links only.
+
+## Prepared submission material
+
+- `store/ORGANIZATION_ENROLLMENT.md`
+- `store/PAID_APP_SUBMISSION_CHECKLIST.md`
+- `store/APP_REVIEW_NOTES.md`
+- `store/SCREENSHOT_PLAN.md`
+- `store/support-site/`

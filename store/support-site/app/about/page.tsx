@@ -1,0 +1,76 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { publicationConfig } from "../publication-config";
+
+export const metadata: Metadata = {
+  title: "关于发布者",
+  description: "Transall 产品与发布者信息。",
+};
+
+export default function AboutPublisher() {
+  return (
+    <main>
+      <header className="site-header">
+        <Link className="wordmark" href="/" aria-label="Transall 支持首页">
+          transall
+        </Link>
+        <nav aria-label="主要导航">
+          <Link href="/">支持</Link>
+          <Link href="/privacy">隐私</Link>
+          <Link aria-current="page" href="/about">
+            关于
+          </Link>
+        </nav>
+      </header>
+
+      <section className="about-shell" aria-labelledby="about-title">
+        <div className="section-index">PUBLISHER / 03</div>
+        <div className="about-copy">
+          <p className="eyebrow">ABOUT THE PUBLISHER</p>
+          <h1 id="about-title">安静、明确的本地生产力软件</h1>
+          <p className="lede">
+            Transall 面向需要反复整理研究资料、扫描件与日常 PDF 的 Mac 用户。产品把文件处理、错误信息、预览和清理控制放在同一个本地工作台中。
+          </p>
+
+          <div className="about-principles">
+            <article>
+              <span className="topic-number">01</span>
+              <h2>本地优先</h2>
+              <p>常规文档处理使用 macOS 系统框架在设备上完成。</p>
+            </article>
+            <article>
+              <span className="topic-number">02</span>
+              <h2>失败可读</h2>
+              <p>任务提供预检、取消、恢复、日志和明确的恢复建议。</p>
+            </article>
+            <article>
+              <span className="topic-number">03</span>
+              <h2>边界清楚</h2>
+              <p>翻译的网络处理会在运行前说明，密钥保存在钥匙串。</p>
+            </article>
+          </div>
+        </div>
+
+        <aside className="publisher-card" aria-label="发布者资料">
+          <p className="eyebrow">LEGAL INFORMATION</p>
+          <dl>
+            <div>
+              <dt>法定主体</dt>
+              <dd>{publicationConfig.legalPublisherName}</dd>
+            </div>
+            <div>
+              <dt>支持邮箱</dt>
+              <dd>{publicationConfig.supportEmail}</dd>
+            </div>
+          </dl>
+          <p>组织注册、域名和域名邮箱确定后再发布本页。</p>
+        </aside>
+      </section>
+
+      <footer>
+        <span>© {publicationConfig.copyrightYear} Transall</span>
+        <Link href="/privacy">隐私政策</Link>
+      </footer>
+    </main>
+  );
+}

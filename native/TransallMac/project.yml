@@ -33,7 +33,7 @@ targets:
         PRODUCT_MODULE_NAME: TransallMac
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CURRENT_PROJECT_VERSION: 1
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 1.0.0
         INFOPLIST_FILE: Support/Info.plist
       configs:
         Debug:

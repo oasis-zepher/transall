@@ -1,0 +1,73 @@
+# Paid macOS App submission checklist
+
+## 1. Account and commercial setup
+
+- [ ] Organization enrollment approved and membership active.
+- [ ] Account Holder signs the Paid Apps Agreement. Apple notes that this acceptance cannot be undone.
+- [ ] Legal entity, address, and contact data in Agreements, Tax, and Banking match official documents.
+- [ ] Bank account added for one supported payout currency; prepare account-holder name, account type, bank territory, bank code, account number, and IBAN/SWIFT or local fields where applicable.
+- [ ] Account Holder approves any banking change initiated by an Admin or Finance user.
+- [ ] Complete the tax questionnaire Apple presents for the organization's country or region. A non-US entity may be directed to W-8BEN-E, W-8ECI, or another form; use Apple's questionnaire instead of guessing.
+- [ ] Resolve all Agreements, Tax, and Banking status warnings before setting the app to paid.
+
+## 2. App record
+
+| Field | Prepared value |
+| --- | --- |
+| Platform | macOS |
+| Name | Transall, subject to App Store availability |
+| Primary language | Simplified Chinese |
+| SKU | `TRANSALL-MAC-001` |
+| Bundle ID | Waiting for organization domain and Apple registration |
+| Version | `1.0.0` |
+| Primary category | Productivity |
+| Secondary category | Utilities |
+| Age rating | Draft 4+; complete Apple's current questionnaire |
+| Business model | One-time paid download; no In-App Purchases in 1.0 |
+| Price | Publisher decision required; select an App Store Connect price point and review local proceeds |
+| Availability | Publisher decision required by country/region |
+
+## 3. Privacy and compliance
+
+- [ ] Publish the support site and privacy policy over stable HTTPS.
+- [ ] Replace the legal publisher and email placeholders in `support-site/app/publication-config.ts`.
+- [ ] App Privacy: disclose `User Content → Other User Content` for `App Functionality` because translation text is transmitted to DeepSeek or OpenAI and may be retained by those providers.
+- [ ] App Privacy: mark that user content may be linked to the user's provider account through the API key unless both providers' current terms and the configured account prove de-identification.
+- [ ] App Privacy: Tracking = No.
+- [ ] Explain in review notes that PDF editing, OCR, extraction, and conversion remain on device; only extracted translation text leaves the device.
+- [ ] Confirm the PrivacyInfo.xcprivacy manifest still matches all Required Reason APIs at the time of submission.
+- [ ] Encryption: verify the App Store Connect export-compliance answers for HTTPS through Apple frameworks; `ITSAppUsesNonExemptEncryption` is currently `false`.
+- [ ] Declare Digital Services Act trader status. If distributing in the EU as a paid organization, prepare the address, phone, and email Apple must verify and display.
+- [ ] Confirm content rights for every sample document, icon, screenshot, and marketing image.
+
+Why the privacy label is conservative: Apple defines collection as data transmitted off device and made accessible to the developer or third-party partners longer than needed for a real-time request. Translation is a normal product feature, so it does not meet all optional-disclosure criteria.
+
+## 4. Build and signing
+
+- [ ] Install an Apple-supported release version of Xcode; do not upload from a beta-only toolchain unless Apple explicitly accepts it.
+- [ ] Set the organization Team and final bundle identifier in Xcode.
+- [ ] Create or allow Xcode to manage the Mac App Distribution certificate and Mac Installer Distribution certificate/profile required by the current workflow.
+- [ ] Archive Release with App Sandbox enabled.
+- [ ] Validate the archive in Organizer.
+- [ ] Confirm the archive has no Python, Homebrew paths, local server, prohibited private frameworks, or unsigned nested executables.
+- [ ] Upload the archive and wait for processing before attaching it to version 1.0.0.
+
+## 5. Product page and review
+
+- [ ] Paste the final product copy from `native/TransallMac/APP_STORE_METADATA.md`.
+- [ ] Upload screenshots from the signed release candidate using `SCREENSHOT_PLAN.md`.
+- [ ] Enter the published support URL and privacy-policy URL.
+- [ ] Enter copyright using the verified legal entity name.
+- [ ] Add App Review contact details and the notes from `APP_REVIEW_NOTES.md`.
+- [ ] Provide a rate-limited DeepSeek or OpenAI test API key to App Review through the secure review-information field, never in Git or screenshots.
+- [ ] Test every route once in the signed sandbox build before submission.
+- [ ] Choose manual or automatic release only after pricing, territories, and agreements are confirmed.
+
+## Official Apple references
+
+- [Sign and update agreements](https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements/)
+- [Provide tax information](https://developer.apple.com/help/app-store-connect/manage-tax-information/provide-tax-information/)
+- [Enter banking information](https://developer.apple.com/help/app-store-connect/manage-banking-information/enter-banking-information/)
+- [Set a price](https://developer.apple.com/help/app-store-connect/manage-app-pricing/set-a-price/)
+- [App privacy details](https://developer.apple.com/app-store/app-privacy-details/)
+- [EU DSA trader requirements](https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements/)

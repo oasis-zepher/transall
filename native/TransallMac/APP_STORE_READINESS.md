@@ -8,8 +8,8 @@ The native SwiftUI app is self-contained and uses only Apple system frameworks f
 
 | Priority | Item | Required decision or work |
 | --- | --- | --- |
-| P1 | Organization membership | Register or select a real legal entity, obtain D-U-N-S, domain email, public organization website, and Apple approval. A team display name alone is insufficient. |
-| P1 | Signing identity | Set the approved organization Team and final domain-owned bundle identifier, then create the Mac App Store distribution identities/profile. This Mac currently has no valid signing identity. |
+| P1 | Individual membership | Complete identity verification, pay for the Apple Developer Program, and wait for the individual's membership to become active. The seller name will be the verified legal name; `Zephyr` remains the brand. |
+| P1 | Signing identity | Set the individual's approved Apple Developer Team and final unique bundle identifier, then create the Mac App Store distribution identities/profile. This Mac currently has no valid signing identity. |
 | P1 | Production Xcode | Build and upload with an Apple-supported release Xcode. Current verification used Xcode 27 Beta. |
 | P1 | Commercial agreements | Account Holder must accept the Paid Apps Agreement and complete tax and banking setup. |
 | P1 | Published URLs | Publish the prepared support/privacy site after replacing legal-name, domain, and email placeholders. |
@@ -39,7 +39,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 
 ## Prepared submission material
 
-- `store/ORGANIZATION_ENROLLMENT.md`
+- `store/INDIVIDUAL_ENROLLMENT.md`
 - `store/PAID_APP_SUBMISSION_CHECKLIST.md`
 - `store/APP_REVIEW_NOTES.md`
 - `store/SCREENSHOT_PLAN.md`

@@ -46,14 +46,17 @@ test("server-renders the bilingual privacy policy", async () => {
   assert.match(html, /macOS Keychain/);
   assert.match(html, /DeepSeek 隐私政策/);
   assert.match(html, /OpenAI 隐私政策/);
+  assert.match(html, /个人发布者/);
+  assert.match(html, /\[待填写：个人开发者法定姓名\]/);
 });
 
-test("server-renders organization information without inventing a legal name", async () => {
+test("server-renders individual publisher information without inventing a legal name", async () => {
   const response = await render("/about");
   assert.equal(response.status, 200);
 
   const html = await response.text();
   assert.match(html, /安静、明确的本地生产力软件/);
-  assert.match(html, /\[待填写：法定主体名称\]/);
-  assert.match(html, /组织注册、域名和域名邮箱确定后再发布本页/);
+  assert.match(html, /\[待填写：个人开发者法定姓名\]/);
+  assert.match(html, /个人开发者法定姓名和公开支持邮箱确认后再发布本页/);
+  assert.match(html, /Zephyr 作为品牌使用，不替代 App Store 卖家名称/);
 });

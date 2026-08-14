@@ -55,7 +55,7 @@ export default function AboutPublisher() {
           <p className="eyebrow">LEGAL INFORMATION</p>
           <dl>
             <div>
-              <dt>法定主体</dt>
+              <dt>发布者法定姓名</dt>
               <dd>{publicationConfig.legalPublisherName}</dd>
             </div>
             <div>
@@ -63,7 +63,7 @@ export default function AboutPublisher() {
               <dd>{publicationConfig.supportEmail}</dd>
             </div>
           </dl>
-          <p>组织注册、域名和域名邮箱确定后再发布本页。</p>
+          <p>个人开发者法定姓名和公开支持邮箱确认后再发布本页。Zephyr 作为品牌使用，不替代 App Store 卖家名称。</p>
         </aside>
       </section>
 

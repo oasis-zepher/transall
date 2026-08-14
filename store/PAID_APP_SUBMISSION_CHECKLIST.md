@@ -2,12 +2,12 @@
 
 ## 1. Account and commercial setup
 
-- [ ] Organization enrollment approved and membership active.
+- [ ] Individual enrollment approved and Apple Developer Program membership active.
 - [ ] Account Holder signs the Paid Apps Agreement. Apple notes that this acceptance cannot be undone.
-- [ ] Legal entity, address, and contact data in Agreements, Tax, and Banking match official documents.
-- [ ] Bank account added for one supported payout currency; prepare account-holder name, account type, bank territory, bank code, account number, and IBAN/SWIFT or local fields where applicable.
+- [ ] Legal name, address, and contact data in Agreements, Tax, and Banking match the individual's official records.
+- [ ] Bank account added for one supported payout currency; its account-holder name should match the individual developer's verified name. Prepare the account type, bank territory, bank code, account number, and IBAN/SWIFT or local fields where applicable.
 - [ ] Account Holder approves any banking change initiated by an Admin or Finance user.
-- [ ] Complete the tax questionnaire Apple presents for the organization's country or region. A non-US entity may be directed to W-8BEN-E, W-8ECI, or another form; use Apple's questionnaire instead of guessing.
+- [ ] Complete the tax questionnaire Apple presents for the individual's country or region. A non-US individual is commonly directed to Form W-8BEN, but the App Store Connect questionnaire is authoritative and may require a different form.
 - [ ] Resolve all Agreements, Tax, and Banking status warnings before setting the app to paid.
 
 ## 2. App record
@@ -18,7 +18,7 @@
 | Name | Transall, subject to App Store availability |
 | Primary language | Simplified Chinese |
 | SKU | `TRANSALL-MAC-001` |
-| Bundle ID | Waiting for organization domain and Apple registration |
+| Bundle ID | `com.transall.mac` is provisional; waiting for a final unique identifier and Apple registration |
 | Version | `1.0.0` |
 | Primary category | Productivity |
 | Secondary category | Utilities |
@@ -37,7 +37,7 @@
 - [ ] Explain in review notes that PDF editing, OCR, extraction, and conversion remain on device; only extracted translation text leaves the device.
 - [ ] Confirm the PrivacyInfo.xcprivacy manifest still matches all Required Reason APIs at the time of submission.
 - [ ] Encryption: verify the App Store Connect export-compliance answers for HTTPS through Apple frameworks; `ITSAppUsesNonExemptEncryption` is currently `false`.
-- [ ] Declare Digital Services Act trader status. If distributing in the EU as a paid organization, prepare the address, phone, and email Apple must verify and display.
+- [ ] Declare Digital Services Act trader status. An individual selling a paid app in the EU may be treated as a trader; if declared as a trader, prepare the address, phone number, and email Apple requires for verification and public display.
 - [ ] Confirm content rights for every sample document, icon, screenshot, and marketing image.
 
 Why the privacy label is conservative: Apple defines collection as data transmitted off device and made accessible to the developer or third-party partners longer than needed for a real-time request. Translation is a normal product feature, so it does not meet all optional-disclosure criteria.
@@ -45,7 +45,7 @@ Why the privacy label is conservative: Apple defines collection as data transmit
 ## 4. Build and signing
 
 - [ ] Install an Apple-supported release version of Xcode; do not upload from a beta-only toolchain unless Apple explicitly accepts it.
-- [ ] Set the organization Team and final bundle identifier in Xcode.
+- [ ] Set the individual's Apple Developer Team and final bundle identifier in Xcode.
 - [ ] Create or allow Xcode to manage the Mac App Distribution certificate and Mac Installer Distribution certificate/profile required by the current workflow.
 - [ ] Archive Release with App Sandbox enabled.
 - [ ] Validate the archive in Organizer.
@@ -57,7 +57,7 @@ Why the privacy label is conservative: Apple defines collection as data transmit
 - [ ] Paste the final product copy from `native/TransallMac/APP_STORE_METADATA.md`.
 - [ ] Upload screenshots from the signed release candidate using `SCREENSHOT_PLAN.md`.
 - [ ] Enter the published support URL and privacy-policy URL.
-- [ ] Enter copyright using the verified legal entity name.
+- [ ] Enter copyright using the verified individual rights-holder name.
 - [ ] Add App Review contact details and the notes from `APP_REVIEW_NOTES.md`.
 - [ ] Provide a rate-limited DeepSeek or OpenAI test API key to App Review through the secure review-information field, never in Git or screenshots.
 - [ ] Test every route once in the signed sandbox build before submission.

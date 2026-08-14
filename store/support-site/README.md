@@ -6,8 +6,8 @@ Local source for the public Transall support and privacy-policy website required
 
 Update `app/publication-config.ts` with:
 
-- the organization's registered legal name;
-- a support address on the organization's domain;
+- the individual developer's verified legal name;
+- a monitored public support address (a dedicated custom-domain address is preferred but not required for individual enrollment);
 - the final policy effective date, if it changes.
 
 Do not publish while bracketed placeholders remain.
@@ -20,4 +20,4 @@ npm run dev
 npm test
 ```
 
-The site has no account system, tracking, analytics, database, or file upload. Its root route is the App Store support URL, `/privacy` is the privacy-policy URL, and `/about` identifies the publisher for organization verification.
+The site has no account system, tracking, analytics, database, or file upload. Its root route is the App Store support URL, `/privacy` is the privacy-policy URL, and `/about` identifies the individual publisher.

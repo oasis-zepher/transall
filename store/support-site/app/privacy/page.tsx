@@ -97,7 +97,7 @@ export default function PrivacyPolicy() {
             </p>
             <dl className="publisher-fields">
               <div>
-                <dt>发布者</dt>
+                <dt>个人发布者</dt>
                 <dd>{publicationConfig.legalPublisherName}</dd>
               </div>
               <div>
@@ -150,7 +150,7 @@ export default function PrivacyPolicy() {
             <h3>6. Contact</h3>
             <dl className="publisher-fields">
               <div>
-                <dt>Publisher</dt>
+                <dt>Individual Publisher</dt>
                 <dd>{publicationConfig.legalPublisherName}</dd>
               </div>
               <div>

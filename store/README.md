@@ -6,7 +6,7 @@ This directory contains the non-code material required to move the native macOS 
 
 | Path | Purpose | Status |
 | --- | --- | --- |
-| `ORGANIZATION_ENROLLMENT.md` | Legal-entity and Apple organization enrollment requirements | Waiting for publisher decisions |
+| `INDIVIDUAL_ENROLLMENT.md` | Personal identity and Apple individual enrollment requirements | Individual account selected; enrollment pending |
 | `PAID_APP_SUBMISSION_CHECKLIST.md` | Agreements, banking, tax, pricing, compliance, and submission sequence | Prepared checklist |
 | `APP_REVIEW_NOTES.md` | Draft notes and test steps for App Review | Draft complete; review API key missing |
 | `SCREENSHOT_PLAN.md` | Required screenshot scenes, sizes, and privacy rules | Capture plan ready |
@@ -16,12 +16,12 @@ This directory contains the non-code material required to move the native macOS 
 
 ## Do not submit until these values are final
 
-1. Registered legal entity name and D-U-N-S Number.
-2. Organization-owned domain, public organization website, and domain email.
-3. Final bundle identifier registered to the organization team.
+1. Individual membership approved and the seller's legal name verified by Apple.
+2. Final bundle identifier registered to the individual's Apple Developer team.
+3. Public support email plus stable HTTPS support and privacy-policy URLs.
 4. Paid Apps Agreement, tax forms, and bank account status in App Store Connect.
-5. Published support and privacy URLs with no bracketed placeholders.
+5. Published pages with no bracketed placeholders.
 6. App Review test API key with a strict usage limit, entered only in App Store Connect.
 7. Screenshots captured from the signed release candidate.
 
-No legal entity, domain, email, bank, tax, or signing values should be invented in source control.
+No legal name, address, email, bank, tax, or signing values should be invented in source control.

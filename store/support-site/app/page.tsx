@@ -80,7 +80,7 @@ export default function SupportHome() {
           <p className="eyebrow">CONTACT</p>
           <h2 id="contact-title">联系支持</h2>
         </div>
-        <p>团队域名邮箱将在发布前填写。请勿使用 QQ 或个人 Gmail 作为正式支持地址。</p>
+        <p>发布前填写公开支持邮箱。建议使用与私人邮箱分开的专用地址。</p>
         <span className="pending-field">{publicationConfig.supportEmail}</span>
       </section>
 

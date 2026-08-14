@@ -11,8 +11,9 @@
 | Version | 1.0.0 |
 | SKU | TRANSALL-MAC-001 |
 | Business model | One-time paid download; no In-App Purchases in 1.0 |
-| Bundle ID | `com.transall.mac` is provisional; replace after organization-domain decision |
-| Copyright | Replace with the verified legal entity name before submission |
+| Bundle ID | `com.transall.mac` is provisional; replace after choosing and registering a final unique identifier |
+| Seller | Individual developer's verified legal name; `Zephyr` remains the brand |
+| Copyright | Replace with the verified individual rights-holder name before submission |
 | Support URL | Publish `store/support-site/` and use its root HTTPS URL |
 | Privacy policy URL | Use the published `/privacy` URL |
 

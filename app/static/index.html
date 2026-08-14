@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>transall</title>
-    <link rel="stylesheet" href="/static/styles.css?v=workbench-5" />
+    <link rel="stylesheet" href="/static/styles.css?v=workbench-6" />
   </head>
   <body>
     <main class="shell">
@@ -236,6 +236,9 @@
                 </div>
                 <span id="jobState" class="job-state" aria-live="polite">未开始</span>
               </div>
+              <div class="progress-track" id="progressTrack" hidden>
+                <div class="progress-fill" id="progressBar"></div>
+              </div>
 
               <div class="output-grid execution-grid">
                 <section class="log-pane console-pane">
@@ -261,6 +264,6 @@
         </div>
       </section>
     </main>
-    <script src="/static/app.js?v=workbench-5"></script>
+    <script src="/static/app.js?v=workbench-6"></script>
   </body>
 </html>

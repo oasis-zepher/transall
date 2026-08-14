@@ -486,7 +486,7 @@ class ApiContractTests(unittest.TestCase):
 
             client = TestClient(create_app(data_dir=Path(tmp) / "data", run_background_inline=True))
             with patch("app.main.ocr_document") as ocr_document:
-                def fake_ocr(source, output_dir, language="eng", output_format="text"):
+                def fake_ocr(source, output_dir, language="eng", output_format="text", cancel_check=None):
                     output = output_dir / f"{source.stem}-ocr.txt"
                     output.write_text("recognized text", encoding="utf-8")
                     return output

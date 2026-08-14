@@ -3,11 +3,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 import fitz
 from PIL import Image
 
 from .config import IMAGE_EXTENSIONS, PDF_EXTENSIONS
+from .errors import MissingDependency, OcrInputRequired
+from .processes import run_tracked
 
 
 def ocr_document(
@@ -15,10 +18,11 @@ def ocr_document(
     output_dir: Path,
     language: str = "chi_sim+eng",
     output_format: str = "searchable_pdf",
+    cancel_check: Callable[[], None] | None = None,
 ) -> Path:
     ext = source.suffix.lower()
     if ext not in PDF_EXTENSIONS and ext not in IMAGE_EXTENSIONS:
-        raise ValueError("OCR supports PDF and image inputs")
+        raise OcrInputRequired("OCR supports PDF and image inputs")
     if output_format not in {"searchable_pdf", "text"}:
         raise ValueError("OCR output_format must be searchable_pdf or text")
 
@@ -27,7 +31,7 @@ def ocr_document(
 
     if output_format == "text":
         output = output_dir / f"{source.stem}-ocr.txt"
-        output.write_text(_ocr_to_text(source, language), encoding="utf-8")
+        output.write_text(_ocr_to_text(source, language, cancel_check), encoding="utf-8")
         return output
 
     output = output_dir / f"{source.stem}-ocr.pdf"
@@ -36,15 +40,16 @@ def ocr_document(
             _ocr_pdf_with_ocrmypdf(source, output, language)
             return output
         except Exception:
-            pass
-    _ocr_to_searchable_pdf(source, output, language)
+            if cancel_check is not None:
+                cancel_check()
+    _ocr_to_searchable_pdf(source, output, language, cancel_check)
     return output
 
 
 def ocr_to_markdown(source: Path, output: Path, language: str = "chi_sim+eng") -> Path:
     ext = source.suffix.lower()
     if ext not in PDF_EXTENSIONS and ext not in IMAGE_EXTENSIONS:
-        raise ValueError("OCR Markdown fallback supports PDF and image inputs")
+        raise OcrInputRequired("OCR Markdown fallback supports PDF and image inputs")
     _ensure_tesseract_available()
     output.parent.mkdir(parents=True, exist_ok=True)
     text = _ocr_to_text(source, language).strip()
@@ -54,26 +59,36 @@ def ocr_to_markdown(source: Path, output: Path, language: str = "chi_sim+eng") -
 
 def _ensure_tesseract_available() -> None:
     if not shutil.which("tesseract"):
-        raise RuntimeError("OCR requires Tesseract. Install it on macOS with: brew install tesseract")
+        raise MissingDependency(
+            "OCR requires Tesseract. Install it on macOS with: brew install tesseract",
+            "brew install tesseract tesseract-lang 后重启服务。",
+        )
     try:
         import pytesseract  # noqa: F401
     except Exception as exc:
-        raise RuntimeError("OCR requires pytesseract. Install Python dependencies with: pip install -r requirements.txt") from exc
+        raise MissingDependency(
+            "OCR requires pytesseract. Install Python dependencies with: pip install -r requirements.txt",
+            "python -m pip install -r requirements.txt 后重启服务。",
+        ) from exc
 
 
-def _ocr_to_text(source: Path, language: str) -> str:
+def _ocr_to_text(source: Path, language: str, cancel_check: Callable[[], None] | None = None) -> str:
     chunks: list[str] = []
     for index, image in enumerate(_iter_page_images(source), start=1):
+        if cancel_check is not None:
+            cancel_check()
         text = _ocr_image_to_text(image, language).strip()
         if text:
             chunks.append(f"## Page {index}\n\n{text}")
     return "\n\n".join(chunks).strip() + "\n"
 
 
-def _ocr_to_searchable_pdf(source: Path, output: Path, language: str) -> None:
+def _ocr_to_searchable_pdf(source: Path, output: Path, language: str, cancel_check: Callable[[], None] | None = None) -> None:
     target = fitz.open()
     try:
         for image in _iter_page_images(source):
+            if cancel_check is not None:
+                cancel_check()
             page_pdf = _ocr_image_to_pdf(image, language)
             with fitz.open(stream=page_pdf, filetype="pdf") as page_doc:
                 target.insert_pdf(page_doc)
@@ -100,7 +115,7 @@ def _ocr_pdf_with_ocrmypdf(source: Path, output: Path, language: str) -> None:
         str(output),
     ]
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True, timeout=900)
+        run_tracked(command, 900, check=True)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("OCRmyPDF timed out after 15 minutes") from exc
     except subprocess.CalledProcessError as exc:

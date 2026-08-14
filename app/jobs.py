@@ -34,11 +34,13 @@ class Job:
     retryable: bool = False
     progress: int = 0
     cancel_requested: bool = False
+    thread_id: int | None = None
     logs: list[str] = field(default_factory=list)
 
     def public(self) -> dict[str, Any]:
         data = asdict(self)
         data.pop("path", None)
+        data.pop("thread_id", None)
         if self.output:
             data["output"] = Path(self.output).name
         return data
@@ -172,6 +174,10 @@ class JobStore:
             job.stage = "cancelled"
             job.message = "任务已取消"
         self.save(job)
+        if job.thread_id:
+            from .processes import kill_thread_processes
+
+            kill_thread_processes(job.thread_id)
         return job
 
     def raise_if_cancelled(self, job: Job) -> None:

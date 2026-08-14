@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import asyncio
 import shutil
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -14,9 +15,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .artifacts import single_or_zip
 from .capabilities import capabilities_payload, preflight as run_preflight
-from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_UPLOAD_BYTES
+from .config import APP_ROOT, DATA_DIR, JOB_TTL_HOURS, MAX_CONCURRENT_JOBS, MAX_UPLOAD_BYTES
 from .conversion import convert_to_pdf, extract_markdown
 from .diagnostics import collect_diagnostics
+from .errors import MissingDependency, NoUploadedFiles, OcrInputRequired, PdfInputRequired, ProviderNotConfigured
 from .jobs import Job, JobCancelled, JobStore
 from .ocr import ocr_document
 from .pdf_ops import apply_pdf_edits, edit_options_from_request, merge_pdfs, pdf_page_count, render_preview_pages
@@ -25,6 +27,7 @@ from .translation import load_provider_configs, translate_pdf
 
 LOCAL_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
 STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_JOB_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_JOBS)
 
 
 def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -> FastAPI:
@@ -191,10 +194,24 @@ def create_app(data_dir: Path = DATA_DIR, run_background_inline: bool = False) -
 
 
 def run_job(store: JobStore, job_id: str) -> None:
-    job = store.get(job_id)
-    if job.status == "cancelled":
-        return
-    store.set_status(job, "running", stage="starting", message="任务启动中", progress=10)
+    while not _JOB_SLOTS.acquire(timeout=1):
+        try:
+            if store.get(job_id).cancel_requested:
+                return
+        except KeyError:
+            return
+    try:
+        job = store.get(job_id)
+        if job.status == "cancelled":
+            return
+        job.thread_id = threading.get_ident()
+        store.set_status(job, "running", stage="starting", message="任务启动中", progress=10)
+        _run_job_body(store, job)
+    finally:
+        _JOB_SLOTS.release()
+
+
+def _run_job_body(store: JobStore, job: Job) -> None:
     try:
         store.raise_if_cancelled(job)
         upload_dir = job.path / "uploads"
@@ -206,7 +223,7 @@ def run_job(store: JobStore, job_id: str) -> None:
             key=lambda path: (order.get(path.name.casefold(), len(job.inputs)), path.name),
         )
         if not inputs:
-            raise ValueError("No uploaded files")
+            raise NoUploadedFiles("No uploaded files")
         store.log(job, f"Task: {job.kind}")
         store.log(job, f"Inputs: {', '.join(path.name for path in inputs)}")
 
@@ -236,6 +253,12 @@ def run_job(store: JobStore, job_id: str) -> None:
         shutil.rmtree(job.path / "outputs", ignore_errors=True)
         store.set_status(job, "cancelled", stage="cancelled", message="任务已取消", progress=job.progress)
     except Exception as exc:
+        try:
+            store.raise_if_cancelled(job)
+        except JobCancelled:
+            shutil.rmtree(job.path / "outputs", ignore_errors=True)
+            store.set_status(job, "cancelled", stage="cancelled", message="任务已取消", progress=job.progress)
+            return
         store.log(job, f"Failed stage: {job.kind}")
         store.log(job, f"Failure detail: {exc}")
         error = classify_error(exc)
@@ -252,41 +275,39 @@ def run_job(store: JobStore, job_id: str) -> None:
 
 
 def classify_error(exc: Exception) -> dict[str, object]:
-    detail = str(exc)
-    lower = detail.lower()
-    if "pdf edit requires pdf input" in lower or "pdf translation requires pdf input" in lower:
+    if isinstance(exc, PdfInputRequired):
         return {
             "code": "pdf_input_required",
             "message": "需要 PDF 输入文件",
             "hint": "请选择 PDF 文件，或切换到适合该文件类型的转换路径。",
             "retryable": False,
         }
-    if "ocr supports pdf and image inputs" in lower:
+    if isinstance(exc, OcrInputRequired):
         return {
             "code": "ocr_input_required",
             "message": "OCR 只支持 PDF 或图片",
             "hint": "请选择 PDF、PNG、JPG、WEBP 或 TIFF 文件。",
             "retryable": False,
         }
-    if "no uploaded files" in lower:
+    if isinstance(exc, NoUploadedFiles):
         return {
             "code": "file_required",
             "message": "没有可处理的上传文件",
             "hint": "重新选择文件后再提交。",
             "retryable": False,
         }
-    if "api key is not configured" in lower:
+    if isinstance(exc, ProviderNotConfigured):
         return {
             "code": "missing_provider",
             "message": "翻译服务未配置",
             "hint": "在 .env 中配置对应 API key 后重启服务。",
             "retryable": True,
         }
-    if "tesseract" in lower:
+    if isinstance(exc, MissingDependency):
         return {
             "code": "missing_dependency",
             "message": "OCR 依赖不可用",
-            "hint": "运行 brew install tesseract tesseract-lang 后重启服务。",
+            "hint": exc.install_hint,
             "retryable": True,
         }
     return {
@@ -317,7 +338,7 @@ def _run_pdf_edit(job: Job, inputs: list[Path], output_dir: Path) -> Path:
     options = job.options
     pdfs = [path for path in inputs if path.suffix.lower() == ".pdf"]
     if not pdfs:
-        raise ValueError("PDF edit requires PDF input")
+        raise PdfInputRequired("PDF edit requires PDF input")
     action = options.get("action", "edit")
     if action == "merge" or len(pdfs) > 1:
         return merge_pdfs(pdfs, output_dir / "merged.pdf")
@@ -330,8 +351,13 @@ def _run_pdf_edit(job: Job, inputs: list[Path], output_dir: Path) -> Path:
 def _run_pdf_translate(store: JobStore, job: Job, inputs: list[Path], output_dir: Path) -> Path:
     source = next((path for path in inputs if path.suffix.lower() == ".pdf"), None)
     if source is None:
-        raise ValueError("PDF translation requires PDF input")
+        raise PdfInputRequired("PDF translation requires PDF input")
     options = job.options
+
+    def log_layout_fallback(detail: str) -> None:
+        store.log(job, f"版式引擎不可用，回退到文本重建: {detail}")
+        store.raise_if_cancelled(job)
+
     return translate_pdf(
         source,
         output_dir / f"{source.stem}-translated.pdf",
@@ -341,8 +367,14 @@ def _run_pdf_translate(store: JobStore, job: Job, inputs: list[Path], output_dir
         pages_spec=options.get("pages", ""),
         output_mode=options.get("output_mode", "translated"),
         glossary=options.get("glossary", ""),
-        on_layout_fallback=lambda detail: store.log(job, f"版式引擎不可用，回退到文本重建: {detail}"),
+        on_layout_fallback=log_layout_fallback,
+        on_progress=lambda done, total: _track_translation_progress(store, job, done, total),
     )
+
+
+def _track_translation_progress(store: JobStore, job: Job, done: int, total: int) -> None:
+    store.set_progress(job, 20 + round(70 * done / total), message=f"已翻译 {done}/{total} 页")
+    store.raise_if_cancelled(job)
 
 
 def _run_ocr(store: JobStore, job: Job, inputs: list[Path], output_dir: Path) -> Path:
@@ -356,6 +388,7 @@ def _run_ocr(store: JobStore, job: Job, inputs: list[Path], output_dir: Path) ->
             output_dir,
             language=options.get("language", "chi_sim+eng"),
             output_format=options.get("output_format", "searchable_pdf"),
+            cancel_check=lambda: store.raise_if_cancelled(job),
         ),
         output_dir / "ocr-files.zip",
     )

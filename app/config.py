@@ -8,6 +8,7 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DOCWORK_DATA_DIR", APP_ROOT / "work" / "docwork-data"))
 MAX_UPLOAD_BYTES = int(os.environ.get("DOCWORK_MAX_UPLOAD_MB", "200")) * 1024 * 1024
 JOB_TTL_HOURS = int(os.environ.get("DOCWORK_JOB_TTL_HOURS", "24"))
+MAX_CONCURRENT_JOBS = int(os.environ.get("DOCWORK_MAX_JOBS", "2"))
 
 OFFICE_EXTENSIONS = {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}

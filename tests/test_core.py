@@ -164,7 +164,7 @@ class CoreBehaviorTests(unittest.TestCase):
             Path(command[-1]).write_bytes(b"%PDF-1.7\n")
 
         with tempfile.TemporaryDirectory() as tmp, patch("app.ocr.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), patch(
-            "app.ocr.subprocess.run", side_effect=fake_run
+            "app.ocr.run_tracked", side_effect=fake_run
         ) as run:
             root = Path(tmp)
             source = root / "scan.pdf"
@@ -188,7 +188,7 @@ class CoreBehaviorTests(unittest.TestCase):
             make_pdf(source)
             output = ocr_document(source, root / "out")
 
-        fallback.assert_called_once_with(source, output, "chi_sim+eng")
+        fallback.assert_called_once_with(source, output, "chi_sim+eng", None)
 
     def test_pdf_searchable_ocr_falls_back_when_ocrmypdf_fails(self):
         import subprocess
@@ -199,14 +199,14 @@ class CoreBehaviorTests(unittest.TestCase):
             raise subprocess.CalledProcessError(1, command, stderr="boom")
 
         with tempfile.TemporaryDirectory() as tmp, patch("app.ocr.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), patch(
-            "app.ocr.subprocess.run", side_effect=fake_run
+            "app.ocr.run_tracked", side_effect=fake_run
         ), patch("app.ocr._ocr_to_searchable_pdf") as fallback:
             root = Path(tmp)
             source = root / "scan.pdf"
             make_pdf(source)
             output = ocr_document(source, root / "out")
 
-        fallback.assert_called_once_with(source, output, "chi_sim+eng")
+        fallback.assert_called_once_with(source, output, "chi_sim+eng", None)
 
     def test_markitdown_extraction_enables_plugins(self):
         from app.conversion import extract_markdown
@@ -444,6 +444,183 @@ class CoreBehaviorTests(unittest.TestCase):
 
             merged_sources = [path.name for path in merge.call_args.args[0]]
             self.assertEqual(merged_sources, ["b.pdf", "a.pdf", "c.pdf"])
+
+    def test_error_classification_uses_exception_types(self):
+        from app.errors import MissingDependency, NoUploadedFiles, OcrInputRequired, PdfInputRequired, ProviderNotConfigured
+        from app.main import classify_error
+
+        self.assertEqual(classify_error(PdfInputRequired("x"))["code"], "pdf_input_required")
+        self.assertEqual(classify_error(OcrInputRequired("x"))["code"], "ocr_input_required")
+        self.assertEqual(classify_error(NoUploadedFiles("x"))["code"], "file_required")
+        self.assertEqual(classify_error(ProviderNotConfigured("x"))["code"], "missing_provider")
+        dependency = classify_error(MissingDependency("x", "brew install tesseract"))
+        self.assertEqual(dependency["code"], "missing_dependency")
+        self.assertEqual(dependency["hint"], "brew install tesseract")
+        self.assertEqual(classify_error(RuntimeError("random"))["code"], "task_failed")
+
+    def test_cancel_kills_tracked_subprocess(self):
+        import threading
+        import time
+
+        from app.processes import kill_thread_processes, run_tracked
+
+        outcome: dict[str, object] = {}
+
+        def worker() -> None:
+            try:
+                run_tracked(["sleep", "30"], timeout=60, check=True)
+            except Exception as exc:
+                outcome["exc"] = exc
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        time.sleep(0.3)
+        kill_thread_processes(thread.ident)
+        thread.join(timeout=5)
+
+        self.assertIn("exc", outcome)
+
+    def test_cancel_running_job_kills_its_subprocess(self):
+        import threading
+        import time
+
+        from app.jobs import JobStore
+        from app.processes import run_tracked
+
+        outcome: dict[str, object] = {}
+
+        def worker() -> None:
+            try:
+                run_tracked(["sleep", "30"], timeout=60, check=True)
+            except Exception as exc:
+                outcome["exc"] = exc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JobStore(Path(tmp), ttl_hours=24)
+            job = store.create("ocr", ["scan.pdf"])
+            thread = threading.Thread(target=worker)
+            thread.start()
+            time.sleep(0.3)
+            job.thread_id = thread.ident
+            store.save(job)
+            store.request_cancel(job.id)
+            thread.join(timeout=5)
+
+        self.assertIn("exc", outcome)
+
+    def test_pdf_translation_fallback_translates_pages_concurrently(self):
+        import threading
+        import time
+
+        from app.translation import translate_pdf
+
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def fake_translate(provider, text, source_lang, target_lang, glossary=""):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.08)
+            with lock:
+                active -= 1
+            return f"t:{text}"
+
+        progress: list[tuple[int, int]] = []
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {"DEEPSEEK_API_KEY": "sk-test"}, clear=False
+        ), patch("app.translation.translate_with_layout_engines", side_effect=RuntimeError("x")), patch(
+            "app.translation.translate_text", side_effect=fake_translate
+        ):
+            source = Path(tmp) / "source.pdf"
+            output = Path(tmp) / "translated.pdf"
+            make_pdf(source)
+            result = translate_pdf(source, output, "deepseek", "en", "zh", on_progress=lambda done, total: progress.append((done, total)))
+
+            self.assertEqual(result, output)
+            with fitz.open(output) as doc:
+                self.assertIn("t:", doc[0].get_text())
+
+        self.assertGreater(peak, 1)
+        self.assertEqual(progress, [(1, 3), (2, 3), (3, 3)])
+
+    def test_translate_text_retries_transient_failures(self):
+        import httpx
+
+        from app.translation import TranslationProvider, translate_text
+
+        attempts: list[int] = []
+
+        class FakeResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {self.status_code}",
+                        request=httpx.Request("POST", "https://api.deepseek.com/v1/chat/completions"),
+                        response=httpx.Response(self.status_code),
+                    )
+
+            def json(self) -> dict[str, object]:
+                return {"choices": [{"message": {"content": "译文"}}]}
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def post(self, *args, **kwargs):
+                attempts.append(1)
+                return FakeResponse(200 if len(attempts) >= 3 else 429)
+
+        provider = TranslationProvider("deepseek", "https://api.deepseek.com/v1", "sk-test", "deepseek-chat")
+        with patch("httpx.Client", FakeClient), patch("app.translation.time.sleep"):
+            result = translate_text(provider, "hello", "en", "zh")
+
+        self.assertEqual(result, "译文")
+        self.assertEqual(len(attempts), 3)
+
+    def test_babeldoc_output_finder_ignores_stale_files(self):
+        import time
+
+        from app.translation_engines import _find_babeldoc_output
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stale = root / "report-zh.pdf"
+            stale.write_bytes(b"%PDF-1.7\n")
+            os.utime(stale, (1_000_000, 1_000_000))
+            fresh = root / "report-translated.pdf"
+            fresh.write_bytes(b"%PDF-1.7\n")
+
+            found = _find_babeldoc_output(root, "report", "translated", since=time.time())
+
+        self.assertEqual(found, fresh)
+
+    def test_glossary_csv_quotes_commas(self):
+        import csv
+
+        from app.translation_engines import _write_glossary_csv
+
+        path = _write_glossary_csv("hello, world => 你好，世界")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                rows = list(csv.reader(handle))
+        finally:
+            path.unlink(missing_ok=True)
+
+        self.assertEqual(rows[0], ["source", "target"])
+        self.assertEqual(rows[1], ["hello", "world => 你好，世界"])
 
     def test_readme_documents_ocr_and_enhanced_engines(self):
         root = Path(__file__).resolve().parents[1]

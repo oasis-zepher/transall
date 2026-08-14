@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import csv
 import shutil
-import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Protocol
 
 import fitz
+
+from .processes import run_tracked
 
 
 class ProviderLike(Protocol):
@@ -94,13 +97,14 @@ def translate_with_babeldoc(
         glossary_path = _write_glossary_csv(glossary)
         command.extend(["--glossary-files", str(glossary_path)])
 
+    started = time.time()
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True, timeout=1800)
+        run_tracked(command, 1800, check=True)
     finally:
         if glossary_path:
             glossary_path.unlink(missing_ok=True)
 
-    generated = _find_babeldoc_output(output.parent, source.stem, output_mode)
+    generated = _find_babeldoc_output(output.parent, source.stem, output_mode, since=started)
     if generated is None:
         raise RuntimeError("BabelDOC did not produce the expected PDF output")
     if generated != output:
@@ -110,8 +114,10 @@ def translate_with_babeldoc(
     return output
 
 
-def _find_babeldoc_output(output_dir: Path, source_stem: str, output_mode: str) -> Path | None:
+def _find_babeldoc_output(output_dir: Path, source_stem: str, output_mode: str, since: float | None = None) -> Path | None:
     candidates = sorted(output_dir.glob(f"{source_stem}*.pdf"), key=lambda path: path.stat().st_mtime, reverse=True)
+    if since is not None:
+        candidates = [candidate for candidate in candidates if candidate.stat().st_mtime >= since - 1]
     if output_mode == "bilingual":
         preferred_tokens = ("dual", "bilingual")
     else:
@@ -124,10 +130,11 @@ def _find_babeldoc_output(output_dir: Path, source_stem: str, output_mode: str) 
 
 
 def _write_glossary_csv(glossary: str) -> Path:
-    handle = tempfile.NamedTemporaryFile("w", suffix=".csv", encoding="utf-8", delete=False)
+    handle = tempfile.NamedTemporaryFile("w", suffix=".csv", encoding="utf-8", delete=False, newline="")
     path = Path(handle.name)
     with handle:
-        handle.write("source,target\n")
+        writer = csv.writer(handle)
+        writer.writerow(["source", "target"])
         for line in glossary.splitlines():
             cleaned = line.strip()
             if not cleaned:
@@ -140,7 +147,7 @@ def _write_glossary_csv(glossary: str) -> Path:
                 source, target = cleaned.split("=", 1)
             else:
                 source, target = cleaned, cleaned
-            handle.write(f"{source.strip()},{target.strip()}\n")
+            writer.writerow([source.strip(), target.strip()])
     return path
 
 

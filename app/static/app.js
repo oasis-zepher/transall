@@ -2,6 +2,8 @@ const form = document.querySelector("#jobForm");
 const kind = document.querySelector("#kind");
 const log = document.querySelector("#log");
 const jobState = document.querySelector("#jobState");
+const progressTrack = document.querySelector("#progressTrack");
+const progressBar = document.querySelector("#progressBar");
 const download = document.querySelector("#download");
 const preview = document.querySelector("#preview");
 const providerStatus = document.querySelector("#providerStatus");
@@ -561,6 +563,12 @@ function renderJob(job) {
   jobState.textContent = job.message || job.stage || job.status;
   jobState.className = `job-state ${job.status === "done" ? "is-ready" : ""} ${["failed", "cancelled"].includes(job.status) ? "is-error" : ""}`;
   cancelButton.hidden = !["queued", "running"].includes(job.status);
+  if (Number.isFinite(job.progress)) {
+    progressTrack.hidden = false;
+    progressBar.style.width = `${Math.max(0, Math.min(100, job.progress))}%`;
+  } else {
+    progressTrack.hidden = true;
+  }
   log.textContent = [
     Number.isFinite(job.progress) ? `进度: ${job.progress}%` : "",
     job.stage ? `阶段: ${job.stage}` : "",

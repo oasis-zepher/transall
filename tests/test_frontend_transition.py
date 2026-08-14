@@ -264,8 +264,8 @@ class FrontendTransitionTests(unittest.TestCase):
     def test_static_assets_are_versioned_after_drag_runtime_changes(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/styles.css?v=workbench-5", html)
-        self.assertIn("/static/app.js?v=workbench-5", html)
+        self.assertIn("/static/styles.css?v=workbench-6", html)
+        self.assertIn("/static/app.js?v=workbench-6", html)
 
     def test_diagnostics_surface_is_wired_to_route_panel_and_submit_gate(self):
         html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
@@ -355,8 +355,8 @@ class FrontendTransitionTests(unittest.TestCase):
             self.assertIn(class_name, html)
             self.assertIn(f".{class_name}", css)
 
-        self.assertIn("/static/styles.css?v=workbench-5", html)
-        self.assertIn("/static/app.js?v=workbench-5", html)
+        self.assertIn("/static/styles.css?v=workbench-6", html)
+        self.assertIn("/static/app.js?v=workbench-6", html)
 
     def test_document_workbench_tokens_exist(self):
         css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
@@ -392,6 +392,18 @@ class FrontendTransitionTests(unittest.TestCase):
         self.assertIn("position: sticky", active_orbit_block)
         self.assertIn("top: clamp", active_orbit_block)
         self.assertIn("align-self: start", active_orbit_block)
+
+    def test_job_progress_bar_is_wired(self):
+        html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
+        css = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
+        js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="progressBar"', html)
+        self.assertIn('id="progressTrack"', html)
+        self.assertIn(".progress-fill", css)
+        self.assertIn(".progress-track", css)
+        self.assertIn("progressBar.style.width", js)
+        self.assertIn("progressTrack.hidden", js)
 
     def test_route_entry_uses_original_orbit_transition(self):
         js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")

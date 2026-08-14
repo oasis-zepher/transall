@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 
 from PIL import Image
@@ -9,6 +8,7 @@ from PIL import Image
 from .config import HTML_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, OFFICE_EXTENSIONS, PDF_EXTENSIONS, TEXT_EXTENSIONS
 from .browser_pdf import render_browser_pdf
 from .ocr import ocr_to_markdown
+from .processes import run_tracked
 
 
 def convert_to_pdf(source: Path, output_dir: Path) -> Path:
@@ -55,12 +55,10 @@ def _libreoffice_to_pdf(source: Path, output_dir: Path) -> Path:
     soffice = shutil.which("soffice")
     if not soffice:
         raise RuntimeError("LibreOffice command `soffice` was not found")
-    subprocess.run(
+    run_tracked(
         [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(source)],
+        120,
         check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
     )
     target = output_dir / f"{source.stem}.pdf"
     if not target.exists():

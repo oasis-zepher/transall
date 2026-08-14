@@ -9,11 +9,19 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
+For a pinned, reproducible install use the lock file instead:
+
+```bash
+python -m pip install -r requirements.lock
+```
+
 Open:
 
 ```text
 http://127.0.0.1:8765
 ```
+
+At most 2 jobs run concurrently by default; override with `DOCWORK_MAX_JOBS`.
 
 ## Translation Providers
 

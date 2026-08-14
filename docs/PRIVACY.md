@@ -8,7 +8,7 @@ Transall is designed as a local macOS document workbench. It does not require a 
 
 ## Files and task data
 
-Files selected for conversion, OCR, or PDF editing are processed on the Mac. Working copies, previews, logs, and results are stored in Transall's local application container. Finished task data is automatically removed after 24 hours. Users can also delete the current task data from the app. Original files selected by the user are not deleted or overwritten.
+Files selected for conversion, OCR, or PDF editing are processed on the Mac. Working copies, previews, logs, and results are stored in Transall's local application container. Finished task data is automatically removed after 24 hours. Users can also delete the current task data from the app. Processing does not delete or modify the selected original files. Saving a result is a separate user-directed action: Transall rejects an original input or a link to it while the current selection remains available, and macOS asks for confirmation before replacing any other existing destination.
 
 ## Translation services
 
@@ -34,4 +34,4 @@ Transall 默认在本机处理文档，不要求注册账号，不包含广告�
 
 只有用户主动执行翻译任务时，翻译所需的文档文字才会直接发送给用户选择的 DeepSeek 或 OpenAI；PDF 原文件不会上传。服务商可能按照用户的服务商账号及其隐私政策关联或保留请求。API Key 保存在 macOS 钥匙串中，不写入项目文件、任务日志或接口响应。
 
-任务副本、结果、日志和预览保存在本机 App 容器内，保留 24 小时，也可以在 App 中主动删除。原始文件不会被删除或覆盖。
+任务副本、结果、日志和预览保存在本机 App 容器内，保留 24 小时，也可以在 App 中主动删除。处理过程不会删除或修改所选原始文件。保存结果是用户单独发起的操作：本次选择仍保留在 App 中时，Transall 会拒绝原始输入及其文件链接；替换其他已有目标文件前，macOS 会要求用户确认。

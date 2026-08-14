@@ -52,7 +52,7 @@ export default function PrivacyPolicy() {
           <section>
             <h3>2. 文件与任务数据</h3>
             <p>
-              PDF 整理、OCR、文字提取和格式转换在 Mac 本机完成。App 会在自身容器内保存工作副本、结果、预览和日志，用于完成任务及恢复未完成任务。任务元数据只保留当前转换实际使用的设置，不会把其他转换路径中填写的术语表、水印等内容附带到该任务。任务数据超过 24 小时后，会在启动 App 时及 App 运行期间定期自动删除；正在处理的任务不会被运行期清理。用户也可以在结果区立即删除。原始文件不会被删除或覆盖。
+              PDF 整理、OCR、文字提取和格式转换在 Mac 本机完成。App 会在自身容器内保存工作副本、结果、预览和日志，用于完成任务及恢复未完成任务。任务元数据只保留当前转换实际使用的设置，不会把其他转换路径中填写的术语表、水印等内容附带到该任务。任务数据超过 24 小时后，会在启动 App 时及 App 运行期间定期自动删除；正在处理的任务不会被运行期清理。用户也可以在结果区立即删除。处理过程不会删除或修改所选原始文件。保存结果是用户单独发起的操作：本次选择仍保留在 App 中时，Transall 会拒绝原始输入及其文件链接；替换其他已有目标文件前，macOS 会要求用户确认。
             </p>
           </section>
 
@@ -121,7 +121,7 @@ export default function PrivacyPolicy() {
           <section>
             <h3>2. Local files and retention</h3>
             <p>
-              PDF editing, OCR, text extraction, and format conversion run locally on the Mac. Working copies, results, previews, and logs stay in the app container. Task metadata retains only settings used by the selected conversion; values entered for other routes, such as a glossary or watermark, are not carried into that local task. Task data more than 24 hours old is removed when the app launches and during hourly checks while it remains open; active processing is retained. Users can also delete the current task immediately. Original files are never deleted or overwritten.
+              PDF editing, OCR, text extraction, and format conversion run locally on the Mac. Working copies, results, previews, and logs stay in the app container. Task metadata retains only settings used by the selected conversion; values entered for other routes, such as a glossary or watermark, are not carried into that local task. Task data more than 24 hours old is removed when the app launches and during hourly checks while it remains open; active processing is retained. Users can also delete the current task immediately. Processing does not delete or modify selected original files. Saving a result is a separate user-directed action: Transall rejects an original input or a link to it while the current selection remains available, and macOS asks for confirmation before replacing any other existing destination.
             </p>
           </section>
 

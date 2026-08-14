@@ -5,6 +5,17 @@ import { publicationConfig } from "../publication-config";
 export const metadata: Metadata = {
   title: "隐私政策",
   description: "Transall 的本地文件处理、翻译服务、数据保留和 API Key 存储说明。",
+  openGraph: {
+    title: "Transall 隐私政策",
+    description: "Transall 的本地文件处理、翻译服务、数据保留和 API Key 存储说明。",
+    images: [],
+  },
+  twitter: {
+    card: "summary",
+    title: "Transall 隐私政策",
+    description: "Transall 的本地文件处理、翻译服务、数据保留和 API Key 存储说明。",
+    images: [],
+  },
 };
 
 export default function PrivacyPolicy() {

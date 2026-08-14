@@ -5,6 +5,17 @@ import { publicationConfig } from "../publication-config";
 export const metadata: Metadata = {
   title: "关于发布者",
   description: "Transall 产品与发布者信息。",
+  openGraph: {
+    title: "安静、明确的本地生产力软件",
+    description: "Transall 产品与个人发布者信息。",
+    images: [],
+  },
+  twitter: {
+    card: "summary",
+    title: "安静、明确的本地生产力软件",
+    description: "Transall 产品与个人发布者信息。",
+    images: [],
+  },
 };
 
 export default function AboutPublisher() {

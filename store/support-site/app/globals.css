@@ -5,7 +5,7 @@
   --panel: #fbfaf6;
   --ink: #262a27;
   --ink-soft: #555c57;
-  --muted: #7b827d;
+  --muted: #68716b;
   --line: #d7d9d1;
   --line-strong: #bec3b9;
   --accent: #b94e38;
@@ -80,6 +80,9 @@ nav {
 }
 
 nav a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
   color: var(--muted);
   text-decoration: none;
 }
@@ -278,6 +281,14 @@ footer {
   display: flex;
   gap: 12px;
   font-size: 12px;
+}
+
+.language-links a {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
 }
 
 .policy-content {

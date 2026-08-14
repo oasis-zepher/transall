@@ -21,3 +21,5 @@ npm test
 ```
 
 The site has no account system, tracking, analytics, database, or file upload. Its root route is the App Store support URL, `/privacy` is the privacy-policy URL, and `/about` identifies the individual publisher.
+
+`public/og.png` is the site-wide social preview for the support homepage, and `public/icon.png` reuses the native App icon. The privacy and publisher pages intentionally use their own text metadata without inheriting the social image.

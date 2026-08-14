@@ -52,7 +52,7 @@ struct ResultWorkbenchView: View {
       VStack(alignment: .leading, spacing: 3) {
         SectionLabel(text: "Output")
         Text("任务输出")
-          .font(.system(size: 18, weight: .semibold, design: .serif))
+          .font(.system(.title3, design: .serif, weight: .semibold))
       }
       Spacer()
       if let job = model.currentJob {
@@ -62,7 +62,7 @@ struct ResultWorkbenchView: View {
             .frame(width: 6, height: 6)
           Text(statusLabel(job.status))
         }
-        .font(.system(size: 10, weight: .bold))
+        .font(.caption2.weight(.bold))
         .foregroundStyle(statusColor(job.status))
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -70,7 +70,7 @@ struct ResultWorkbenchView: View {
         .clipShape(Capsule())
       } else {
         Text("未开始")
-          .font(.system(size: 10, weight: .semibold))
+          .font(.caption2.weight(.semibold))
           .foregroundStyle(TransallTheme.muted)
       }
     }
@@ -85,7 +85,7 @@ struct ResultWorkbenchView: View {
             [warning.message, warning.hint].compactMap { $0 }.joined(separator: " "),
             systemImage: "exclamationmark.triangle.fill"
           )
-          .font(.system(size: 10))
+          .font(.caption2)
           .foregroundStyle(TransallTheme.warning)
         }
       }
@@ -99,10 +99,10 @@ struct ResultWorkbenchView: View {
   private var logPane: some View {
     VStack(alignment: .leading, spacing: 7) {
       Text("运行日志")
-        .font(.system(size: 11, weight: .semibold))
+        .font(.caption.weight(.semibold))
       ScrollView {
         Text(model.logText)
-          .font(.system(size: 10, design: .monospaced))
+          .font(.system(.caption2, design: .monospaced))
           .foregroundStyle(TransallTheme.inkSoft)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -122,14 +122,14 @@ struct ResultWorkbenchView: View {
   private var artifactPane: some View {
     VStack(alignment: .leading, spacing: 9) {
       Text("结果文件")
-        .font(.system(size: 11, weight: .semibold))
+        .font(.caption.weight(.semibold))
 
       if let job = model.currentJob, job.status == "done", let output = job.output {
         Image(systemName: "doc.circle.fill")
-          .font(.system(size: 24))
+          .font(.title2)
           .foregroundStyle(TransallTheme.source)
         Text(output)
-          .font(.system(size: 10, weight: .medium))
+          .font(.caption2.weight(.medium))
           .lineLimit(3)
         Button(model.isSaving ? "正在保存" : "保存结果…") {
           Task { await model.saveResult() }
@@ -147,12 +147,12 @@ struct ResultWorkbenchView: View {
         Button("删除任务数据", role: .destructive) {
           viewState.showDeleteConfirmation = true
         }
-        .font(.system(size: 10, weight: .medium))
+        .font(.caption2.weight(.medium))
         .buttonStyle(.plain)
         .foregroundStyle(TransallTheme.danger)
       } else {
         Text("完成后可在这里保存，不会覆盖原文件。")
-          .font(.system(size: 10))
+          .font(.caption2)
           .foregroundStyle(TransallTheme.muted)
           .fixedSize(horizontal: false, vertical: true)
       }

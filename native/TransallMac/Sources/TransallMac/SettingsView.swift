@@ -34,9 +34,9 @@ struct SettingsView: View {
     VStack(alignment: .leading, spacing: 20) {
       VStack(alignment: .leading, spacing: 4) {
         Text("翻译服务")
-          .font(.system(size: 20, weight: .semibold, design: .serif))
+          .font(.system(.title2, design: .serif, weight: .semibold))
         Text("密钥保存在 macOS 钥匙串中，不写入项目文件或任务日志。")
-          .font(.system(size: 11))
+          .font(.caption)
           .foregroundStyle(TransallTheme.muted)
       }
 
@@ -48,12 +48,12 @@ struct SettingsView: View {
       }
 
       Text("只有执行翻译任务时，需要翻译的文档内容才会发送给你选择的服务商。")
-        .font(.system(size: 11))
+        .font(.caption)
         .foregroundStyle(TransallTheme.warning)
 
       if !settings.message.isEmpty {
         Text(settings.message)
-          .font(.system(size: 11))
+          .font(.caption)
           .foregroundStyle(TransallTheme.inkSoft)
           .textSelection(.enabled)
       }

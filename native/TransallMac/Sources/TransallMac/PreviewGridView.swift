@@ -9,7 +9,7 @@ struct PreviewGridView: View {
         SectionLabel(text: "PDF Preview")
         Spacer()
         Text("前 \(pages.count) 页")
-          .font(.system(size: 9))
+          .font(.caption2)
           .foregroundStyle(TransallTheme.muted)
       }
 
@@ -31,7 +31,7 @@ struct PreviewGridView: View {
                     .background(Color.white)
                 case .failure:
                   Image(systemName: "doc.richtext")
-                    .font(.system(size: 28, weight: .light))
+                    .font(.title.weight(.light))
                     .foregroundStyle(TransallTheme.lineStrong)
                     .frame(width: 142, height: 190)
                 @unknown default:
@@ -45,7 +45,7 @@ struct PreviewGridView: View {
               .accessibilityLabel("第 \(page.page) 页预览")
 
               Text("第 \(page.page) 页")
-                .font(.system(size: 9, weight: .medium))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(TransallTheme.muted)
             }
           }

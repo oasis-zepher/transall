@@ -41,11 +41,11 @@ struct InputWorkbenchView: View {
       VStack(alignment: .leading, spacing: 3) {
         SectionLabel(text: "Input")
         Text(model.route?.enabled == true ? model.routeTitle : "选择路径后上传")
-          .font(.system(size: 18, weight: .semibold, design: .serif))
+          .font(.system(.title3, design: .serif, weight: .semibold))
       }
       Spacer()
       Text("\(model.documents.count) FILES")
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .font(.system(.caption2, design: .rounded, weight: .semibold))
         .tracking(0.7)
         .foregroundStyle(TransallTheme.muted)
     }
@@ -55,12 +55,12 @@ struct InputWorkbenchView: View {
     VStack(spacing: model.documents.isEmpty ? 7 : 10) {
       if model.documents.isEmpty {
         Image(systemName: "doc.badge.plus")
-          .font(.system(size: 23, weight: .light))
+          .font(.title2.weight(.light))
           .foregroundStyle(TransallTheme.accent)
         Text("拖入文件，或点击选择")
-          .font(.system(size: 13, weight: .semibold))
+          .font(.callout.weight(.semibold))
         Text(fileHint)
-          .font(.system(size: 10))
+          .font(.caption2)
           .foregroundStyle(TransallTheme.muted)
           .multilineTextAlignment(.center)
       } else {
@@ -70,10 +70,10 @@ struct InputWorkbenchView: View {
               .foregroundStyle(TransallTheme.source)
             VStack(alignment: .leading, spacing: 2) {
               Text(document.name)
-                .font(.system(size: 11, weight: .medium))
+                .font(.caption.weight(.medium))
                 .lineLimit(1)
               Text(document.formattedSize)
-                .font(.system(size: 9))
+                .font(.caption2)
                 .foregroundStyle(TransallTheme.muted)
             }
             Spacer()
@@ -81,7 +81,7 @@ struct InputWorkbenchView: View {
               model.removeDocument(document)
             } label: {
               Image(systemName: "xmark")
-                .font(.system(size: 9, weight: .bold))
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(TransallTheme.muted)
                 .padding(5)
             }
@@ -152,7 +152,7 @@ struct InputWorkbenchView: View {
         advancedOptions(route)
           .padding(.top, 12)
       }
-      .font(.system(size: 11, weight: .semibold))
+      .font(.caption.weight(.semibold))
       .foregroundStyle(TransallTheme.inkSoft)
     }
   }
@@ -181,7 +181,7 @@ struct InputWorkbenchView: View {
       } icon: {
         Image(systemName: "network")
       }
-      .font(.system(size: 10))
+      .font(.caption2)
       .foregroundStyle(TransallTheme.warning)
       .padding(9)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -280,7 +280,7 @@ struct InputWorkbenchView: View {
 
       if let limit = model.capabilities?.limits.maxUploadMB {
         Text("上限 \(limit) MB")
-          .font(.system(size: 9))
+          .font(.caption2)
           .foregroundStyle(TransallTheme.muted)
       }
     }
@@ -288,7 +288,7 @@ struct InputWorkbenchView: View {
 
   private var unavailableHint: some View {
     Text(model.selection.target == nil ? "在左侧选择源格式和目标格式。" : "这条转换路径尚未接入，请重新选择。")
-      .font(.system(size: 11))
+      .font(.caption)
       .foregroundStyle(TransallTheme.muted)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.vertical, 4)

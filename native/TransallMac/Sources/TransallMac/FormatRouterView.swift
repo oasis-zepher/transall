@@ -10,7 +10,7 @@ struct FormatRouterView: View {
         SectionLabel(text: "Format route")
         Spacer()
         Text(selectionHint)
-          .font(.system(size: 10))
+          .font(.caption2)
           .foregroundStyle(TransallTheme.muted)
       }
 
@@ -87,10 +87,11 @@ struct FormatRouterView: View {
   private func routeSlot(title: String, format: String?, color: Color) -> some View {
     VStack(spacing: 2) {
       Text(title)
-        .font(.system(size: 9, weight: .medium))
+        .font(.caption2.weight(.medium))
         .foregroundStyle(TransallTheme.muted)
       Text(format.map { model.capabilities?.formats[$0]?.label ?? fallbackLabel(for: $0) } ?? "待选择")
-        .font(.system(size: 12, weight: .bold))
+        .font(.callout.weight(.bold))
+        .minimumScaleFactor(0.75)
         .foregroundStyle(format == nil ? TransallTheme.lineStrong : color)
     }
     .frame(maxWidth: .infinity)
@@ -104,15 +105,15 @@ struct FormatRouterView: View {
       VStack(alignment: .leading, spacing: 13) {
         HStack(alignment: .firstTextBaseline) {
           Text(model.route?.title ?? "路径详情")
-            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .font(.system(.headline, design: .serif, weight: .semibold))
           Spacer()
           Text(routeState)
-            .font(.system(size: 10, weight: .bold))
+            .font(.caption2.weight(.bold))
             .foregroundStyle(routeStateColor)
         }
 
         Text(routeSummary)
-          .font(.system(size: 11))
+          .font(.caption)
           .foregroundStyle(TransallTheme.inkSoft)
           .fixedSize(horizontal: false, vertical: true)
 
@@ -138,11 +139,11 @@ struct FormatRouterView: View {
   private func fact(label: String, value: String) -> some View {
     HStack(alignment: .top, spacing: 10) {
       Text(label)
-        .font(.system(size: 10, weight: .medium))
+        .font(.caption2.weight(.medium))
         .foregroundStyle(TransallTheme.muted)
         .frame(width: 34, alignment: .leading)
       Text(value)
-        .font(.system(size: 10))
+        .font(.caption2)
         .foregroundStyle(TransallTheme.inkSoft)
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
@@ -155,13 +156,13 @@ struct FormatRouterView: View {
     return HStack(alignment: .top, spacing: 8) {
       Image(systemName: available ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
         .foregroundStyle(available ? TransallTheme.source : TransallTheme.warning)
-        .font(.system(size: 11))
+        .font(.caption)
       VStack(alignment: .leading, spacing: 2) {
         Text(diagnostic?.label ?? requirement.name)
-          .font(.system(size: 10, weight: .semibold))
+          .font(.caption2.weight(.semibold))
         if !available, let hint = diagnostic?.installHint, !hint.isEmpty {
           Text(hint)
-            .font(.system(size: 9))
+            .font(.caption2)
             .foregroundStyle(TransallTheme.muted)
             .textSelection(.enabled)
         }

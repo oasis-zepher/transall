@@ -76,7 +76,7 @@ struct SectionLabel: View {
 
   var body: some View {
     Text(text.uppercased())
-      .font(.system(size: 11, weight: .semibold, design: .rounded))
+      .font(.system(.caption, design: .rounded, weight: .semibold))
       .tracking(1.5)
       .foregroundStyle(TransallTheme.muted)
   }

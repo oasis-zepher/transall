@@ -61,11 +61,11 @@ struct ContentView: View {
     HStack(spacing: 18) {
       VStack(alignment: .leading, spacing: 1) {
         Text("LOCAL DOCUMENT ROUTER")
-          .font(.system(size: 9, weight: .semibold, design: .rounded))
+          .font(.system(.caption2, design: .rounded, weight: .semibold))
           .tracking(1.7)
           .foregroundStyle(TransallTheme.muted)
         Text("transall")
-          .font(.system(size: 25, weight: .semibold, design: .serif))
+          .font(.system(.title, design: .serif, weight: .semibold))
       }
 
       Rectangle()
@@ -74,10 +74,10 @@ struct ContentView: View {
 
       VStack(alignment: .leading, spacing: 2) {
         Text(model.routeTitle)
-          .font(.system(size: 13, weight: .semibold))
+          .font(.callout.weight(.semibold))
           .lineLimit(1)
         Text(routeStep)
-          .font(.system(size: 11))
+          .font(.caption)
           .foregroundStyle(TransallTheme.muted)
       }
 
@@ -88,7 +88,7 @@ struct ContentView: View {
           .fill(serviceColor)
           .frame(width: 7, height: 7)
         Text(model.backend.state.label)
-          .font(.system(size: 11, weight: .medium))
+          .font(.caption.weight(.medium))
           .foregroundStyle(TransallTheme.inkSoft)
 
         if case .failed = model.backend.state {
@@ -130,7 +130,7 @@ struct ContentView: View {
 struct QuietButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 11, weight: .semibold))
+      .font(.caption.weight(.semibold))
       .foregroundStyle(TransallTheme.inkSoft)
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
@@ -148,7 +148,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 12, weight: .semibold))
+      .font(.callout.weight(.semibold))
       .foregroundStyle(Color.white.opacity(isEnabled ? 1 : 0.72))
       .padding(.horizontal, 16)
       .padding(.vertical, 9)

@@ -2317,6 +2317,77 @@ struct ModelsTests {
   }
 
   @Test
+  func markdownExtractionPreservesPageAndDocumentOrder() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-markdown-stream-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let editRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let markdownRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "extract_markdown" && $0.source == "pdf" })
+    var pagePDFs: [URL] = []
+    for (index, marker) in ["STREAM-FIRST", "STREAM-SECOND", "STREAM-THIRD"].enumerated() {
+      let text = temporary.appendingPathComponent("stream-\(index + 1).txt")
+      let pdf = temporary.appendingPathComponent("stream-\(index + 1).pdf")
+      try Data(marker.utf8).write(to: text, options: .atomic)
+      _ = try await NativeDocumentProcessor.process(
+        route: textRoute, inputs: [text], options: JobOptions(), outputURL: pdf, apiKey: nil)
+      pagePDFs.append(pdf)
+    }
+
+    var mergeOptions = JobOptions()
+    mergeOptions.editAction = "merge"
+    let twoPagePDF = temporary.appendingPathComponent("two-pages.pdf")
+    _ = try await NativeDocumentProcessor.process(
+      route: editRoute, inputs: Array(pagePDFs.prefix(2)), options: mergeOptions,
+      outputURL: twoPagePDF, apiKey: nil)
+
+    let output = temporary.appendingPathComponent("output.md")
+    _ = try await NativeDocumentProcessor.process(
+      route: markdownRoute, inputs: [twoPagePDF, pagePDFs[2]], options: JobOptions(),
+      outputURL: output, apiKey: nil)
+
+    let markdown = try String(contentsOf: output, encoding: .utf8)
+    let first = try #require(markdown.range(of: "STREAM-FIRST"))
+    let second = try #require(markdown.range(of: "STREAM-SECOND"))
+    let third = try #require(markdown.range(of: "STREAM-THIRD"))
+    #expect(first.lowerBound < second.lowerBound)
+    #expect(second.lowerBound < third.lowerBound)
+    #expect(markdown[first.upperBound..<second.lowerBound].contains("---"))
+    #expect(!markdown[second.upperBound..<third.lowerBound].contains("---"))
+  }
+
+  @Test
+  func ocrTextOutputPreservesPageBoundariesWhileStreaming() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-ocr-text-stream-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let first = temporary.appendingPathComponent("first.png")
+    let second = temporary.appendingPathComponent("second.png")
+    try writeTestImage(to: first, color: CGColor(gray: 1, alpha: 1))
+    try writeTestImage(to: second, color: CGColor(gray: 0.95, alpha: 1))
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "ocr" && $0.source == "image" })
+    var options = JobOptions()
+    options.ocrLanguage = "en-US"
+    options.ocrOutputFormat = "text"
+    let output = temporary.appendingPathComponent("output.txt")
+
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [first, second], options: options, outputURL: output, apiKey: nil)
+
+    #expect(try String(contentsOf: output, encoding: .utf8) == "\n\n")
+  }
+
+  @Test
   func imageLoadingAppliesOrientationMetadata() throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-orientation-test-\(UUID().uuidString).jpg")

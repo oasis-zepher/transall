@@ -331,6 +331,34 @@ enum NativeDocumentProcessor {
     let box: CGRect
   }
 
+  private struct IncrementalUTF8Writer {
+    private let handle: FileHandle
+    private var hasEntry = false
+
+    init(outputURL: URL) throws {
+      try Data().write(to: outputURL, options: .atomic)
+      handle = try FileHandle(forWritingTo: outputURL)
+    }
+
+    mutating func append(_ text: String, separator: String) throws {
+      if hasEntry, !separator.isEmpty {
+        try handle.write(contentsOf: Data(separator.utf8))
+      }
+      if !text.isEmpty {
+        try handle.write(contentsOf: Data(text.utf8))
+      }
+      hasEntry = true
+    }
+
+    func close() throws {
+      try handle.close()
+    }
+
+    func closeIgnoringErrors() {
+      try? handle.close()
+    }
+  }
+
   static func process(
     route: RouteDefinition,
     inputs: [URL],
@@ -593,14 +621,18 @@ enum NativeDocumentProcessor {
   private static func performOCR(inputs: [URL], options: JobOptions, outputURL: URL) async throws {
     let languages = recognitionLanguages(options.ocrLanguage)
     if options.ocrOutputFormat == "text" {
-      var recognizedPages: [String] = []
-      try forEachRasterPage(inputs: inputs) { image in
-        try Task.checkCancellation()
-        let text = try recognize(image, languages: languages).map(\.text).joined(separator: "\n")
-        recognizedPages.append(text)
+      var writer = try IncrementalUTF8Writer(outputURL: outputURL)
+      do {
+        try forEachRasterPage(inputs: inputs) { image in
+          try Task.checkCancellation()
+          let text = try recognize(image, languages: languages).map(\.text).joined(separator: "\n")
+          try writer.append(text, separator: "\n\n")
+        }
+        try writer.close()
+      } catch {
+        writer.closeIgnoringErrors()
+        throw error
       }
-      let text = recognizedPages.joined(separator: "\n\n")
-      try Data(text.utf8).write(to: outputURL, options: .atomic)
     } else {
       try writeSearchablePDF(inputs: inputs, languages: languages, outputURL: outputURL)
     }
@@ -609,43 +641,48 @@ enum NativeDocumentProcessor {
   private static func extractMarkdown(inputs: [URL], options: JobOptions, outputURL: URL)
     async throws
   {
-    var sections: [String] = []
-    for input in inputs {
-      try Task.checkCancellation()
-      if input.pathExtension.lowercased() == "pdf" {
-        guard let document = PDFDocument(url: input), document.pageCount > 0,
-          let rasterDocument = CGPDFDocument(input as CFURL)
-        else {
-          throw NativeDocumentError.invalidFile(
-            "无法打开 \(input.lastPathComponent) 或 PDF 没有页面。")
-        }
-        var pages: [String] = []
-        for index in 0..<document.pageCount {
-          try Task.checkCancellation()
-          var text =
-            document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-          if text.isEmpty, !options.ocrLanguage.isEmpty {
-            guard let page = rasterDocument.page(at: index + 1),
-              let image = render(page: page, maximumDimension: 2200)
-            else {
-              throw NativeDocumentError.processing(
-                "无法渲染 \(input.lastPathComponent) 的第 \(index + 1) 页。")
-            }
-            text = try recognize(
-              image, languages: recognitionLanguages(options.ocrLanguage)
-            ).map(\.text).joined(separator: "\n")
+    var writer = try IncrementalUTF8Writer(outputURL: outputURL)
+    do {
+      for input in inputs {
+        try Task.checkCancellation()
+        if input.pathExtension.lowercased() == "pdf" {
+          guard let document = PDFDocument(url: input), document.pageCount > 0,
+            let rasterDocument = CGPDFDocument(input as CFURL)
+          else {
+            throw NativeDocumentError.invalidFile(
+              "无法打开 \(input.lastPathComponent) 或 PDF 没有页面。")
           }
-          pages.append(text)
+          for index in 0..<document.pageCount {
+            try Task.checkCancellation()
+            var text =
+              document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+              ?? ""
+            if text.isEmpty, !options.ocrLanguage.isEmpty {
+              guard let page = rasterDocument.page(at: index + 1),
+                let image = render(page: page, maximumDimension: 2200)
+              else {
+                throw NativeDocumentError.processing(
+                  "无法渲染 \(input.lastPathComponent) 的第 \(index + 1) 页。")
+              }
+              text = try recognize(
+                image, languages: recognitionLanguages(options.ocrLanguage)
+              ).map(\.text).joined(separator: "\n")
+            }
+            try writer.append(text, separator: index == 0 ? "\n\n" : "\n\n---\n\n")
+          }
+        } else {
+          let image = try loadImage(input, maximumDimension: maximumOCRImageDimension)
+          let text = try recognize(
+            image, languages: recognitionLanguages(options.ocrLanguage)
+          ).map(\.text).joined(separator: "\n")
+          try writer.append(text, separator: "\n\n")
         }
-        sections.append(pages.joined(separator: "\n\n---\n\n"))
-      } else {
-        let image = try loadImage(input, maximumDimension: maximumOCRImageDimension)
-        sections.append(
-          try recognize(image, languages: recognitionLanguages(options.ocrLanguage)).map(\.text)
-            .joined(separator: "\n"))
       }
+      try writer.close()
+    } catch {
+      writer.closeIgnoringErrors()
+      throw error
     }
-    try Data(sections.joined(separator: "\n\n").utf8).write(to: outputURL, options: .atomic)
   }
 
   private static func translatePDF(

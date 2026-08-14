@@ -214,6 +214,25 @@ struct ModelsTests {
     #expect(remaining.isEmpty)
   }
 
+  @Test @MainActor
+  func corruptJobMetadataCanStillBeDeleted() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-corrupt-job-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    try Data("not-json".utf8).write(to: jobDirectory.appendingPathComponent("job.json"))
+
+    try engine.deleteJob(id: jobID)
+
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
   @Test
   func imageToPDFProcessesEveryInputPage() async throws {
     let temporary = FileManager.default.temporaryDirectory
@@ -235,6 +254,37 @@ struct ModelsTests {
 
     let document = try #require(PDFDocument(url: output))
     #expect(document.pageCount == 2)
+  }
+
+  @Test
+  func incompleteOrCorruptPreviewCacheIsRegenerated() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-preview-cache-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let first = temporary.appendingPathComponent("first.png")
+    let second = temporary.appendingPathComponent("second.png")
+    try writeTestImage(to: first, color: CGColor(red: 0.7, green: 0.2, blue: 0.2, alpha: 1))
+    try writeTestImage(to: second, color: CGColor(red: 0.2, green: 0.3, blue: 0.7, alpha: 1))
+    let pdf = temporary.appendingPathComponent("source.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [first, second], options: JobOptions(), outputURL: pdf, apiKey: nil)
+
+    let previewDirectory = temporary.appendingPathComponent("Preview", isDirectory: true)
+    try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+    try Data("broken".utf8).write(to: previewDirectory.appendingPathComponent("page-1.png"))
+
+    var pages = try await PreviewCache.pages(pdfURL: pdf, directory: previewDirectory)
+    #expect(pages.map(\.lastPathComponent) == ["page-1.png", "page-2.png"])
+    #expect(pages.allSatisfy(NativeDocumentProcessor.isReadableImage))
+
+    try Data("broken again".utf8).write(to: pages[1], options: .atomic)
+    pages = try await PreviewCache.pages(pdfURL: pdf, directory: previewDirectory)
+    #expect(pages.count == 2)
+    #expect(pages.allSatisfy(NativeDocumentProcessor.isReadableImage))
   }
 
   @Test

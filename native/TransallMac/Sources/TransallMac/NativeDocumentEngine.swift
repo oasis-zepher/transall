@@ -202,13 +202,18 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   func deleteJob(id: String) throws {
-    guard let job = try? job(id: id), !job.isRunning else {
+    let directory = try jobDirectory(id)
+    if tasks[id] != nil || jobs[id]?.isRunning == true {
+      throw NativeDocumentError.processing("正在运行的任务不能删除。")
+    }
+    if jobs[id] == nil, let persisted: JobResponse = try? load("job.json", from: directory),
+      persisted.isRunning
+    {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
     }
     tasks[id]?.cancel()
     tasks[id] = nil
     jobs[id] = nil
-    let directory = try jobDirectory(id)
     if FileManager.default.fileExists(atPath: directory.path) {
       try FileManager.default.removeItem(at: directory)
     }
@@ -233,23 +238,8 @@ final class NativeDocumentEngine: ObservableObject {
     }
     let directory = try jobDirectory(jobID)
     let previewDirectory = directory.appendingPathComponent("Preview", isDirectory: true)
-    let existing =
-      (try? FileManager.default.contentsOfDirectory(
-        at: previewDirectory, includingPropertiesForKeys: nil))?.filter {
-        $0.pathExtension == "png"
-      }
-      .sorted {
-        $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
-      } ?? []
-    let urls: [URL]
-    if existing.isEmpty {
-      let outputURL = directory.appendingPathComponent(output)
-      urls = try await Task.detached {
-        try NativeDocumentProcessor.makePreviews(pdfURL: outputURL, directory: previewDirectory)
-      }.value
-    } else {
-      urls = existing
-    }
+    let outputURL = directory.appendingPathComponent(output)
+    let urls = try await PreviewCache.pages(pdfURL: outputURL, directory: previewDirectory)
     return PreviewResponse(
       pages: urls.enumerated().map { index, url in
         PreviewPage(page: index + 1, url: url.absoluteString)
@@ -479,6 +469,54 @@ enum OutputFileNamer {
     let filtered = value.unicodeScalars.map { allowed.contains($0) ? Character(String($0)) : "-" }
     let result = String(filtered).trimmingCharacters(in: CharacterSet(charactersIn: "- "))
     return String((result.isEmpty ? "document" : result).prefix(80))
+  }
+}
+
+enum PreviewCache {
+  static func pages(pdfURL: URL, directory: URL, limit: Int = 8) async throws -> [URL] {
+    let expectedCount = try NativeDocumentProcessor.previewPageCount(
+      pdfURL: pdfURL, limit: limit)
+    guard expectedCount > 0 else {
+      try? FileManager.default.removeItem(at: directory)
+      return []
+    }
+
+    let existing = previewFiles(in: directory)
+    if isComplete(existing, expectedCount: expectedCount) {
+      return existing
+    }
+
+    try? FileManager.default.removeItem(at: directory)
+    do {
+      let generated = try await Task.detached {
+        try NativeDocumentProcessor.makePreviews(
+          pdfURL: pdfURL, directory: directory, limit: limit)
+      }.value
+      guard isComplete(generated, expectedCount: expectedCount) else {
+        throw NativeDocumentError.processing("PDF 预览生成不完整，请重试。")
+      }
+      return generated
+    } catch {
+      try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
+  }
+
+  private static func previewFiles(in directory: URL) -> [URL] {
+    ((try? FileManager.default.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: nil)) ?? [])
+      .filter { $0.pathExtension.lowercased() == "png" }
+      .sorted {
+        $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+      }
+  }
+
+  private static func isComplete(_ urls: [URL], expectedCount: Int) -> Bool {
+    guard urls.count == expectedCount else { return false }
+    return urls.enumerated().allSatisfy { index, url in
+      url.lastPathComponent == "page-\(index + 1).png"
+        && NativeDocumentProcessor.isReadableImage(url)
+    }
   }
 }
 

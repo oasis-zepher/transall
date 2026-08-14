@@ -129,7 +129,9 @@ enum NativeDocumentProcessor {
   }
 
   static func makePreviews(pdfURL: URL, directory: URL, limit: Int = 8) throws -> [URL] {
-    guard let document = CGPDFDocument(pdfURL as CFURL) else { return [] }
+    guard let document = CGPDFDocument(pdfURL as CFURL) else {
+      throw NativeDocumentError.invalidFile("无法打开 PDF 结果以生成预览。")
+    }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     var urls: [URL] = []
     let pageCount = min(document.numberOfPages, limit)
@@ -138,17 +140,36 @@ enum NativeDocumentProcessor {
       try Task.checkCancellation()
       guard let page = document.page(at: pageNumber),
         let image = render(page: page, maximumDimension: 1100)
-      else { continue }
+      else {
+        throw NativeDocumentError.processing("无法渲染第 \(pageNumber) 页预览。")
+      }
       let url = directory.appendingPathComponent("page-\(pageNumber).png")
       guard
         let destination = CGImageDestinationCreateWithURL(
           url as CFURL, "public.png" as CFString, 1, nil)
-      else { continue }
+      else {
+        throw NativeDocumentError.processing("无法创建第 \(pageNumber) 页预览文件。")
+      }
       CGImageDestinationAddImage(destination, image, nil)
-      guard CGImageDestinationFinalize(destination) else { continue }
+      guard CGImageDestinationFinalize(destination) else {
+        throw NativeDocumentError.processing("无法写入第 \(pageNumber) 页预览文件。")
+      }
       urls.append(url)
     }
     return urls
+  }
+
+  static func previewPageCount(pdfURL: URL, limit: Int = 8) throws -> Int {
+    guard let document = CGPDFDocument(pdfURL as CFURL) else {
+      throw NativeDocumentError.invalidFile("无法打开 PDF 结果以生成预览。")
+    }
+    return min(document.numberOfPages, max(0, limit))
+  }
+
+  static func isReadableImage(_ url: URL) -> Bool {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+    return CGImageSourceGetCount(source) > 0
+      && CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
   }
 
   private static func editPDF(inputs: [URL], options: JobOptions, outputURL: URL) throws {

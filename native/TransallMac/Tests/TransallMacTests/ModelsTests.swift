@@ -958,6 +958,157 @@ struct ModelsTests {
     #expect(remaining.isEmpty)
   }
 
+  @Test
+  func inputCopyRejectsOversizedFileBeforeCreatingDestination() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-bounded-copy-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+
+    let oversized = temporary.appendingPathComponent("oversized.bin")
+    #expect(FileManager.default.createFile(atPath: oversized.path, contents: nil))
+    let handle = try FileHandle(forWritingTo: oversized)
+    try handle.truncate(atOffset: 1_025)
+    try handle.close()
+
+    do {
+      _ = try await NativeDocumentEngine.copyInputs(
+        [SelectedDocument(url: oversized, size: 1)], to: inputDirectory,
+        maximumBytes: 1_024, maximumMB: 1, chunkSize: 64)
+      Issue.record("Oversized input should fail before creating a destination")
+    } catch {
+      #expect(error.localizedDescription.contains("1 MB"))
+    }
+
+    #expect(try FileManager.default.contentsOfDirectory(atPath: inputDirectory.path).isEmpty)
+  }
+
+  @Test
+  func inputCopyEnforcesCumulativeLimitAndRemovesCompletedCopies() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-cumulative-copy-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+
+    let first = temporary.appendingPathComponent("first.bin")
+    let second = temporary.appendingPathComponent("second.bin")
+    #expect(FileManager.default.createFile(atPath: first.path, contents: nil))
+    #expect(FileManager.default.createFile(atPath: second.path, contents: nil))
+    let firstHandle = try FileHandle(forWritingTo: first)
+    try firstHandle.truncate(atOffset: 700 * 1_024)
+    try firstHandle.close()
+    let secondHandle = try FileHandle(forWritingTo: second)
+    try secondHandle.truncate(atOffset: 400 * 1_024)
+    try secondHandle.close()
+
+    do {
+      _ = try await NativeDocumentEngine.copyInputs(
+        [SelectedDocument(url: first, size: 1), SelectedDocument(url: second, size: 1)],
+        to: inputDirectory, maximumBytes: 1_024 * 1_024, maximumMB: 1,
+        chunkSize: 64 * 1_024)
+      Issue.record("Combined input size should enforce the copy limit")
+    } catch {
+      #expect(error.localizedDescription.contains("1 MB"))
+    }
+
+    #expect(try FileManager.default.contentsOfDirectory(atPath: inputDirectory.path).isEmpty)
+  }
+
+  @Test
+  func inputCopyStopsWhenSourceGrowsPastLimitDuringTransfer() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-growing-copy-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+
+    let source = temporary.appendingPathComponent("growing.bin")
+    #expect(FileManager.default.createFile(atPath: source.path, contents: nil))
+    let initialHandle = try FileHandle(forWritingTo: source)
+    try initialHandle.truncate(atOffset: 32 * 1_024)
+    try initialHandle.close()
+
+    let copyTask = Task {
+      try await NativeDocumentEngine.copyInputs(
+        [SelectedDocument(url: source, size: 1)], to: inputDirectory,
+        maximumBytes: 48 * 1_024, maximumMB: 1, chunkSize: 1)
+    }
+    let destination = inputDirectory.appendingPathComponent("1-growing.bin")
+    var transferStarted = false
+    for _ in 0..<200 {
+      if FileManager.default.fileExists(atPath: destination.path) {
+        transferStarted = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+
+    if transferStarted {
+      let growthHandle = try FileHandle(forWritingTo: source)
+      try growthHandle.truncate(atOffset: 96 * 1_024)
+      try growthHandle.close()
+    }
+
+    var rejectedGrowth = false
+    do {
+      _ = try await copyTask.value
+      Issue.record("A source that grows past the limit should not finish copying")
+    } catch {
+      rejectedGrowth = error.localizedDescription.contains("1 MB")
+    }
+
+    #expect(transferStarted)
+    #expect(rejectedGrowth)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: inputDirectory.path).isEmpty)
+  }
+
+  @Test
+  func inputCopyCancellationRemovesPartialDestination() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-cancelled-copy-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+
+    let source = temporary.appendingPathComponent("source.bin")
+    #expect(FileManager.default.createFile(atPath: source.path, contents: nil))
+    let handle = try FileHandle(forWritingTo: source)
+    try handle.truncate(atOffset: 1_024 * 1_024)
+    try handle.close()
+
+    let copyTask = Task {
+      try await NativeDocumentEngine.copyInputs(
+        [SelectedDocument(url: source, size: 1)], to: inputDirectory,
+        maximumBytes: 2 * 1_024 * 1_024, maximumMB: 2, chunkSize: 1)
+    }
+    let destination = inputDirectory.appendingPathComponent("1-source.bin")
+    var observedPartialCopy = false
+    for _ in 0..<200 {
+      if let size = try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0 {
+        observedPartialCopy = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+
+    copyTask.cancel()
+    var receivedCancellation = false
+    do {
+      _ = try await copyTask.value
+      Issue.record("Cancelled input copy should not complete")
+    } catch is CancellationError {
+      receivedCancellation = true
+    } catch {
+      Issue.record("Cancelled input copy returned an unexpected error: \(error)")
+    }
+
+    #expect(observedPartialCopy)
+    #expect(receivedCancellation)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: inputDirectory.path).isEmpty)
+  }
+
   @Test @MainActor
   func textJobImportRechecksRouteSpecificSizeLimit() async throws {
     let temporary = FileManager.default.temporaryDirectory

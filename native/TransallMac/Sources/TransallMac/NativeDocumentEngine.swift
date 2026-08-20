@@ -1,5 +1,6 @@
 import Combine
 import CryptoKit
+import Darwin
 import Foundation
 
 @MainActor
@@ -703,11 +704,23 @@ final class NativeDocumentEngine: ObservableObject {
     return status
   }
 
-  private nonisolated static func copyInputs(
-    _ files: [SelectedDocument], to inputDirectory: URL, maximumBytes: Int, maximumMB: Int
+  nonisolated static func copyInputs(
+    _ files: [SelectedDocument], to inputDirectory: URL, maximumBytes: Int, maximumMB: Int,
+    chunkSize: Int = 1_024 * 1_024
   ) async throws -> [URL] {
+    guard maximumBytes >= 0, chunkSize > 0 else {
+      throw NativeDocumentError.invalidFile("输入文件复制限制无效。")
+    }
     let transfer = Task.detached(priority: .userInitiated) {
       var copiedInputs: [URL] = []
+      var removeCopiedInputs = true
+      defer {
+        if removeCopiedInputs {
+          for copiedInput in copiedInputs {
+            try? FileManager.default.removeItem(at: copiedInput)
+          }
+        }
+      }
       var copiedBytes: Int64 = 0
       let resourceKeys: Set<URLResourceKey> = [
         .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey,
@@ -726,19 +739,63 @@ final class NativeDocumentEngine: ObservableObject {
             throw NativeDocumentError.invalidFile(
               "\(document.name) 不是可复制的普通文件，请选择原始文件。")
           }
-          try FileManager.default.copyItem(at: document.url, to: destination)
-          let copiedValues = try destination.resourceValues(forKeys: resourceKeys)
-          guard copiedValues.isSymbolicLink != true, copiedValues.isRegularFile == true,
-            let fileSize = copiedValues.fileSize
-          else {
+
+          let (sourceHandle, sourceSize) = try openRegularSource(
+            document.url, displayName: document.name)
+          defer { try? sourceHandle.close() }
+
+          try Task.checkCancellation()
+          let maximum = Int64(maximumBytes)
+          let (expectedTotal, expectedOverflow) = copiedBytes.addingReportingOverflow(sourceSize)
+          guard !expectedOverflow, expectedTotal <= maximum else {
+            throw NativeDocumentError.invalidFile(
+              "复制后的文件总计超过 \(maximumMB) MB。")
+          }
+
+          var removeIncompleteDestination = true
+          defer {
+            if removeIncompleteDestination {
+              try? FileManager.default.removeItem(at: destination)
+            }
+          }
+          let destinationHandle = try openNewDestination(destination)
+          defer { try? destinationHandle.close() }
+
+          var fileBytes: Int64 = 0
+          while true {
+            try Task.checkCancellation()
+            guard let chunk = try sourceHandle.read(upToCount: chunkSize), !chunk.isEmpty else {
+              break
+            }
+            try Task.checkCancellation()
+            let (newTotal, totalOverflow) = copiedBytes.addingReportingOverflow(
+              Int64(chunk.count))
+            guard !totalOverflow, newTotal <= maximum else {
+              throw NativeDocumentError.invalidFile(
+                "复制后的文件总计超过 \(maximumMB) MB。")
+            }
+            try destinationHandle.write(contentsOf: chunk)
+            copiedBytes = newTotal
+            fileBytes += Int64(chunk.count)
+            try Task.checkCancellation()
+            await Task.yield()
+          }
+          try destinationHandle.synchronize()
+          try Task.checkCancellation()
+
+          let sourceStatus = try fileStatus(for: sourceHandle.fileDescriptor)
+          let copiedStatus = try fileStatus(for: destinationHandle.fileDescriptor)
+          guard isRegularFile(sourceStatus), sourceStatus.st_size == fileBytes else {
+            throw NativeDocumentError.invalidFile(
+              "\(document.name) 在复制过程中发生变化，请重新选择。")
+          }
+          guard isRegularFile(copiedStatus), copiedStatus.st_size == fileBytes else {
             throw NativeDocumentError.invalidFile(
               "\(document.name) 复制后不是有效的普通文件。")
           }
-          let (newTotal, overflow) = copiedBytes.addingReportingOverflow(Int64(fileSize))
-          copiedBytes = overflow ? Int64.max : newTotal
-          guard copiedBytes <= Int64(maximumBytes) else {
-            throw NativeDocumentError.invalidFile("复制后的文件总计超过 \(maximumMB) MB。")
-          }
+          removeIncompleteDestination = false
+        } catch is CancellationError {
+          throw CancellationError()
         } catch let error as NativeDocumentError {
           throw error
         } catch {
@@ -747,11 +804,66 @@ final class NativeDocumentEngine: ObservableObject {
         }
         copiedInputs.append(destination)
       }
+      removeCopiedInputs = false
       return copiedInputs
     }
     return try await withTaskCancellationHandler(
       operation: { try await transfer.value },
       onCancel: { transfer.cancel() })
+  }
+
+  private nonisolated static func openRegularSource(
+    _ source: URL, displayName: String
+  ) throws -> (handle: FileHandle, size: Int64) {
+    let descriptor = source.withUnsafeFileSystemRepresentation { path -> Int32 in
+      guard let path else { return -1 }
+      return Darwin.open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+    }
+    guard descriptor >= 0 else {
+      let errorNumber = errno
+      if errorNumber == ELOOP {
+        throw NativeDocumentError.invalidFile(
+          "\(displayName) 不是可复制的普通文件，请选择原始文件。")
+      }
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errorNumber))
+    }
+
+    do {
+      let status = try fileStatus(for: descriptor)
+      guard isRegularFile(status), status.st_size >= 0 else {
+        throw NativeDocumentError.invalidFile(
+          "\(displayName) 不是可复制的普通文件，请选择原始文件。")
+      }
+      return (FileHandle(fileDescriptor: descriptor, closeOnDealloc: true), status.st_size)
+    } catch {
+      Darwin.close(descriptor)
+      throw error
+    }
+  }
+
+  private nonisolated static func openNewDestination(_ destination: URL) throws -> FileHandle {
+    let descriptor = destination.withUnsafeFileSystemRepresentation { path -> Int32 in
+      guard let path else { return -1 }
+      return Darwin.open(
+        path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+        mode_t(S_IRUSR | S_IWUSR))
+    }
+    guard descriptor >= 0 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+  }
+
+  private nonisolated static func fileStatus(for descriptor: Int32) throws -> stat {
+    var status = stat()
+    guard fstat(descriptor, &status) == 0 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    return status
+  }
+
+  private nonisolated static func isRegularFile(_ status: stat) -> Bool {
+    (status.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG)
   }
 
   private func allowedExtensions(for source: String) -> Set<String> {

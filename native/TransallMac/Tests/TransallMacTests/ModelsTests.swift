@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import PDFKit
@@ -2006,6 +2007,162 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func oversizedPersistedJobStateIsRejectedAndCanStillBeDeleted() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-oversized-job-state-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "failed", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: nil, error: "test", stage: "failed",
+      message: "任务失败。", errorCode: "test", errorHint: nil, retryable: true,
+      progress: 12, cancelRequested: false, logs: [])
+    try paddedJSON(job, minimumBytes: NativeDocumentEngine.maximumJobStateBytes + 1)
+      .write(to: jobDirectory.appendingPathComponent("job.json"), options: .atomic)
+
+    do {
+      _ = try engine.job(id: jobID)
+      Issue.record("Oversized persisted job state should be rejected")
+    } catch {
+      #expect(error.localizedDescription.contains("超过大小限制"))
+    }
+
+    try await engine.deleteJob(id: jobID)
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
+  func oversizedPersistedMetadataBecomesDeletableFailedState() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-oversized-job-metadata-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: route.kind, status: "running", inputs: ["source.png"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+    let metadata = PersistedJobMetadata(
+      route: route, options: JobOptions(), inputNames: ["1-source.png"])
+    try paddedJSON(
+      metadata, minimumBytes: NativeDocumentEngine.maximumJobMetadataBytes + 1
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "job_state_corrupt")
+    #expect(restored.error?.contains("超过大小限制") == true)
+    try await engine.deleteJob(id: jobID)
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
+  func oversizedCompletionReceiptCannotRecoverFinishedTranslation() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-oversized-completion-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let translationRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+
+    let sourceText = temporary.appendingPathComponent("source.txt")
+    try Data("translated result fixture".utf8).write(to: sourceText, options: .atomic)
+    let outputName = "source-translated.pdf"
+    let output = jobDirectory.appendingPathComponent(outputName)
+    _ = try await NativeDocumentProcessor.process(
+      route: textRoute, inputs: [sourceText], options: JobOptions(), outputURL: output,
+      apiKey: nil)
+    let outputData = try Data(contentsOf: output)
+    #expect(outputData.count <= 128 * 1_024)
+    let fingerprint = SHA256.hash(data: outputData)
+      .map { String(format: "%02x", $0) }.joined()
+
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: translationRoute.kind, status: "running", inputs: ["source.pdf"],
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(
+        route: translationRoute, options: JobOptions(), inputNames: ["1-source.pdf"])
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+    let receipt = PersistedCompletionReceipt(
+      output: outputName, byteCount: Int64(outputData.count), sampleSHA256: fingerprint)
+    try paddedJSON(
+      receipt, minimumBytes: NativeDocumentEngine.maximumCompletionReceiptBytes + 1
+    ).write(to: jobDirectory.appendingPathComponent("completion.json"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "task_interrupted")
+    #expect(restored.output == nil)
+    #expect(FileManager.default.fileExists(atPath: output.path))
+  }
+
+  @Test @MainActor
+  func oversizedJobStateFallsBackToDirectoryAgeForRetentionCleanup() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-oversized-retention-state-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let now = Date()
+    let timestamp = ISO8601DateFormatter().string(from: now)
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "failed", inputs: ["source.txt"],
+      createdAt: timestamp, updatedAt: timestamp, output: nil, error: "test", stage: "failed",
+      message: "任务失败。", errorCode: "test", errorHint: nil, retryable: true,
+      progress: 12, cancelRequested: false, logs: [])
+    try paddedJSON(job, minimumBytes: NativeDocumentEngine.maximumJobStateBytes + 1)
+      .write(to: jobDirectory.appendingPathComponent("job.json"), options: .atomic)
+    try FileManager.default.setAttributes(
+      [.modificationDate: now.addingTimeInterval(-25 * 60 * 60)],
+      ofItemAtPath: jobDirectory.path)
+
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+
+    #expect(engine.state == .running)
+    #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
   func corruptResultPathCannotEscapeJobDirectory() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(
@@ -3506,6 +3663,20 @@ private struct PersistedJobMetadata: Codable {
   let route: RouteDefinition
   let options: JobOptions
   let inputNames: [String]
+}
+
+private struct PersistedCompletionReceipt: Codable {
+  let output: String
+  let byteCount: Int64
+  let sampleSHA256: String
+}
+
+private func paddedJSON<T: Encodable>(_ value: T, minimumBytes: Int) throws -> Data {
+  var data = try JSONEncoder().encode(value)
+  if data.count < minimumBytes {
+    data.append(Data(repeating: 0x20, count: minimumBytes - data.count))
+  }
+  return data
 }
 
 private func persistTestJob(_ job: JobResponse, in directory: URL) throws {

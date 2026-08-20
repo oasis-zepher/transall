@@ -5,6 +5,10 @@ import Foundation
 
 @MainActor
 final class NativeDocumentEngine: ObservableObject {
+  nonisolated static let maximumJobStateBytes = 1 * 1_024 * 1_024
+  nonisolated static let maximumJobMetadataBytes = 128 * 1_024
+  nonisolated static let maximumCompletionReceiptBytes = 16 * 1_024
+
   typealias JobPersister = (JobResponse, URL) throws -> Void
   typealias JobProcessor =
     @Sendable (
@@ -898,12 +902,10 @@ final class NativeDocumentEngine: ObservableObject {
   private nonisolated static func cleanupReferenceDate(
     in directory: URL, fallback: Date, now: Date, dateFormatter: ISO8601DateFormatter
   ) -> Date {
-    let stateURL = directory.appendingPathComponent("job.json")
     guard
-      let values = try? stateURL.resourceValues(
-        forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-      values.isSymbolicLink != true, values.isRegularFile == true,
-      let data = try? Data(contentsOf: stateURL),
+      let data = try? boundedTaskFileData(
+        named: "job.json", in: directory, description: "任务状态文件",
+        maximumBytes: maximumJobStateBytes),
       let job = try? JSONDecoder().decode(JobResponse.self, from: data),
       job.id == directory.lastPathComponent,
       let createdAt = dateFormatter.date(from: job.createdAt),
@@ -933,6 +935,8 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func persistMetadata(_ metadata: NativeJobMetadata, in directory: URL) throws {
     let data = try JSONEncoder().encode(metadata)
+    try Self.validatePersistedDataSize(
+      data, description: "任务元数据", maximumBytes: Self.maximumJobMetadataBytes)
     try data.write(to: directory.appendingPathComponent("metadata.json"), options: .atomic)
   }
 
@@ -944,11 +948,15 @@ final class NativeDocumentEngine: ObservableObject {
       output: output, byteCount: fingerprint.byteCount,
       sampleSHA256: fingerprint.sampleSHA256)
     let data = try JSONEncoder().encode(receipt)
+    try Self.validatePersistedDataSize(
+      data, description: "任务完成凭据", maximumBytes: Self.maximumCompletionReceiptBytes)
     try data.write(to: directory.appendingPathComponent("completion.json"), options: .atomic)
   }
 
   private nonisolated static func persistJob(_ job: JobResponse, in directory: URL) throws {
     let data = try JSONEncoder().encode(job)
+    try validatePersistedDataSize(
+      data, description: "任务状态", maximumBytes: maximumJobStateBytes)
     try data.write(to: directory.appendingPathComponent("job.json"), options: .atomic)
   }
 
@@ -1014,9 +1022,64 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func load<T: Decodable>(_ name: String, from directory: URL) throws -> T {
-    let url = try Self.validatedRegularFile(
-      named: name, in: directory, description: "任务状态文件")
-    return try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
+    let maximumBytes: Int
+    switch name {
+    case "job.json": maximumBytes = Self.maximumJobStateBytes
+    case "metadata.json": maximumBytes = Self.maximumJobMetadataBytes
+    case "completion.json": maximumBytes = Self.maximumCompletionReceiptBytes
+    default:
+      throw NativeDocumentError.invalidFile("任务状态文件名无效。")
+    }
+    let data = try Self.boundedTaskFileData(
+      named: name, in: directory, description: "任务状态文件", maximumBytes: maximumBytes)
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  private nonisolated static func validatePersistedDataSize(
+    _ data: Data, description: String, maximumBytes: Int
+  ) throws {
+    guard data.count <= maximumBytes else {
+      throw NativeDocumentError.invalidFile("\(description)超过大小限制。")
+    }
+  }
+
+  private nonisolated static func boundedTaskFileData(
+    named name: String, in directory: URL, description: String, maximumBytes: Int
+  ) throws -> Data {
+    guard maximumBytes >= 0 else {
+      throw NativeDocumentError.invalidFile("\(description)大小限制无效。")
+    }
+    let url = try containedFileURL(named: name, in: directory, description: description)
+    let (handle, initialStatus) = try SecureFileTransfer.openRegularSource(
+      url, nonRegularMessage: "\(description)不是有效的普通文件。")
+    defer { try? handle.close() }
+    guard initialStatus.st_size <= Int64(maximumBytes) else {
+      throw NativeDocumentError.invalidFile("\(description)超过大小限制，数据可能已经损坏。")
+    }
+
+    var data = Data()
+    data.reserveCapacity(Int(initialStatus.st_size))
+    let readChunkBytes = 64 * 1_024
+    while true {
+      try Task.checkCancellation()
+      let remaining = maximumBytes - data.count
+      let requestedBytes = min(readChunkBytes, remaining + 1)
+      guard let chunk = try handle.read(upToCount: requestedBytes), !chunk.isEmpty else {
+        break
+      }
+      guard chunk.count <= remaining else {
+        throw NativeDocumentError.invalidFile("\(description)超过大小限制，数据可能已经损坏。")
+      }
+      data.append(chunk)
+    }
+
+    let finalStatus = try SecureFileTransfer.fileStatus(for: handle.fileDescriptor)
+    guard SecureFileTransfer.isUnchanged(initialStatus, finalStatus),
+      finalStatus.st_size == Int64(data.count)
+    else {
+      throw NativeDocumentError.invalidFile("\(description)在读取期间发生变化，数据可能已经损坏。")
+    }
+    return data
   }
 
   private nonisolated static func validateStoredInputNames(_ names: [String]) throws {

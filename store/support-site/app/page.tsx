@@ -1,5 +1,5 @@
 import { publicationConfig } from "./publication-config";
-import { SiteFooter, SiteHeader } from "./site-chrome";
+import { mainContentId, SiteFooter, SiteHeader } from "./site-chrome";
 
 const topics = [
   {
@@ -23,7 +23,7 @@ export default function SupportHome() {
   return (
     <div className="site-shell">
       <SiteHeader current="support" />
-      <main>
+      <main id={mainContentId} tabIndex={-1}>
         <section className="support-intro" aria-labelledby="support-title">
           <div className="section-index">SUPPORT / 01</div>
           <div>

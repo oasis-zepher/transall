@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { publicationConfig } from "../publication-config";
-import { SiteFooter, SiteHeader } from "../site-chrome";
+import { mainContentId, SiteFooter, SiteHeader } from "../site-chrome";
 
 export const metadata: Metadata = {
   title: "关于发布者",
@@ -22,7 +22,7 @@ export default function AboutPublisher() {
   return (
     <div className="site-shell">
       <SiteHeader current="about" />
-      <main>
+      <main id={mainContentId} tabIndex={-1}>
         <section className="about-shell" aria-labelledby="about-title">
         <div className="section-index">PUBLISHER / 03</div>
         <div className="about-copy">

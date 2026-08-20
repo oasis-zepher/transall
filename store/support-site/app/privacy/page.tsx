@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { publicationConfig } from "../publication-config";
-import { SiteFooter, SiteHeader } from "../site-chrome";
+import { mainContentId, SiteFooter, SiteHeader } from "../site-chrome";
 
 export const metadata: Metadata = {
   title: "隐私政策",
@@ -22,7 +22,7 @@ export default function PrivacyPolicy() {
   return (
     <div className="site-shell">
       <SiteHeader current="privacy" />
-      <main>
+      <main id={mainContentId} tabIndex={-1}>
         <article className="policy-shell">
         <header className="policy-title">
           <div className="section-index">PRIVACY / 02</div>

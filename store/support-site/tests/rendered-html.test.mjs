@@ -67,10 +67,21 @@ test("keeps repeated site chrome outside the main content landmark", async () =>
     const response = await render(path);
     assert.equal(response.status, 200);
     const html = await response.text();
+    assert.match(
+      html,
+      /<a[^>]*class="skip-link"[^>]*href="#main-content"[^>]*>跳到主要内容<\/a>/i,
+      `Expected a skip link for ${path}`,
+    );
+    const mainElement = html.match(/<main[^>]*id="main-content"[^>]*tabindex="-1"[^>]*>/i)?.[0] ?? "";
+    assert.ok(mainElement, `Expected a focusable main landmark for ${path}`);
     const main = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? "";
     assert.ok(main, `Expected a main landmark for ${path}`);
     assert.doesNotMatch(main, /<nav\b/i, `Navigation must be outside main for ${path}`);
     assert.doesNotMatch(main, /<footer\b/i, `Footer must be outside main for ${path}`);
+    assert.ok(
+      html.indexOf("跳到主要内容") < html.indexOf(mainElement),
+      `Skip link must precede main content for ${path}`,
+    );
   }
 });
 
@@ -96,6 +107,8 @@ test("support text contrast and navigation targets meet the release baseline", a
   assert.ok(contrastRatio(paper, muted) >= 4.5, "Muted text must meet WCAG AA contrast");
   assert.match(css, /nav a\s*{[^}]*min-height:\s*44px/s);
   assert.match(css, /\.language-links a\s*{[^}]*min-height:\s*44px/s);
+  assert.match(css, /\.skip-link\s*{[^}]*position:\s*fixed[^}]*transform:/s);
+  assert.match(css, /\.skip-link:focus\s*{[^}]*transform:\s*translateY\(0\)/s);
 });
 
 function contrastRatio(first, second) {

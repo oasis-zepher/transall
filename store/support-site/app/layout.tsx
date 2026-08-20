@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { SkipLink } from "./site-chrome";
 
 const title = "Transall 支持";
 const description = "Transall macOS App 的支持、常见问题与隐私说明。";
@@ -46,7 +47,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <SkipLink />
+        {children}
+      </body>
     </html>
   );
 }

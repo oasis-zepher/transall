@@ -2,11 +2,21 @@ import { publicationConfig } from "./publication-config";
 
 type SiteSection = "support" | "privacy" | "about";
 
+export const mainContentId = "main-content";
+
 const navigation: Array<{ href: string; label: string; section: SiteSection }> = [
   { href: "/", label: "支持", section: "support" },
   { href: "/privacy", label: "隐私", section: "privacy" },
   { href: "/about", label: "关于", section: "about" },
 ];
+
+export function SkipLink() {
+  return (
+    <a className="skip-link" href={`#${mainContentId}`}>
+      跳到主要内容
+    </a>
+  );
+}
 
 export function SiteHeader({ current }: { current: SiteSection }) {
   return (

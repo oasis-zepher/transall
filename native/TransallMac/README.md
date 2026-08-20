@@ -37,6 +37,8 @@ Input limits are route-specific so text rendering cannot create an excessive in-
 
 The displayed limit is enforced during file selection and task preflight, checked again from the opened source file, and enforced while copying in 1 MiB chunks. A source that grows past the limit, a cancellation, or a copy error removes the partial batch before task processing starts. Text data is checked once more before PDF generation loads it.
 
+While preflight and input copying run, the workbench shows **取消创建**. `AppModel` owns this submission task, keeps the submitted route, files, and options immutable, and cancels it when requested or when the app terminates. Normal cancellation does not show an error or publish a task. Incomplete task data is removed, including the narrow case where backend creation finishes at the same time as cancellation.
+
 Result export uses the same bounded transfer path. It writes to a sibling temporary file, rejects symbolic-link or changing task results, and replaces the selected destination only after the copy is complete. The result panel shows save progress and a cancel action; cancellation or app termination stops the active copy without showing an error or opening Finder. Cancellation or failure removes the temporary copy without changing an existing destination, and conflicting result or route operations stay disabled until saving ends.
 
 Choose both the source and target formats before adding files. After the route is complete, use the file well or **File → 选择文件…** (`⌘O`); the picker is filtered to the selected source format. Incomplete routes do not accept clicks, drops, accessibility actions, or menu imports.

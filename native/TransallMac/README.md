@@ -41,7 +41,7 @@ While preflight and input copying run, the workbench shows **取消创建**. `Ap
 
 Result export uses the same bounded transfer path. It writes to a sibling temporary file, rejects symbolic-link or changing task results, and replaces the selected destination only after the copy is complete. The result panel shows save progress and a cancel action; cancellation or app termination stops the active copy without showing an error or opening Finder. Cancellation or failure removes the temporary copy without changing an existing destination, and conflicting result or route operations stay disabled until saving ends.
 
-Keychain reads, saves, deletion, migration, rollback, and reconciliation run on a serial background actor. Launch diagnostics, Settings, and translation preflight therefore remain responsive if macOS Keychain access is delayed, while Settings publications stay isolated to the main actor.
+Keychain reads, saves, deletion, migration, rollback, and reconciliation run on a serial background actor. Launch diagnostics, Settings, and translation preflight therefore remain responsive if macOS Keychain access is delayed, while Settings publications stay isolated to the main actor. Environment refresh reuses one credential-status snapshot for diagnostics and provider availability, and translation startup reads only the selected provider key once.
 
 The circular format router uses semantic SwiftUI type. Accessibility text sizes expand its nodes, allow two-line format labels without shrinking them, and adjust the orbit radius to keep the controls inside the workbench.
 

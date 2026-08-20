@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 96/96 Swift package tests, 96/96 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 97/97 Swift package tests, 97/97 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -91,4 +91,5 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - [`../../store/PAID_APP_SUBMISSION_CHECKLIST.md`](../../store/PAID_APP_SUBMISSION_CHECKLIST.md)
 - [`../../store/APP_REVIEW_NOTES.md`](../../store/APP_REVIEW_NOTES.md)
 - [`../../store/SCREENSHOT_PLAN.md`](../../store/SCREENSHOT_PLAN.md)
+- [`../../store/screenshots/draft/`](../../store/screenshots/draft/)
 - [`../../store/support-site/`](../../store/support-site/)

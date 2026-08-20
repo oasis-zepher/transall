@@ -45,6 +45,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 3. Updated the native README from the beta-era requirement to Xcode 26.6 or a compatible newer release.
 4. Added Open Graph assets, per-page social metadata, App Privacy Required Reason coverage for file timestamps, and synthetic review files.
 5. Keychain reload, save, deletion, and failure messages now request VoiceOver announcements; errors use high priority and successful status changes use medium priority.
+6. Translation provider labels preserve the official `DeepSeek` and `OpenAI` capitalization in the workbench instead of deriving user-facing brands from lowercase API identifiers.
 
 ## Additional reliability hardening
 
@@ -80,8 +81,8 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 96/96 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 96/96 passed |
+| Swift package tests with Xcode 26.6 | 97/97 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 97/97 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release archive with Xcode 26.6 | Passed; 5.4 MB universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

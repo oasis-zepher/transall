@@ -726,6 +726,37 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func credentialSettingsRejectOverlappingMutationTransactions() async {
+    let store = BlockingCredentialStore(
+      blocking: .write, values: [.deepseek: "old-deepseek", .openAI: "old-openai"])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
+    settings.deepseekKey = "new-deepseek"
+
+    let firstSave = Task { await settings.save(appModel: appModel) }
+    for _ in 0..<200 where !store.hasStarted {
+      try? await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(store.hasStarted)
+    #expect(settings.isSaving)
+
+    settings.deepseekKey = "overlapping-save"
+    await settings.save(appModel: appModel)
+    await settings.remove(.openAI, appModel: appModel)
+
+    #expect(settings.isSaving)
+    #expect(store.writeCount == 1)
+    store.release()
+    await firstSave.value
+
+    #expect(!settings.isSaving)
+    #expect(store.writeCount == 1)
+    #expect(store.valuesSnapshot[.deepseek] == "new-deepseek")
+    #expect(store.valuesSnapshot[.openAI] == "old-openai")
+  }
+
+  @Test @MainActor
   func translationPreflightKeychainReadDoesNotBlockMainActor() async throws {
     let store = BlockingCredentialStore(
       blocking: .read, values: [.deepseek: "test-key", .openAI: ""])
@@ -4277,6 +4308,7 @@ private final class BlockingCredentialStore: ProviderCredentialStoring, @uncheck
   private var values: [ProviderCredential: String]
   private var started = false
   private var didBlock = false
+  private var writes = 0
 
   init(blocking operation: Operation, values: [ProviderCredential: String]) {
     blockedOperation = operation
@@ -4295,6 +4327,12 @@ private final class BlockingCredentialStore: ProviderCredentialStoring, @uncheck
     return values
   }
 
+  var writeCount: Int {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return writes
+  }
+
   func release() {
     releaseSemaphore.signal()
   }
@@ -4307,6 +4345,9 @@ private final class BlockingCredentialStore: ProviderCredentialStoring, @uncheck
   }
 
   func setValue(_ value: String, for credential: ProviderCredential) throws {
+    stateLock.lock()
+    writes += 1
+    stateLock.unlock()
     blockOnce(for: .write)
     stateLock.lock()
     defer { stateLock.unlock() }

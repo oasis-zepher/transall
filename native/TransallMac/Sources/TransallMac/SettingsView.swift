@@ -45,6 +45,7 @@ final class ProviderSettingsModel: ObservableObject {
   }
 
   func save(appModel: AppModel) async {
+    guard !isSaving else { return }
     guard isLoaded, !isLoading else {
       messageIsError = true
       message = "请先重新读取钥匙串，再保存 API Key。"
@@ -108,6 +109,7 @@ final class ProviderSettingsModel: ObservableObject {
   func remove(
     _ credential: ProviderCredential, appModel: AppModel
   ) async {
+    guard !isSaving else { return }
     guard isLoaded, !isLoading else {
       messageIsError = true
       message = "请先重新读取钥匙串，再删除 API Key。"

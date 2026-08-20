@@ -246,6 +246,14 @@ enum FormatRouterMetrics {
   static func routeCoreWidth(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
     dynamicTypeSize.isAccessibilitySize ? 144 : 122
   }
+
+  static func displayedLabel(_ label: String, allowsMultiline: Bool) -> String {
+    guard allowsMultiline, label.count > 5, !label.contains(where: { $0.isWhitespace }) else {
+      return label
+    }
+    let midpoint = label.index(label.startIndex, offsetBy: label.count / 2)
+    return "\(label[..<midpoint])\n\(label[midpoint...])"
+  }
 }
 
 private struct FormatNode: View {
@@ -260,7 +268,7 @@ private struct FormatNode: View {
 
   var body: some View {
     Button(action: action) {
-      Text(label)
+      Text(FormatRouterMetrics.displayedLabel(label, allowsMultiline: allowsMultilineLabel))
         .font(.system(.caption2, design: .rounded, weight: .bold))
         .minimumScaleFactor(allowsMultilineLabel ? 1 : 0.72)
         .lineLimit(allowsMultilineLabel ? 2 : 1)

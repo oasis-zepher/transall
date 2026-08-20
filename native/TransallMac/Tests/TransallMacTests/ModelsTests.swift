@@ -18,6 +18,9 @@ struct ModelsTests {
     #expect(standardDiameter == 58)
     #expect(accessibilityDiameter == 78)
     #expect(FormatRouterMetrics.routeCoreWidth(for: .accessibility1) > 122)
+    #expect(FormatRouterMetrics.displayedLabel("Markdown", allowsMultiline: false) == "Markdown")
+    #expect(FormatRouterMetrics.displayedLabel("Markdown", allowsMultiline: true) == "Mark\ndown")
+    #expect(FormatRouterMetrics.displayedLabel("译文 PDF", allowsMultiline: true) == "译文 PDF")
 
     let canvasSize: CGFloat = 348
     let radius = FormatRouterMetrics.orbitRadius(

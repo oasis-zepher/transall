@@ -16,7 +16,7 @@ struct FormatRouterView: View {
 
       orbit
         .frame(height: 348)
-        .disabled(model.isImporting || model.isSubmitting)
+        .disabled(model.isImporting || model.isSubmitting || model.isSaving)
 
       routeDetails
     }

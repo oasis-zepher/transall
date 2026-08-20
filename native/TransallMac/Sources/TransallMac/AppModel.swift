@@ -18,6 +18,10 @@ private struct DocumentImportError: LocalizedError, Sendable {
 
 @MainActor
 final class AppModel: ObservableObject {
+  typealias ResultDestinationPicker = @MainActor (_ suggestedName: String) -> URL?
+  typealias ResultDownloader = @MainActor (_ jobID: String, _ destination: URL) async throws -> Void
+  typealias ResultRevealer = @MainActor (_ destination: URL) -> Void
+
   @Published var capabilities: CapabilitiesResponse?
   @Published var diagnostics: [String: DiagnosticDefinition] = [:]
   @Published var providers: [ProviderDefinition] = []
@@ -31,7 +35,7 @@ final class AppModel: ObservableObject {
   @Published var errorMessage: String?
   @Published private(set) var isImporting = false
   @Published var isSubmitting = false
-  @Published var isSaving = false
+  @Published private(set) var isSaving = false
   @Published var isDeletingJob = false
   @Published var isLoadingPreview = false
   @Published var showAdvanced = false
@@ -40,17 +44,34 @@ final class AppModel: ObservableObject {
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
   private var retentionCleanupTask: Task<Void, Never>?
+  private var resultSaveTask: Task<Void, Never>?
   private let preferences: UserDefaults
+  private let resultDestinationPicker: ResultDestinationPicker
+  private let resultDownloader: ResultDownloader
+  private let resultRevealer: ResultRevealer
   private let lastJobKey = "transall.native.lastJobId"
 
-  init() {
-    backend = NativeDocumentEngine()
-    preferences = .standard
+  convenience init() {
+    self.init(backend: NativeDocumentEngine())
   }
 
-  init(backend: NativeDocumentEngine, preferences: UserDefaults = .standard) {
+  init(
+    backend: NativeDocumentEngine, preferences: UserDefaults = .standard,
+    resultDestinationPicker: ResultDestinationPicker? = nil,
+    resultDownloader: ResultDownloader? = nil,
+    resultRevealer: ResultRevealer? = nil
+  ) {
     self.backend = backend
     self.preferences = preferences
+    self.resultDestinationPicker = resultDestinationPicker ?? Self.pickResultDestination
+    self.resultDownloader =
+      resultDownloader ?? { jobID, destination in
+        try await backend.download(jobID: jobID, to: destination)
+      }
+    self.resultRevealer =
+      resultRevealer ?? { destination in
+        NSWorkspace.shared.activateFileViewerSelecting([destination])
+      }
   }
 
   let formatOrder = [
@@ -67,6 +88,7 @@ final class AppModel: ObservableObject {
       && !documents.isEmpty
       && !isImporting
       && !isSubmitting
+      && !isSaving
       && !isDeletingJob
       && currentJob?.isRunning != true
   }
@@ -139,6 +161,10 @@ final class AppModel: ObservableObject {
       errorMessage = "正在创建任务，请稍后再更换路径。"
       return
     }
+    guard !isSaving else {
+      errorMessage = "正在保存结果，请先取消保存再更换路径。"
+      return
+    }
     guard currentJob?.isRunning != true else {
       errorMessage = "任务运行中，请先取消任务再更换路径。"
       return
@@ -163,6 +189,10 @@ final class AppModel: ObservableObject {
     }
     guard !isSubmitting else {
       errorMessage = "正在创建任务，请稍后再重选路径。"
+      return
+    }
+    guard !isSaving else {
+      errorMessage = "正在保存结果，请先取消保存再重选路径。"
       return
     }
     guard currentJob?.isRunning != true else {
@@ -336,25 +366,45 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func saveResult() async {
-    guard !isDeletingJob, let job = currentJob, job.status == "done", let output = job.output
+  func startSavingResult() {
+    guard resultSaveTask == nil, !isSaving, !isDeletingJob,
+      let job = currentJob, job.status == "done", let output = job.output
     else { return }
-    let panel = NSSavePanel()
-    panel.nameFieldStringValue = output
-    panel.canCreateDirectories = true
-    panel.message = ResultSavePolicy.panelMessage
-    guard panel.runModal() == .OK, let destination = panel.url else { return }
+    guard let destination = resultDestinationPicker(output) else { return }
 
-    isSaving = true
-    defer { isSaving = false }
     do {
       try ResultSavePolicy.validate(
         destination: destination, originalDocuments: resultOriginalDocuments)
-      try await backend.download(jobID: job.id, to: destination)
-      NSWorkspace.shared.activateFileViewerSelecting([destination])
     } catch {
       errorMessage = error.localizedDescription
+      return
     }
+
+    errorMessage = nil
+    isSaving = true
+    resultSaveTask = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        isSaving = false
+        resultSaveTask = nil
+      }
+      do {
+        try await resultDownloader(job.id, destination)
+        try Task.checkCancellation()
+        resultRevealer(destination)
+      } catch is CancellationError {
+        return
+      } catch {
+        guard !Task.isCancelled else { return }
+        errorMessage = error.localizedDescription
+      }
+    }
+  }
+
+  func cancelResultSaving() async {
+    guard let resultSaveTask else { return }
+    resultSaveTask.cancel()
+    await resultSaveTask.value
   }
 
   func refreshPreview() async {
@@ -376,6 +426,7 @@ final class AppModel: ObservableObject {
   }
 
   func cleanupExpiredJobs(now: Date = Date()) async {
+    guard !isSaving else { return }
     let removed = await backend.cleanupExpiredJobs(now: now)
     guard let currentJob, removed.contains(currentJob.id) else { return }
     pollingTask?.cancel()
@@ -385,6 +436,7 @@ final class AppModel: ObservableObject {
   func prepareForTermination() {
     pollingTask?.cancel()
     retentionCleanupTask?.cancel()
+    resultSaveTask?.cancel()
     backend.prepareForTermination()
   }
 
@@ -478,5 +530,14 @@ final class AppModel: ObservableObject {
     } catch {
       preferences.removeObject(forKey: lastJobKey)
     }
+  }
+
+  private static func pickResultDestination(suggestedName: String) -> URL? {
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = suggestedName
+    panel.canCreateDirectories = true
+    panel.message = ResultSavePolicy.panelMessage
+    guard panel.runModal() == .OK else { return nil }
+    return panel.url
   }
 }

@@ -103,6 +103,7 @@ struct ContentView: View {
             .buttonStyle(QuietButtonStyle())
             .disabled(
               model.currentJob?.isRunning == true || model.isImporting || model.isSubmitting
+                || model.isSaving
             )
             .help(resetRouteHelp)
         }
@@ -131,6 +132,7 @@ struct ContentView: View {
   private var resetRouteHelp: String {
     if model.isImporting { return "正在读取文件" }
     if model.isSubmitting { return "正在创建任务" }
+    if model.isSaving { return "先取消正在进行的结果保存" }
     if model.currentJob?.isRunning == true { return "先取消正在运行的任务" }
     return "重新选择源格式和目标格式"
   }

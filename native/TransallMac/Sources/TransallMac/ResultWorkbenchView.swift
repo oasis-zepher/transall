@@ -153,11 +153,23 @@ struct ResultWorkbenchView: View {
           .lineLimit(3)
           .truncationMode(.middle)
           .help(output)
-        Button(model.isSaving ? "正在保存" : "保存结果…") {
-          Task { await model.saveResult() }
+        if model.isSaving {
+          ProgressView("正在保存")
+            .controlSize(.small)
+            .font(.caption2)
+            .foregroundStyle(TransallTheme.muted)
+          Button("取消保存", role: .cancel) {
+            Task { await model.cancelResultSaving() }
+          }
+          .buttonStyle(QuietButtonStyle())
+          .help("停止当前结果复制；已有目标文件保持不变")
+        } else {
+          Button("保存结果…") {
+            model.startSavingResult()
+          }
+          .buttonStyle(PrimaryButtonStyle())
+          .disabled(model.isDeletingJob)
         }
-        .buttonStyle(PrimaryButtonStyle())
-        .disabled(model.isSaving || model.isDeletingJob)
 
         if model.hasPreviewableResult {
           Button(previewButtonLabel) {

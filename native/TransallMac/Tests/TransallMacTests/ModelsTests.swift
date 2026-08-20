@@ -992,6 +992,115 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func resultSavingCanBeCancelledWithoutReportingFailureOrRevealingDestination() async {
+    let gate = DeletionRaceGate()
+    let destination = URL(fileURLWithPath: "/tmp/transall-cancelled-result.pdf")
+    var destinationPickerCalls = 0
+    var revealedDestinations: [URL] = []
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      resultDestinationPicker: { _ in
+        destinationPickerCalls += 1
+        return destination
+      },
+      resultDownloader: { _, _ in
+        await gate.markStarted()
+        do {
+          try await Task.sleep(for: .seconds(60))
+        } catch is CancellationError {
+          await gate.markCancelled()
+          throw CancellationError()
+        }
+      },
+      resultRevealer: { revealedDestinations.append($0) })
+    let job = completedTestJob()
+    model.currentJob = job
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
+
+    model.startSavingResult()
+
+    #expect(model.isSaving)
+    #expect(!model.canDeleteCurrentJob)
+    #expect(!model.canRun)
+    model.startSavingResult()
+    #expect(destinationPickerCalls == 1)
+    await model.deleteCurrentJob()
+    #expect(model.currentJob == job)
+    model.resetRoute(animated: false)
+    #expect(model.currentJob == job)
+    #expect(model.errorMessage == "正在保存结果，请先取消保存再重选路径。")
+    model.errorMessage = nil
+
+    await gate.waitUntilStarted()
+    await model.cancelResultSaving()
+
+    #expect(!model.isSaving)
+    #expect(model.errorMessage == nil)
+    #expect(revealedDestinations.isEmpty)
+    await gate.waitUntilCancelled()
+  }
+
+  @Test @MainActor
+  func terminatingAppCancelsInFlightResultSaving() async {
+    let gate = DeletionRaceGate()
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      resultDestinationPicker: { _ in
+        URL(fileURLWithPath: "/tmp/transall-termination-result.pdf")
+      },
+      resultDownloader: { _, _ in
+        await gate.markStarted()
+        do {
+          try await Task.sleep(for: .seconds(60))
+        } catch is CancellationError {
+          await gate.markCancelled()
+          throw CancellationError()
+        }
+      },
+      resultRevealer: { _ in Issue.record("A cancelled save must not open Finder") })
+    model.currentJob = completedTestJob()
+
+    model.startSavingResult()
+    await gate.waitUntilStarted()
+    model.prepareForTermination()
+    await gate.waitUntilCancelled()
+
+    for _ in 0..<20 where model.isSaving {
+      await Task.yield()
+    }
+    #expect(!model.isSaving)
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test @MainActor
+  func successfulResultSavingRevealsDestinationAfterDownload() async {
+    let destination = URL(fileURLWithPath: "/tmp/transall-successful-result.pdf")
+    let recorder = ResultSaveRecorder()
+    let job = completedTestJob()
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      resultDestinationPicker: { suggestedName in
+        #expect(suggestedName == job.output)
+        return destination
+      },
+      resultDownloader: { jobID, downloadedDestination in
+        recorder.recordDownload(jobID: jobID, destination: downloadedDestination)
+      },
+      resultRevealer: { recorder.recordReveal(destination: $0) })
+    model.currentJob = job
+
+    model.startSavingResult()
+    await recorder.waitUntilRevealed()
+
+    #expect(recorder.downloadedJobID == job.id)
+    #expect(recorder.downloadedDestination == destination)
+    #expect(recorder.revealedDestination == destination)
+    #expect(!model.isSaving)
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test @MainActor
   func failedImportRemovesIncompleteJobDirectory() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-job-failure-test-\(UUID().uuidString)", isDirectory: true)
@@ -3454,6 +3563,39 @@ struct ModelsTests {
       CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
     #expect(CGImageDestinationFinalize(destination))
+  }
+
+  private func completedTestJob() -> JobResponse {
+    let now = ISO8601DateFormatter().string(from: Date())
+    return JobResponse(
+      id: UUID().uuidString.lowercased(), kind: "text_to_pdf", status: "done",
+      inputs: ["source.txt"], createdAt: now, updatedAt: now, output: "result.pdf",
+      error: nil, stage: "complete", message: "任务完成。", errorCode: nil,
+      errorHint: nil, retryable: false, progress: 100, cancelRequested: false, logs: [])
+  }
+}
+
+@MainActor
+private final class ResultSaveRecorder {
+  private(set) var downloadedJobID: String?
+  private(set) var downloadedDestination: URL?
+  private(set) var revealedDestination: URL?
+  private var revealWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func recordDownload(jobID: String, destination: URL) {
+    downloadedJobID = jobID
+    downloadedDestination = destination
+  }
+
+  func recordReveal(destination: URL) {
+    revealedDestination = destination
+    for waiter in revealWaiters { waiter.resume() }
+    revealWaiters.removeAll()
+  }
+
+  func waitUntilRevealed() async {
+    guard revealedDestination == nil else { return }
+    await withCheckedContinuation { revealWaiters.append($0) }
   }
 }
 

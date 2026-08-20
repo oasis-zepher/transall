@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-enum ProviderCredential: String, CaseIterable, Identifiable {
+enum ProviderCredential: String, CaseIterable, Identifiable, Sendable {
   case deepseek
   case openAI = "openai"
 
@@ -33,14 +33,12 @@ enum ProviderCredentialStoreError: LocalizedError {
   }
 }
 
-@MainActor
-protocol ProviderCredentialStoring {
+protocol ProviderCredentialStoring: Sendable {
   func value(for credential: ProviderCredential) throws -> String
   func setValue(_ value: String, for credential: ProviderCredential) throws
 }
 
-@MainActor
-struct KeychainClient {
+struct KeychainClient: @unchecked Sendable {
   let copyMatching: ([String: Any]) -> (OSStatus, Data?)
   let update: ([String: Any], [String: Any]) -> OSStatus
   let add: ([String: Any]) -> OSStatus
@@ -63,8 +61,7 @@ struct KeychainClient {
     })
 }
 
-@MainActor
-struct ProviderCredentialStore: ProviderCredentialStoring {
+struct ProviderCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
   static let shared = ProviderCredentialStore()
   private static let service = "com.transall.mac.translation-providers"
   private let client: KeychainClient
@@ -199,6 +196,124 @@ struct ProviderCredentialStore: ProviderCredentialStoring {
     let addStatus = client.add(item)
     guard addStatus == errSecSuccess else {
       throw ProviderCredentialStoreError.keychain(addStatus)
+    }
+  }
+}
+
+struct ProviderCredentialStatusSnapshot: Sendable {
+  let configured: [ProviderCredential: Bool]
+  let errors: [ProviderCredential: String]
+}
+
+enum ProviderCredentialTransactionError: Error, Sendable {
+  case save(
+    saveError: String, previousValues: [ProviderCredential: String],
+    actualValues: [ProviderCredential: String]?, reconciliationError: String?,
+    rollbackErrors: [String]
+  )
+  case removal(
+    credential: ProviderCredential, removalError: String,
+    actualValues: [ProviderCredential: String]?, reconciliationError: String?
+  )
+}
+
+actor ProviderCredentialWorker {
+  static let shared = ProviderCredentialWorker(store: ProviderCredentialStore.shared)
+
+  private let store: any ProviderCredentialStoring
+
+  init(store: any ProviderCredentialStoring) {
+    self.store = store
+  }
+
+  func value(for credential: ProviderCredential) throws -> String {
+    try store.value(for: credential)
+  }
+
+  func readStoredValues() throws -> [ProviderCredential: String] {
+    var values: [ProviderCredential: String] = [:]
+    for credential in ProviderCredential.allCases {
+      values[credential] = try store.value(for: credential)
+    }
+    return values
+  }
+
+  func status() -> ProviderCredentialStatusSnapshot {
+    var configured: [ProviderCredential: Bool] = [:]
+    var errors: [ProviderCredential: String] = [:]
+    for credential in ProviderCredential.allCases {
+      do {
+        let value = try store.value(for: credential)
+        configured[credential] =
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      } catch {
+        configured[credential] = false
+        errors[credential] = error.localizedDescription
+      }
+    }
+    return ProviderCredentialStatusSnapshot(configured: configured, errors: errors)
+  }
+
+  func save(
+    _ values: [ProviderCredential: String],
+    replacing previousValues: [ProviderCredential: String]
+  ) throws -> [ProviderCredential: String] {
+    let changed = ProviderCredential.allCases.filter { values[$0] != previousValues[$0] }
+    var attempted: [ProviderCredential] = []
+    do {
+      for credential in changed {
+        attempted.append(credential)
+        try store.setValue(values[credential] ?? "", for: credential)
+      }
+      return values
+    } catch {
+      let saveError = error.localizedDescription
+      var rollbackErrors: [String] = []
+      for credential in attempted.reversed() {
+        do {
+          try store.setValue(previousValues[credential] ?? "", for: credential)
+        } catch {
+          rollbackErrors.append("\(credential.displayName)：\(error.localizedDescription)")
+        }
+      }
+      let actualValues: [ProviderCredential: String]?
+      let reconciliationError: String?
+      do {
+        actualValues = try readStoredValues()
+        reconciliationError = nil
+      } catch {
+        actualValues = nil
+        reconciliationError = error.localizedDescription
+      }
+      throw ProviderCredentialTransactionError.save(
+        saveError: saveError, previousValues: previousValues, actualValues: actualValues,
+        reconciliationError: reconciliationError,
+        rollbackErrors: rollbackErrors)
+    }
+  }
+
+  func remove(
+    _ credential: ProviderCredential, from previousValues: [ProviderCredential: String]
+  ) throws -> [ProviderCredential: String] {
+    do {
+      try store.setValue("", for: credential)
+      var values = previousValues
+      values[credential] = ""
+      return values
+    } catch {
+      let removalError = error.localizedDescription
+      let actualValues: [ProviderCredential: String]?
+      let reconciliationError: String?
+      do {
+        actualValues = try readStoredValues()
+        reconciliationError = nil
+      } catch {
+        actualValues = nil
+        reconciliationError = error.localizedDescription
+      }
+      throw ProviderCredentialTransactionError.removal(
+        credential: credential, removalError: removalError, actualValues: actualValues,
+        reconciliationError: reconciliationError)
     }
   }
 }

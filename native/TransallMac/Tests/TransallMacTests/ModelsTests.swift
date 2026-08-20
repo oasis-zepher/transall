@@ -214,10 +214,10 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func preflightRejectsEmptyFilesBeforeProcessing() throws {
+  func preflightRejectsEmptyFilesBeforeProcessing() async throws {
     let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
     let document = SelectedDocument(url: URL(fileURLWithPath: "/tmp/empty.pdf"), size: 0)
-    let result = NativeDocumentEngine().preflight(
+    let result = await NativeDocumentEngine().preflight(
       route: route, files: [document], options: JobOptions())
 
     #expect(!result.ok)
@@ -225,7 +225,7 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func preflightRejectsMultipleFilesForSingleDocumentRoutes() throws {
+  func preflightRejectsMultipleFilesForSingleDocumentRoutes() async throws {
     let editRoute = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
     let translateRoute = try #require(
       NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
@@ -235,15 +235,16 @@ struct ModelsTests {
     ]
 
     let engine = NativeDocumentEngine()
-    let edit = engine.preflight(route: editRoute, files: files, options: JobOptions())
-    let translate = engine.preflight(route: translateRoute, files: files, options: JobOptions())
+    let edit = await engine.preflight(route: editRoute, files: files, options: JobOptions())
+    let translate = await engine.preflight(
+      route: translateRoute, files: files, options: JobOptions())
 
     #expect(edit.blockingIssues.contains { $0.code == "single_file_required" })
     #expect(translate.blockingIssues.contains { $0.code == "single_file_required" })
 
     var mergeOptions = JobOptions()
     mergeOptions.editAction = "merge"
-    let merge = engine.preflight(route: editRoute, files: files, options: mergeOptions)
+    let merge = await engine.preflight(route: editRoute, files: files, options: mergeOptions)
     #expect(!merge.blockingIssues.contains { $0.code == "single_file_required" })
     #expect(!merge.blockingIssues.contains { $0.code == "merge_requires_files" })
   }
@@ -268,7 +269,7 @@ struct ModelsTests {
     options.cropPages = "1"
     options.cropBox = "0,0,0,20"
 
-    let preflight = engine.preflight(route: route, files: files, options: options)
+    let preflight = await engine.preflight(route: route, files: files, options: options)
     #expect(!preflight.ok)
     #expect(preflight.blockingIssues.contains { $0.code == "invalid_page_selection" })
     #expect(preflight.blockingIssues.contains { $0.code == "invalid_rotation" })
@@ -287,12 +288,12 @@ struct ModelsTests {
 
     options = JobOptions()
     options.editAction = "unknown"
-    let invalidAction = engine.preflight(route: route, files: files, options: options)
+    let invalidAction = await engine.preflight(route: route, files: files, options: options)
     #expect(invalidAction.blockingIssues.contains { $0.code == "invalid_edit_action" })
   }
 
   @Test @MainActor
-  func pdfEditOptionBoundsRejectOversizedAndNonfiniteValues() throws {
+  func pdfEditOptionBoundsRejectOversizedAndNonfiniteValues() async throws {
     let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
     let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 4)
     var options = JobOptions()
@@ -303,7 +304,7 @@ struct ModelsTests {
     options.watermark = String(
       repeating: "水", count: JobOptionValidator.maximumWatermarkCharacters + 1)
 
-    let preflight = NativeDocumentEngine().preflight(
+    let preflight = await NativeDocumentEngine().preflight(
       route: route, files: [file], options: options)
     #expect(preflight.blockingIssues.contains { $0.code == "page_selection_too_large" })
     #expect(preflight.blockingIssues.contains { $0.code == "invalid_crop_box" })
@@ -313,7 +314,7 @@ struct ModelsTests {
     options.cropBox = String(
       repeating: "0", count: JobOptionValidator.maximumCropBoxCharacters + 1)
     options.watermark = ""
-    let oversizedCrop = NativeDocumentEngine().preflight(
+    let oversizedCrop = await NativeDocumentEngine().preflight(
       route: route, files: [file], options: options)
     #expect(oversizedCrop.blockingIssues.contains { $0.code == "crop_box_too_large" })
 
@@ -370,7 +371,7 @@ struct ModelsTests {
     translation.ocrLanguage = String(
       repeating: "y", count: JobOptionValidator.maximumOCRLanguageCharacters + 1)
 
-    let translationPreflight = engine.preflight(
+    let translationPreflight = await engine.preflight(
       route: translationRoute, files: [pdf], options: translation)
     #expect(
       translationPreflight.blockingIssues.contains {
@@ -397,13 +398,14 @@ struct ModelsTests {
     ocr.ocrOutputFormat = "unknown"
     ocr.ocrLanguage = String(
       repeating: "z", count: JobOptionValidator.maximumOCRLanguageCharacters + 1)
-    let ocrPreflight = engine.preflight(route: ocrRoute, files: [pdf], options: ocr)
+    let ocrPreflight = await engine.preflight(
+      route: ocrRoute, files: [pdf], options: ocr)
     #expect(ocrPreflight.blockingIssues.contains { $0.code == "invalid_ocr_output" })
     #expect(ocrPreflight.blockingIssues.contains { $0.code == "invalid_ocr_language" })
   }
 
   @Test @MainActor
-  func preflightRejectsOversizedTranslationGlossary() throws {
+  func preflightRejectsOversizedTranslationGlossary() async throws {
     let route = try #require(
       NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
     var options = JobOptions()
@@ -411,7 +413,7 @@ struct ModelsTests {
       repeating: "术", count: TranslationService.maximumGlossaryCharacters + 1)
     let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 10)
 
-    let result = NativeDocumentEngine().preflight(
+    let result = await NativeDocumentEngine().preflight(
       route: route, files: [file], options: options)
 
     #expect(result.blockingIssues.contains { $0.code == "glossary_too_large" })
@@ -442,7 +444,7 @@ struct ModelsTests {
     defer { engine.prepareForTermination() }
     await engine.start()
 
-    let preflight = engine.preflight(
+    let preflight = await engine.preflight(
       route: unsupported, files: [SelectedDocument(url: input, size: 28)],
       options: JobOptions())
     #expect(preflight.blockingIssues.map(\.code) == ["unsupported_route"])
@@ -529,7 +531,7 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func textToPDFPreflightUsesMemorySafeInputLimit() throws {
+  func textToPDFPreflightUsesMemorySafeInputLimit() async throws {
     let engine = NativeDocumentEngine()
     let textRoute = try #require(
       NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
@@ -537,11 +539,11 @@ struct ModelsTests {
       NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
     let oversized = Int64(NativeCapabilities.textToPDFLimitBytes) + 1
 
-    let textResult = engine.preflight(
+    let textResult = await engine.preflight(
       route: textRoute,
       files: [SelectedDocument(url: URL(fileURLWithPath: "/tmp/oversized.txt"), size: oversized)],
       options: JobOptions())
-    let imageResult = engine.preflight(
+    let imageResult = await engine.preflight(
       route: imageRoute,
       files: [SelectedDocument(url: URL(fileURLWithPath: "/tmp/oversized.png"), size: oversized)],
       options: JobOptions())
@@ -562,6 +564,7 @@ struct ModelsTests {
       readFailures: [.openAI])
     let settings = ProviderSettingsModel(store: store)
     let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
 
     #expect(!settings.isLoaded)
     #expect(settings.message.contains("现有 API Key 未被更改"))
@@ -581,6 +584,7 @@ struct ModelsTests {
       writeFailures: [.openAI: 1])
     let settings = ProviderSettingsModel(store: store)
     let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
     settings.deepseekKey = "new-deepseek"
     settings.openAIKey = "new-openai"
 
@@ -601,6 +605,7 @@ struct ModelsTests {
       postWriteFailures: [.openAI: 1])
     let settings = ProviderSettingsModel(store: store)
     let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
     settings.deepseekKey = "new-deepseek"
     settings.openAIKey = "new-openai"
 
@@ -623,6 +628,7 @@ struct ModelsTests {
       writeFailureCalls: [.openAI: [2]], postWriteFailures: [.openAI: 1])
     let settings = ProviderSettingsModel(store: store)
     let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
     settings.deepseekKey = "new-deepseek"
     settings.openAIKey = "new-openai"
 
@@ -646,6 +652,7 @@ struct ModelsTests {
       postWriteFailures: [.deepseek: 1])
     let settings = ProviderSettingsModel(store: store)
     let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
 
     await settings.remove(.deepseek, appModel: appModel)
 
@@ -654,6 +661,62 @@ struct ModelsTests {
     #expect(settings.message.contains("实际已删除"))
     #expect(settings.deepseekKey.isEmpty)
     #expect(store.values[.deepseek]?.isEmpty == true)
+  }
+
+  @Test @MainActor
+  func credentialSaveTransactionDoesNotBlockMainActor() async {
+    let store = BlockingCredentialStore(
+      blocking: .write, values: [.deepseek: "old-key", .openAI: ""])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
+    settings.deepseekKey = "new-key"
+
+    let save = Task { await settings.save(appModel: appModel) }
+    for _ in 0..<200 where !store.hasStarted {
+      try? await Task.sleep(for: .milliseconds(1))
+    }
+
+    let workerStarted = store.hasStarted
+    #expect(workerStarted)
+    #expect(settings.isSaving)
+    var mainActorProgressed = false
+    mainActorProgressed = true
+    #expect(mainActorProgressed)
+    store.release()
+    await save.value
+
+    #expect(!settings.isSaving)
+    #expect(settings.deepseekKey == "new-key")
+    #expect(store.valuesSnapshot[.deepseek] == "new-key")
+  }
+
+  @Test @MainActor
+  func translationPreflightKeychainReadDoesNotBlockMainActor() async throws {
+    let store = BlockingCredentialStore(
+      blocking: .read, values: [.deepseek: "test-key", .openAI: ""])
+    let engine = NativeDocumentEngine(credentialStore: store)
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 1)
+
+    let preflight = Task {
+      await engine.preflight(route: route, files: [file], options: JobOptions())
+    }
+    for _ in 0..<200 where !store.hasStarted {
+      try? await Task.sleep(for: .milliseconds(1))
+    }
+
+    let workerStarted = store.hasStarted
+    #expect(workerStarted)
+    var mainActorProgressed = false
+    mainActorProgressed = true
+    #expect(mainActorProgressed)
+    store.release()
+    let result = await preflight.value
+
+    #expect(result.ok)
+    #expect(!result.blockingIssues.contains { $0.code == "provider_keychain_unavailable" })
   }
 
   @Test @MainActor
@@ -710,14 +773,14 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func preflightReportsKeychainReadFailureSeparatelyFromMissingKey() throws {
+  func preflightReportsKeychainReadFailureSeparatelyFromMissingKey() async throws {
     let store = TestCredentialStore(readFailures: [.deepseek])
     let engine = NativeDocumentEngine(credentialStore: store)
     let route = try #require(
       NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
     let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 1)
 
-    let result = engine.preflight(
+    let result = await engine.preflight(
       route: route, files: [file], options: JobOptions())
 
     #expect(result.blockingIssues.contains { $0.code == "provider_keychain_unavailable" })
@@ -725,7 +788,7 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func invalidTranslationProviderDoesNotReadAnyCredential() throws {
+  func invalidTranslationProviderDoesNotReadAnyCredential() async throws {
     let store = TestCredentialStore(readFailures: Set(ProviderCredential.allCases))
     let engine = NativeDocumentEngine(credentialStore: store)
     let route = try #require(
@@ -734,7 +797,7 @@ struct ModelsTests {
     var options = JobOptions()
     options.provider = "unknown"
 
-    let result = engine.preflight(route: route, files: [file], options: options)
+    let result = await engine.preflight(route: route, files: [file], options: options)
 
     #expect(result.blockingIssues.contains { $0.code == "invalid_provider" })
     #expect(store.reads.isEmpty)
@@ -4048,7 +4111,7 @@ private func loadTestJSON<T: Decodable>(_ name: String, from directory: URL) thr
   try JSONDecoder().decode(T.self, from: Data(contentsOf: directory.appendingPathComponent(name)))
 }
 
-private final class TestCredentialStore: ProviderCredentialStoring {
+private final class TestCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
   struct Write: Equatable {
     let credential: ProviderCredential
     let value: String
@@ -4107,6 +4170,68 @@ private enum TestCredentialError: LocalizedError {
   case unavailable
 
   var errorDescription: String? { "测试钥匙串不可用" }
+}
+
+private final class BlockingCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
+  enum Operation: Sendable, Equatable {
+    case read
+    case write
+  }
+
+  private let blockedOperation: Operation
+  private let stateLock = NSLock()
+  private let releaseSemaphore = DispatchSemaphore(value: 0)
+  private var values: [ProviderCredential: String]
+  private var started = false
+  private var didBlock = false
+
+  init(blocking operation: Operation, values: [ProviderCredential: String]) {
+    blockedOperation = operation
+    self.values = values
+  }
+
+  var hasStarted: Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return started
+  }
+
+  var valuesSnapshot: [ProviderCredential: String] {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return values
+  }
+
+  func release() {
+    releaseSemaphore.signal()
+  }
+
+  func value(for credential: ProviderCredential) throws -> String {
+    blockOnce(for: .read)
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return values[credential] ?? ""
+  }
+
+  func setValue(_ value: String, for credential: ProviderCredential) throws {
+    blockOnce(for: .write)
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    values[credential] = value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func blockOnce(for operation: Operation) {
+    stateLock.lock()
+    let shouldBlock = operation == blockedOperation && !didBlock
+    if shouldBlock {
+      didBlock = true
+      started = true
+    }
+    stateLock.unlock()
+    if shouldBlock {
+      releaseSemaphore.wait()
+    }
+  }
 }
 
 @MainActor

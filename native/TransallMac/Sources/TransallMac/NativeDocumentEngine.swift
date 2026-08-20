@@ -55,19 +55,26 @@ final class NativeDocumentEngine: ObservableObject {
   private let jobPersister: JobPersister
   private let jobProcessor: JobProcessor
   private let inputCopier: InputCopier
-  private let credentialStore: any ProviderCredentialStoring
+  private let credentialWorker: ProviderCredentialWorker
   private let previewGenerator: PreviewGenerator
   private var isTerminating = false
 
   init(
     dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil,
     credentialStore: (any ProviderCredentialStoring)? = nil,
+    credentialWorker: ProviderCredentialWorker? = nil,
     jobProcessor: JobProcessor? = nil,
     inputCopier: InputCopier? = nil,
     previewGenerator: PreviewGenerator? = nil
   ) {
     self.dataDirectoryOverride = dataDirectoryOverride
-    self.credentialStore = credentialStore ?? ProviderCredentialStore.shared
+    if let credentialWorker {
+      self.credentialWorker = credentialWorker
+    } else if let credentialStore {
+      self.credentialWorker = ProviderCredentialWorker(store: credentialStore)
+    } else {
+      self.credentialWorker = .shared
+    }
     self.jobProcessor =
       jobProcessor ?? { route, inputs, options, outputURL, apiKey in
         try await NativeDocumentProcessor.process(
@@ -120,12 +127,18 @@ final class NativeDocumentEngine: ObservableObject {
 
   func capabilities() -> CapabilitiesResponse { NativeCapabilities.response }
 
-  func diagnostics() -> DiagnosticsResponse {
-    NativeCapabilities.diagnostics(providerConfigured: credentialStatus(logErrors: true))
+  func diagnostics() async -> DiagnosticsResponse {
+    let status = await credentialWorker.status()
+    for credential in ProviderCredential.allCases {
+      if let error = status.errors[credential] {
+        appendLog("无法读取 \(credential.displayName) API Key：\(error)")
+      }
+    }
+    return NativeCapabilities.diagnostics(providerConfigured: status.configured)
   }
 
-  func providers() -> ProvidersResponse {
-    NativeCapabilities.providers(configured: credentialStatus(logErrors: false))
+  func providers() async -> ProvidersResponse {
+    NativeCapabilities.providers(configured: await credentialWorker.status().configured)
   }
 
   func applyCredentialChanges() async -> String {
@@ -134,13 +147,35 @@ final class NativeDocumentEngine: ObservableObject {
 
   func preflight(
     route: RouteDefinition, files: [SelectedDocument], options: JobOptions
-  ) -> PreflightResponse {
-    makePreflight(route: route, files: files, options: options, checkCredentials: true)
+  ) async -> PreflightResponse {
+    var response = makePreflight(route: route, files: files, options: options)
+    guard route.kind == "pdf_translate",
+      let credential = ProviderCredential(rawValue: options.provider)
+    else { return response }
+
+    var blocking = response.blockingIssues
+    do {
+      let key = try await credentialWorker.value(for: credential)
+      if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        blocking.append(
+          issue(
+            "provider_not_configured", "\(credential.displayName) API Key 尚未配置。",
+            hint: "打开 Transall 设置并保存 API Key。"))
+      }
+    } catch {
+      blocking.append(
+        issue(
+          "provider_keychain_unavailable", "无法从 macOS 钥匙串读取翻译 API Key。",
+          hint: error.localizedDescription))
+    }
+    response = PreflightResponse(
+      ok: blocking.isEmpty, blockingIssues: blocking, warnings: response.warnings,
+      requirements: response.requirements)
+    return response
   }
 
   private func makePreflight(
-    route: RouteDefinition, files: [SelectedDocument], options: JobOptions,
-    checkCredentials: Bool
+    route: RouteDefinition, files: [SelectedDocument], options: JobOptions
   ) -> PreflightResponse {
     var blocking: [PreflightIssue] = []
     var warnings: [PreflightIssue] = []
@@ -198,23 +233,6 @@ final class NativeDocumentEngine: ObservableObject {
             "single_file_required", "PDF 翻译每次只能处理一个文件。",
             hint: "请移除多余文件后再开始翻译。"))
       }
-      if checkCredentials, let credential = ProviderCredential(rawValue: options.provider) {
-        do {
-          let key = try credentialStore.value(for: credential)
-          if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            blocking.append(
-              issue(
-                "provider_not_configured",
-                "\(credential.displayName) API Key 尚未配置。",
-                hint: "打开 Transall 设置并保存 API Key。"))
-          }
-        } catch {
-          blocking.append(
-            issue(
-              "provider_keychain_unavailable", "无法从 macOS 钥匙串读取翻译 API Key。",
-              hint: error.localizedDescription))
-        }
-      }
       warnings.append(
         issue(
           "remote_processing", "翻译时，提取出的文档文字会发送给所选服务商。",
@@ -231,8 +249,7 @@ final class NativeDocumentEngine: ObservableObject {
     guard state == .running, let dataDirectory else {
       throw NativeDocumentError.processing("原生文档引擎尚未就绪。")
     }
-    let validation = makePreflight(
-      route: route, files: files, options: options, checkCredentials: false)
+    let validation = makePreflight(route: route, files: files, options: options)
     if let issue = validation.blockingIssues.first {
       throw Self.preflightError(issue)
     }
@@ -489,28 +506,29 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func launch(jobID: String, metadata: NativeJobMetadata, directory: URL) {
     guard tasks[jobID] == nil else { return }
-    var apiKey: String?
-    var credentialError: String?
-    if metadata.route.kind == "pdf_translate",
-      let credential = ProviderCredential(rawValue: metadata.options.provider)
-    {
-      do {
-        apiKey = try credentialStore.value(for: credential)
-      } catch {
-        credentialError = "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)"
-      }
-    }
     let jobProcessor = self.jobProcessor
+    let credentialWorker = self.credentialWorker
     tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
       guard await self?.markRunning(jobID: jobID, directory: directory) == true else { return }
       var outputURL: URL?
       do {
+        var apiKey: String?
+        if metadata.route.kind == "pdf_translate",
+          let credential = ProviderCredential(rawValue: metadata.options.provider)
+        {
+          do {
+            apiKey = try await credentialWorker.value(for: credential)
+          } catch {
+            throw NativeDocumentError.provider(
+              "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)")
+          }
+        }
+        try Task.checkCancellation()
         let expectedOutputURL = try Self.containedFileURL(
           named: OutputFileNamer.name(
             for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
           in: directory, description: "任务结果")
         outputURL = expectedOutputURL
-        if let credentialError { throw NativeDocumentError.provider(credentialError) }
         let inputURLs = try Self.validatedStoredInputs(
           named: metadata.inputNames, in: directory)
         let result = try await jobProcessor(
@@ -707,22 +725,6 @@ final class NativeDocumentEngine: ObservableObject {
       output: output ?? job.output, error: error, stage: stage, message: message,
       errorCode: errorCode, errorHint: errorHint, retryable: retryable, progress: progress,
       cancelRequested: cancelRequested, logs: logs)
-  }
-
-  private func credentialStatus(logErrors: Bool) -> [ProviderCredential: Bool] {
-    var status: [ProviderCredential: Bool] = [:]
-    for credential in ProviderCredential.allCases {
-      do {
-        let value = try credentialStore.value(for: credential)
-        status[credential] = !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      } catch {
-        status[credential] = false
-        if logErrors {
-          appendLog("无法读取 \(credential.displayName) API Key：\(error.localizedDescription)")
-        }
-      }
-    }
-    return status
   }
 
   nonisolated static func copyInputs(

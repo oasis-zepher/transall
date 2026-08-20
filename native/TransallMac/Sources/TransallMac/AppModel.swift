@@ -148,8 +148,9 @@ final class AppModel: ObservableObject {
 
   func reloadEnvironment() async {
     let capabilities = backend.capabilities()
-    let diagnostics = backend.diagnostics()
-    let providers = backend.providers()
+    async let diagnosticsRequest = backend.diagnostics()
+    async let providersRequest = backend.providers()
+    let (diagnostics, providers) = await (diagnosticsRequest, providersRequest)
     self.capabilities = capabilities
     self.diagnostics = Dictionary(
       uniqueKeysWithValues: diagnostics.dependencies.map { ($0.name, $0) })
@@ -378,7 +379,8 @@ final class AppModel: ObservableObject {
     var createdJob: JobResponse?
     do {
       try Task.checkCancellation()
-      let preflight = backend.preflight(route: route, files: documents, options: options)
+      let preflight = await backend.preflight(
+        route: route, files: documents, options: options)
       preflightWarnings = preflight.warnings
       guard preflight.ok else {
         errorMessage = preflight.blockingIssues

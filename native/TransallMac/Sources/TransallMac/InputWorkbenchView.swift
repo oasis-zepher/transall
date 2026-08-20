@@ -193,7 +193,7 @@ struct InputWorkbenchView: View {
       optionGrid {
         Picker("翻译服务", selection: $model.options.provider) {
           ForEach(model.providers) { provider in
-            Text("\(provider.name.capitalized)\(provider.configured ? "" : "（未配置）")")
+            Text("\(provider.displayName)\(provider.configured ? "" : "（未配置）")")
               .tag(provider.name)
           }
         }

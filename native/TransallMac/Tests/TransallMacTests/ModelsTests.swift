@@ -50,6 +50,14 @@ struct ModelsTests {
   }
 
   @Test
+  func providerDisplayNamesPreserveOfficialCapitalization() {
+    let providers = NativeCapabilities.providers(configured: [:]).providers
+
+    #expect(providers.first { $0.name == "deepseek" }?.displayName == "DeepSeek")
+    #expect(providers.first { $0.name == "openai" }?.displayName == "OpenAI")
+  }
+
+  @Test
   func pageSelectionParsesRangesAndRejectsOutOfBounds() throws {
     #expect(try PageSelectionParser.indexes("1, 3-5", pageCount: 5) == [0, 2, 3, 4])
     #expect(throws: NativeDocumentError.self) {

@@ -86,6 +86,9 @@ struct ProviderDefinition: Codable, Equatable, Identifiable {
   let configured: Bool
 
   var id: String { name }
+  var displayName: String {
+    ProviderCredential(rawValue: name)?.displayName ?? name
+  }
 
   enum CodingKeys: String, CodingKey {
     case name

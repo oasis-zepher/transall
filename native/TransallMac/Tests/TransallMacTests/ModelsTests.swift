@@ -77,6 +77,21 @@ struct ModelsTests {
     #expect(providers.first { $0.name == "openai" }?.displayName == "OpenAI")
   }
 
+  @Test @MainActor
+  func environmentReloadUsesOneCredentialSnapshot() async {
+    let store = TestCredentialStore(values: [.deepseek: "test-key", .openAI: ""])
+    let engine = NativeDocumentEngine(credentialStore: store)
+    let model = AppModel(backend: engine)
+
+    await model.reloadEnvironment()
+
+    #expect(store.reads == [.deepseek, .openAI])
+    #expect(model.providers.first { $0.name == "deepseek" }?.configured == true)
+    #expect(model.providers.first { $0.name == "openai" }?.configured == false)
+    #expect(model.diagnostics["deepseek"]?.available == true)
+    #expect(model.diagnostics["openai"]?.available == false)
+  }
+
   @Test
   func pageSelectionParsesRangesAndRejectsOutOfBounds() throws {
     #expect(try PageSelectionParser.indexes("1, 3-5", pageCount: 5) == [0, 2, 3, 4])
@@ -1780,6 +1795,53 @@ struct ModelsTests {
     let metadataText = try #require(String(data: metadataData, encoding: .utf8))
     #expect(!metadataText.contains("private glossary marker"))
     #expect(!metadataText.contains("private watermark marker"))
+  }
+
+  @Test @MainActor
+  func translationJobReadsSelectedCredentialExactlyOnce() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-translation-key-read-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let translationRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let sourceText = temporary.appendingPathComponent("source.txt")
+    let sourcePDF = temporary.appendingPathComponent("source.pdf")
+    try Data("translation credential fixture".utf8).write(to: sourceText, options: .atomic)
+    _ = try await NativeDocumentProcessor.process(
+      route: textRoute, inputs: [sourceText], options: JobOptions(), outputURL: sourcePDF,
+      apiKey: nil)
+    let sourceSize = try #require(
+      sourcePDF.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+
+    let store = TestCredentialStore(values: [.deepseek: "test-key"])
+    let capturedKeys = APIKeyCapture()
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data"), credentialStore: store,
+      jobProcessor: { _, _, _, outputURL, apiKey in
+        await capturedKeys.append(apiKey)
+        try FileManager.default.copyItem(at: sourcePDF, to: outputURL)
+        return NativeDocumentProcessor.Result(outputURL: outputURL, logs: [])
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+
+    var job = try await engine.createJob(
+      route: translationRoute,
+      files: [SelectedDocument(url: sourcePDF, size: Int64(sourceSize))],
+      options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "done")
+    #expect(store.reads == [.deepseek])
+    #expect(await capturedKeys.snapshot() == ["test-key"])
   }
 
   @Test @MainActor
@@ -4189,6 +4251,18 @@ private enum TestCredentialError: LocalizedError {
   case unavailable
 
   var errorDescription: String? { "测试钥匙串不可用" }
+}
+
+private actor APIKeyCapture {
+  private var keys: [String?] = []
+
+  func append(_ key: String?) {
+    keys.append(key)
+  }
+
+  func snapshot() -> [String?] {
+    keys
+  }
 }
 
 private final class BlockingCredentialStore: ProviderCredentialStoring, @unchecked Sendable {

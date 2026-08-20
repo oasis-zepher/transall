@@ -127,18 +127,16 @@ final class NativeDocumentEngine: ObservableObject {
 
   func capabilities() -> CapabilitiesResponse { NativeCapabilities.response }
 
-  func diagnostics() async -> DiagnosticsResponse {
+  func environment() async -> NativeEnvironmentSnapshot {
     let status = await credentialWorker.status()
     for credential in ProviderCredential.allCases {
       if let error = status.errors[credential] {
         appendLog("无法读取 \(credential.displayName) API Key：\(error)")
       }
     }
-    return NativeCapabilities.diagnostics(providerConfigured: status.configured)
-  }
-
-  func providers() async -> ProvidersResponse {
-    NativeCapabilities.providers(configured: await credentialWorker.status().configured)
+    return NativeEnvironmentSnapshot(
+      diagnostics: NativeCapabilities.diagnostics(providerConfigured: status.configured),
+      providers: NativeCapabilities.providers(configured: status.configured))
   }
 
   func applyCredentialChanges() async -> String {

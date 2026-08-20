@@ -148,15 +148,13 @@ final class AppModel: ObservableObject {
 
   func reloadEnvironment() async {
     let capabilities = backend.capabilities()
-    async let diagnosticsRequest = backend.diagnostics()
-    async let providersRequest = backend.providers()
-    let (diagnostics, providers) = await (diagnosticsRequest, providersRequest)
+    let environment = await backend.environment()
     self.capabilities = capabilities
     self.diagnostics = Dictionary(
-      uniqueKeysWithValues: diagnostics.dependencies.map { ($0.name, $0) })
-    self.providers = providers.providers
-    if !providers.providers.contains(where: { $0.name == options.provider && $0.configured }),
-      let configured = providers.providers.first(where: \.configured)
+      uniqueKeysWithValues: environment.diagnostics.dependencies.map { ($0.name, $0) })
+    providers = environment.providers.providers
+    if !providers.contains(where: { $0.name == options.provider && $0.configured }),
+      let configured = providers.first(where: \.configured)
     {
       options.provider = configured.name
     }

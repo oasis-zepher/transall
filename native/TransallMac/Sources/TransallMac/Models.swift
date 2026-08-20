@@ -127,6 +127,11 @@ struct DiagnosticsResponse: Codable, Equatable {
   let dependencies: [DiagnosticDefinition]
 }
 
+struct NativeEnvironmentSnapshot: Equatable {
+  let diagnostics: DiagnosticsResponse
+  let providers: ProvidersResponse
+}
+
 struct PreflightIssue: Codable, Equatable, Identifiable {
   let code: String
   let dependency: String?

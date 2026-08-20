@@ -38,6 +38,13 @@ struct InputWorkbenchView: View {
       case .failure(let error): model.errorMessage = error.localizedDescription
       }
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: .transallChooseDocuments)
+    ) { _ in
+      guard model.canSelectDocuments else { return }
+      viewState.isAppending = !model.documents.isEmpty
+      viewState.showImporter = true
+    }
   }
 
   private var panelHeader: some View {
@@ -129,13 +136,13 @@ struct InputWorkbenchView: View {
     }
     .contentShape(Rectangle())
     .onTapGesture {
-      if model.documents.isEmpty, !inputIsLocked {
+      if model.documents.isEmpty, model.canSelectDocuments {
         viewState.isAppending = false
         viewState.showImporter = true
       }
     }
     .dropDestination(for: URL.self) { urls, _ in
-      guard !inputIsLocked, !urls.isEmpty else { return false }
+      guard model.canSelectDocuments, !urls.isEmpty else { return false }
       let appending = !model.documents.isEmpty
       Task { await model.importDocuments(urls, appending: appending) }
       return !urls.isEmpty
@@ -147,15 +154,14 @@ struct InputWorkbenchView: View {
     .accessibilityHint(
       inputAccessibilityHint
     )
-    .accessibilityAddTraits(model.documents.isEmpty && !inputIsLocked ? .isButton : [])
-    .accessibilityAction(named: "选择文件") {
-      guard !inputIsLocked else { return }
+    .accessibilityAddTraits(model.documents.isEmpty && model.canSelectDocuments ? .isButton : [])
+    .documentSelectionAccessibilityAction(enabled: model.canSelectDocuments) {
       viewState.isAppending = !model.documents.isEmpty
       viewState.showImporter = true
     }
-    .focusable(model.documents.isEmpty && !inputIsLocked)
+    .focusable(model.documents.isEmpty && model.canSelectDocuments)
     .onKeyPress(keys: [.return, .space]) { _ in
-      guard model.documents.isEmpty, !inputIsLocked else { return .ignored }
+      guard model.documents.isEmpty, model.canSelectDocuments else { return .ignored }
       viewState.isAppending = false
       viewState.showImporter = true
       return .handled
@@ -339,6 +345,7 @@ struct InputWorkbenchView: View {
   }
 
   private var inputAccessibilityHint: String {
+    if model.route?.enabled != true { return "先选择源格式和目标格式" }
     if model.isImporting { return "全部文件通过校验后才会加入列表" }
     if model.isSubmitting { return "正在创建任务，完成后可修改文件" }
     return model.documents.isEmpty
@@ -376,5 +383,18 @@ struct InputWorkbenchView: View {
 
   private func optionGrid<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     LazyVGrid(columns: fieldColumns, alignment: .leading, spacing: 9, content: content)
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func documentSelectionAccessibilityAction(
+    enabled: Bool, action: @escaping () -> Void
+  ) -> some View {
+    if enabled {
+      accessibilityAction(named: "选择文件", action)
+    } else {
+      self
+    }
   }
 }

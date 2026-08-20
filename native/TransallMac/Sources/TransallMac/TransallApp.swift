@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+  static let transallChooseDocuments = Notification.Name("com.transall.mac.choose-documents")
+}
+
 @main
 struct TransallApp: App {
   @StateObject private var model = AppModel()
@@ -22,6 +26,15 @@ struct TransallApp: App {
     }
     .windowStyle(.hiddenTitleBar)
     .defaultSize(width: 1240, height: 820)
+    .commands {
+      CommandGroup(replacing: .newItem) {
+        Button("选择文件…") {
+          NotificationCenter.default.post(name: .transallChooseDocuments, object: nil)
+        }
+        .keyboardShortcut("o", modifiers: .command)
+        .disabled(!model.canSelectDocuments)
+      }
+    }
 
     Settings {
       SettingsView()

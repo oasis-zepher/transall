@@ -71,6 +71,10 @@ final class AppModel: ObservableObject {
       && currentJob?.isRunning != true
   }
 
+  var canSelectDocuments: Bool {
+    route?.enabled == true && !isImporting && !isSubmitting
+  }
+
   var routeTitle: String {
     route?.title ?? "选择源格式和目标格式"
   }
@@ -193,6 +197,10 @@ final class AppModel: ObservableObject {
     guard !isImporting else { return }
     guard !isSubmitting else {
       errorMessage = "正在创建任务，请稍后再修改输入文件。"
+      return
+    }
+    guard route?.enabled == true else {
+      errorMessage = "请先选择源格式和目标格式。"
       return
     }
 

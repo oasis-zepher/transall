@@ -127,6 +127,9 @@ struct ModelsTests {
     try Data("second".utf8).write(to: second)
 
     let model = AppModel()
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
     await model.importDocuments([first, first])
     await model.importDocuments([first, second, second], appending: true)
 
@@ -149,6 +152,9 @@ struct ModelsTests {
     try FileManager.default.createSymbolicLink(at: symbolicLink, withDestinationURL: valid)
 
     let model = AppModel()
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
     await model.importDocuments([existing])
     await model.importDocuments([valid, symbolicLink])
 
@@ -156,6 +162,33 @@ struct ModelsTests {
     #expect(model.errorMessage?.contains("linked.pdf") == true)
     #expect(model.errorMessage?.contains("符号链接") == true)
     #expect(!model.isImporting)
+  }
+
+  @Test @MainActor
+  func documentSelectionRequiresACompleteRoute() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-route-import-test-\(UUID().uuidString).pdf")
+    try Data("sample".utf8).write(to: temporary)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let model = AppModel()
+    model.capabilities = NativeCapabilities.response
+
+    #expect(!model.canSelectDocuments)
+    await model.importDocuments([temporary])
+    #expect(model.documents.isEmpty)
+    #expect(model.errorMessage == "请先选择源格式和目标格式。")
+
+    model.selection.source = "pdf"
+    #expect(!model.canSelectDocuments)
+
+    model.selection.target = "pdf"
+    #expect(model.canSelectDocuments)
+    await model.importDocuments([temporary])
+    #expect(model.documents.map(\.name) == [temporary.lastPathComponent])
+
+    model.isSubmitting = true
+    #expect(!model.canSelectDocuments)
   }
 
   @Test

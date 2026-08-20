@@ -41,6 +41,8 @@ While preflight and input copying run, the workbench shows **取消创建**. `Ap
 
 Result export uses the same bounded transfer path. It writes to a sibling temporary file, rejects symbolic-link or changing task results, and replaces the selected destination only after the copy is complete. The result panel shows save progress and a cancel action; cancellation or app termination stops the active copy without showing an error or opening Finder. Cancellation or failure removes the temporary copy without changing an existing destination, and conflicting result or route operations stay disabled until saving ends.
 
+Keychain reads, saves, deletion, migration, rollback, and reconciliation run on a serial background actor. Launch diagnostics, Settings, and translation preflight therefore remain responsive if macOS Keychain access is delayed, while Settings publications stay isolated to the main actor.
+
 Choose both the source and target formats before adding files. After the route is complete, use the file well or **File → 选择文件…** (`⌘O`); the picker is filtered to the selected source format. Incomplete routes do not accept clicks, drops, accessibility actions, or menu imports.
 
 ## Tests

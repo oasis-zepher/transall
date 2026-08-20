@@ -7,18 +7,85 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 product-quality findings from the baseline audit are resolved. Xcode 26.6 production-toolchain verification also passes. The remaining work is account-holder work: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. A 2026-08-21 follow-up found four new P2 issues: task creation cannot be cancelled while large inputs are copied, Keychain work is synchronous on the main actor, the format router uses fixed small type, and the support site has no bypass link around repeated navigation. Xcode 26.6 verification still passes. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+
+## Anti-pattern verdict
+
+**Pass — the product does not look generically AI-generated.** The native app and support site consistently use the established light document-workbench language: paper-tinted surfaces, compact controls, precise borders, operational logs, and PDF previews. There are no decorative gradients, glass effects, hero metrics, interchangeable card grids, or unrelated dashboard elements.
 
 ## Health score
 
-| # | Dimension | Baseline | Final | Evidence |
+| # | Dimension | Baseline | Current | Evidence |
 | --- | --- | ---: | ---: | --- |
-| 1 | Accessibility | 3/4 | 4/4 | Support-site and native state text reach WCAG AA contrast; navigation targets are at least 44 px, and native controls expose labels, values, focus, reduced-motion behavior, preview-error announcements, and Keychain status announcements. |
-| 2 | Performance | 2/4 | 4/4 | OCR and image-to-PDF conversion process one bounded raster page at a time; OCR text and Markdown extraction stream page text to disk; PDF translation bounds source buffering and paid provider work before network access; single-document PDF editing avoids a redundant full-document copy; oversized images are downsampled for their target use; input metadata inspection is asynchronous and input rows are lazy; scanned-PDF routes reuse one raster document handle per input; and large file transfers, PDF previews, retention checks, and task deletion run outside the main actor. |
+| 1 | Accessibility | 3/4 | 3/4 | Contrast, labels, state announcements, focus, and reduced-motion behavior are strong, but the 9–10 pt format-node labels do not use semantic scalable type and the website has no skip link around repeated navigation. |
+| 2 | Performance | 2/4 | 3/4 | Heavy document work is bounded and runs outside the main actor, but the UI does not own or expose cancellation for the potentially 250 MB input-copy stage, and Security framework reads/writes remain synchronous on the main actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Internal product-quality findings resolved; external submission prerequisites remain.** |
+| **Total** |  | **16/20** | **18/20** | **Excellent foundation; four P2 follow-up items remain before the next release audit.** |
+
+## Executive summary
+
+- Audit health score: **18/20 — Excellent**.
+- Open findings: **0 P0, 0 P1, 4 P2, 0 P3**.
+- Highest-priority work is task-submission ownership and cancellation because the engine already supports cancellable chunked copies but the UI cannot request cancellation during that stage.
+- No new privacy, sandboxing, dependency, theme, responsive-layout, or AI-aesthetic issue was found.
+
+## Open follow-up findings
+
+### [P2] Task creation has no cancellation lifecycle
+
+- **Location:** `InputWorkbenchView.actionBar`, `AppModel.runJob`, `AppModel.prepareForTermination`, and `NativeDocumentEngine.createJob` / `copyInputs`.
+- **Category:** Performance / Interaction reliability.
+- **Impact:** After the user starts a task, copying up to 250 MB of input can continue with only a disabled “正在预检” button. `currentJob` does not exist yet, so “取消任务” is unavailable. The initiating SwiftUI `Task` is not retained by `AppModel`, and termination does not cancel it directly. A cancellation would also currently enter the generic error path.
+- **Recommendation:** Let `AppModel` own the submission task, expose a normal cancel action during validation and copying, cancel and await it during explicit cancellation, propagate termination cancellation, suppress cancellation alerts, and verify partial task-directory cleanup.
+- **Suggested command:** `$harden`.
+
+### [P2] Keychain operations run synchronously on the main actor
+
+- **Location:** `ProviderCredentialStoring`, `ProviderCredentialStore`, `ProviderSettingsModel.reload/save/remove`, and `NativeDocumentEngine.credentialStatus` / translation preflight.
+- **Category:** Performance.
+- **Impact:** `SecItemCopyMatching`, update, add, delete, migration, and rollback can run while the SwiftUI main actor is occupied. Normal calls are usually short, but Keychain contention, access prompts, or repeated rollback work can visibly stall launch, Settings, or translation preflight.
+- **Recommendation:** Move complete Keychain transactions to an isolated async worker while keeping published settings state on the main actor. Preserve the current rollback and reconciliation guarantees, and add delayed-store tests proving the UI actor can continue making progress.
+- **Suggested command:** `$optimize`.
+
+### [P2] Format-router labels do not scale with accessibility text size
+
+- **Location:** `FormatRouterView.FormatNode` and the route-core arrow label.
+- **Category:** Accessibility.
+- **Impact:** The primary route controls use fixed 9–10 pt text and may shrink to roughly 7 pt through `minimumScaleFactor`. Users who increase text size still receive the same small labels, making the most important controls harder to read even though VoiceOver labels are present.
+- **WCAG/standard:** WCAG 1.4.4 Resize Text principle; macOS accessibility text-size expectations.
+- **Recommendation:** Use semantic scalable fonts, allow short two-line labels or adapt node geometry at larger dynamic type sizes, and keep the existing circular-router identity.
+- **Suggested command:** `$adapt`.
+
+### [P2] Support pages cannot bypass repeated navigation
+
+- **Location:** `store/support-site/app/layout.tsx`, `site-chrome.tsx`, and `globals.css`.
+- **Category:** Accessibility.
+- **Impact:** Keyboard and switch-control users must traverse the wordmark and navigation links before reaching `<main>` on every page. The repeated block is small but still lacks a direct bypass mechanism.
+- **WCAG/standard:** WCAG 2.4.1 Bypass Blocks (Level A).
+- **Recommendation:** Add a visually hidden “跳到主要内容” link that becomes visible on focus, give the shared `<main>` target a stable identifier, and cover it in the rendered HTML tests.
+- **Suggested command:** `$adapt`.
+
+## Patterns and systemic issues
+
+- Backend cancellation support is stronger than UI task ownership. Result export now has a complete lifecycle, while task submission still depends on an unretained view-created task.
+- Most native text uses semantic SwiftUI styles; the fixed-size circular-router labels are the remaining exception in a primary workflow.
+- Website semantics, contrast, focus rings, and target sizes are covered, but repeated-navigation bypass was omitted from the current HTML contract.
+
+## Positive findings
+
+- Current foreground/background contrast checks pass: muted text is 4.95:1 on panels and 4.70:1 on paper; primary white text is 5.41:1 on the accent, 6.00:1 on source green, and 10.99:1 on target blue.
+- Native controls use explicit labels and values where iconography or status color alone would be ambiguous. Preview and Keychain failures request VoiceOver announcements without moving focus.
+- The support site uses semantic navigation and main landmarks, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
+- No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
+
+## Recommended actions
+
+1. **[P2] `$harden`** — make task creation model-owned and cancellable through input copy, termination, and cleanup.
+2. **[P2] `$optimize`** — move atomic Keychain transactions off the main actor without weakening rollback behavior.
+3. **[P2] `$adapt`** — support accessibility text sizing in the circular router and add the website bypass link.
+4. **[P3] `$polish`** — rerun native and website interaction checks after the three fixes.
 
 ## Resolved P1 findings
 
@@ -94,7 +161,7 @@ All P1, P2, and P3 product-quality findings from the baseline audit are resolved
 | Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure, and successful preview retry verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
-| Support website | ESLint passed; production build passed; 5/5 rendered HTML tests passed; desktop and 390 px browser checks have no horizontal overflow or console errors |
+| Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
 | Xcode 26.6 production verification | License accepted; tests, analysis, archive, dependency inspection, and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 

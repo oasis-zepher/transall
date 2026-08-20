@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 97/97 Swift package tests, 97/97 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. Xcode 26.6 passes 98/98 Swift package tests, 98/98 Xcode scheme tests, static analysis, an unsigned universal Release archive for arm64 and x86_64, dependency inspection, and a launch smoke test. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -66,6 +66,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - The 5.4 MB unsigned universal archive contains only the executable, Info.plist, AppIcon resources, asset catalog, and privacy manifest; no browser-edition runtime is bundled.
 - Image-to-PDF conversion decodes one input at a time, failed imports remove incomplete task directories, and the processor rejects unknown translation providers before network work.
 - File selection metadata is read outside the main actor. A mixed valid/invalid batch leaves the existing selection unchanged, directories and symbolic links are rejected with the matching filename, and conflicting route actions remain disabled during inspection.
+- File selection requires a complete enabled route at both the UI and model layers. Before that point, clicks, drops, keyboard focus, accessibility actions, and **File → 选择文件…** are unavailable. Afterward, `⌘O` opens the route-filtered importer; the default `New Window` command is removed because all workbench windows would otherwise share one task model.
 - The engine independently verifies source and copied inputs are regular non-symbolic-link files. Text-to-PDF input is limited to 20 MB to bound UTF-8 decoding, combined-text storage, and PDF layout memory; other native routes retain the 250 MB limit. The route-specific limit is enforced during selection and task preflight, rechecked against copied file sizes, and checked again by the text processor before loading data, so stale metadata and non-UI callers cannot bypass it.
 - Image decoding is bounded to 3,508 pixels for PDF generation and 2,400 pixels for OCR/Markdown extraction, preserving practical output resolution without fully materializing oversized source images.
 - Incomplete, corrupt, or symbolic-link preview caches are regenerated as regular files inside the task directory; corrupt task metadata no longer prevents the user from deleting local task data. Successful, failed, cancelled, and otherwise non-running tasks all expose the same confirmed deletion control.

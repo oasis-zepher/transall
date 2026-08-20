@@ -35,6 +35,8 @@ Input limits are route-specific so text rendering cannot create an excessive in-
 
 The displayed limit is enforced during file selection and task preflight, rechecked against the copied files, and checked again before text data is loaded for PDF generation.
 
+Choose both the source and target formats before adding files. After the route is complete, use the file well or **File → 选择文件…** (`⌘O`); the picker is filtered to the selected source format. Incomplete routes do not accept clicks, drops, accessibility actions, or menu imports.
+
 ## Tests
 
 ```bash

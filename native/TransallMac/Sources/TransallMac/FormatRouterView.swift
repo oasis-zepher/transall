@@ -3,6 +3,7 @@ import SwiftUI
 struct FormatRouterView: View {
   @EnvironmentObject private var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
     VStack(alignment: .leading, spacing: 15) {
@@ -26,7 +27,8 @@ struct FormatRouterView: View {
     GeometryReader { proxy in
       let size = min(proxy.size.width, proxy.size.height)
       let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
-      let radius = size * 0.405
+      let nodeDiameter = FormatRouterMetrics.nodeDiameter(for: dynamicTypeSize)
+      let radius = FormatRouterMetrics.orbitRadius(in: size, nodeDiameter: nodeDiameter)
 
       ZStack {
         Circle()
@@ -49,6 +51,8 @@ struct FormatRouterView: View {
             format: format,
             label: model.capabilities?.formats[format]?.label ?? fallbackLabel(for: format),
             state: state(for: format),
+            diameter: nodeDiameter,
+            allowsMultilineLabel: dynamicTypeSize.isAccessibilitySize,
             action: { model.chooseFormat(format, animated: !reduceMotion) }
           )
           .position(
@@ -69,13 +73,14 @@ struct FormatRouterView: View {
       routeSlot(title: "源格式", format: model.selection.source, color: TransallTheme.source)
 
       Image(systemName: "arrow.down")
-        .font(.system(size: 10, weight: .bold))
+        .font(.caption2.weight(.bold))
         .foregroundStyle(TransallTheme.muted)
+        .accessibilityHidden(true)
 
       routeSlot(title: "目标格式", format: model.selection.target, color: TransallTheme.target)
     }
     .padding(12)
-    .frame(width: 122)
+    .frame(width: FormatRouterMetrics.routeCoreWidth(for: dynamicTypeSize))
     .background(TransallTheme.panel.opacity(0.97))
     .overlay {
       RoundedRectangle(cornerRadius: 8)
@@ -229,22 +234,40 @@ struct FormatRouterView: View {
   }
 }
 
+enum FormatRouterMetrics {
+  static func nodeDiameter(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+    dynamicTypeSize.isAccessibilitySize ? 78 : 58
+  }
+
+  static func orbitRadius(in size: CGFloat, nodeDiameter: CGFloat) -> CGFloat {
+    min(size * 0.405, max(0, (size - nodeDiameter) / 2))
+  }
+
+  static func routeCoreWidth(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+    dynamicTypeSize.isAccessibilitySize ? 144 : 122
+  }
+}
+
 private struct FormatNode: View {
   enum State: Equatable { case available, unavailable, source, target }
 
   let format: String
   let label: String
   let state: State
+  let diameter: CGFloat
+  let allowsMultilineLabel: Bool
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
       Text(label)
-        .font(.system(size: label.count > 5 ? 9 : 10, weight: .bold, design: .rounded))
-        .minimumScaleFactor(0.72)
-        .lineLimit(1)
+        .font(.system(.caption2, design: .rounded, weight: .bold))
+        .minimumScaleFactor(allowsMultilineLabel ? 1 : 0.72)
+        .lineLimit(allowsMultilineLabel ? 2 : 1)
+        .multilineTextAlignment(.center)
         .foregroundStyle(foreground)
-        .frame(width: 58, height: 58)
+        .padding(.horizontal, allowsMultilineLabel ? 6 : 4)
+        .frame(width: diameter, height: diameter)
         .background(background)
         .overlay {
           Circle().stroke(border, lineWidth: state == .source || state == .target ? 2 : 1)

@@ -4,11 +4,27 @@ import Foundation
 import ImageIO
 import PDFKit
 import Security
+import SwiftUI
 import Testing
 
 @testable import TransallMac
 
 struct ModelsTests {
+  @Test
+  func formatRouterMetricsAdaptToAccessibilityTextSizeWithoutClipping() {
+    let standardDiameter = FormatRouterMetrics.nodeDiameter(for: .large)
+    let accessibilityDiameter = FormatRouterMetrics.nodeDiameter(for: .accessibility1)
+
+    #expect(standardDiameter == 58)
+    #expect(accessibilityDiameter == 78)
+    #expect(FormatRouterMetrics.routeCoreWidth(for: .accessibility1) > 122)
+
+    let canvasSize: CGFloat = 348
+    let radius = FormatRouterMetrics.orbitRadius(
+      in: canvasSize, nodeDiameter: accessibilityDiameter)
+    #expect(radius + accessibilityDiameter / 2 <= canvasSize / 2)
+  }
+
   @Test
   func routeSelectionResetsAfterCompletedPair() {
     var selection = RouteSelection()

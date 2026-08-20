@@ -780,6 +780,135 @@ struct ModelsTests {
   }
 
   @Test
+  func cancelledResultSavingPreservesExistingFileAndRemovesTemporaryCopy() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-cancellation-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.pdf")
+    let destination = temporary.appendingPathComponent("destination.pdf")
+    #expect(FileManager.default.createFile(atPath: source.path, contents: nil))
+    let sourceHandle = try FileHandle(forWritingTo: source)
+    try sourceHandle.truncate(atOffset: 1_024 * 1_024)
+    try sourceHandle.close()
+    try Data("existing result".utf8).write(to: destination)
+
+    let saveTask = Task.detached {
+      try AtomicResultSaver.copyReplacing(
+        source: source, destination: destination, chunkSize: 1)
+    }
+    var transferStarted = false
+    for _ in 0..<200 {
+      let entries = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+      if entries.contains(where: { $0.hasPrefix(".transall-save-") }) {
+        transferStarted = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+
+    saveTask.cancel()
+    var receivedCancellation = false
+    do {
+      try await saveTask.value
+      Issue.record("Cancelled result saving should not replace the destination")
+    } catch is CancellationError {
+      receivedCancellation = true
+    } catch {
+      Issue.record("Cancelled result saving returned an unexpected error: \(error)")
+    }
+
+    #expect(transferStarted)
+    #expect(receivedCancellation)
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "existing result")
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+    #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
+  }
+
+  @Test
+  func changedResultDuringSavingPreservesExistingFile() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-source-change-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.pdf")
+    let destination = temporary.appendingPathComponent("destination.pdf")
+    #expect(FileManager.default.createFile(atPath: source.path, contents: nil))
+    let initialHandle = try FileHandle(forWritingTo: source)
+    try initialHandle.truncate(atOffset: 64 * 1_024)
+    try initialHandle.close()
+    try Data("existing result".utf8).write(to: destination)
+
+    let saveTask = Task.detached {
+      try AtomicResultSaver.copyReplacing(
+        source: source, destination: destination, chunkSize: 1)
+    }
+    var transferStarted = false
+    for _ in 0..<200 {
+      let entries = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+      if entries.contains(where: { $0.hasPrefix(".transall-save-") }) {
+        transferStarted = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+
+    if transferStarted {
+      let mutationHandle = try FileHandle(forWritingTo: source)
+      try mutationHandle.seek(toOffset: 32 * 1_024)
+      try mutationHandle.write(contentsOf: Data([0x41]))
+      try mutationHandle.close()
+    } else {
+      saveTask.cancel()
+    }
+
+    var rejectedMutation = false
+    do {
+      try await saveTask.value
+      Issue.record("A changed result should not replace the destination")
+    } catch {
+      rejectedMutation = error.localizedDescription.contains("发生变化")
+    }
+
+    #expect(transferStarted)
+    #expect(rejectedMutation)
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "existing result")
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+    #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
+  }
+
+  @Test
+  func resultSavingRejectsSymbolicLinkSourceWithoutChangingDestination() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-link-source-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.pdf")
+    let link = temporary.appendingPathComponent("linked.pdf")
+    let destination = temporary.appendingPathComponent("destination.pdf")
+    try Data("source result".utf8).write(to: source)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
+    try Data("existing result".utf8).write(to: destination)
+
+    do {
+      try AtomicResultSaver.copyReplacing(source: link, destination: destination)
+      Issue.record("A symbolic-link result should not be saved")
+    } catch {
+      #expect(error.localizedDescription.contains("普通文件"))
+    }
+
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "existing result")
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+    #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
+  }
+
+  @Test
   func resultSavingRejectsOriginalFileAndItsLinks() throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(

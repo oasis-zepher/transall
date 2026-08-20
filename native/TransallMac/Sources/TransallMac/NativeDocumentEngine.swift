@@ -740,11 +740,13 @@ final class NativeDocumentEngine: ObservableObject {
               "\(document.name) 不是可复制的普通文件，请选择原始文件。")
           }
 
-          let (sourceHandle, sourceSize) = try openRegularSource(
-            document.url, displayName: document.name)
+          let (sourceHandle, initialSourceStatus) = try SecureFileTransfer.openRegularSource(
+            document.url,
+            nonRegularMessage: "\(document.name) 不是可复制的普通文件，请选择原始文件。")
           defer { try? sourceHandle.close() }
 
           try Task.checkCancellation()
+          let sourceSize = initialSourceStatus.st_size
           let maximum = Int64(maximumBytes)
           let (expectedTotal, expectedOverflow) = copiedBytes.addingReportingOverflow(sourceSize)
           guard !expectedOverflow, expectedTotal <= maximum else {
@@ -758,7 +760,7 @@ final class NativeDocumentEngine: ObservableObject {
               try? FileManager.default.removeItem(at: destination)
             }
           }
-          let destinationHandle = try openNewDestination(destination)
+          let destinationHandle = try SecureFileTransfer.openNewDestination(destination)
           defer { try? destinationHandle.close() }
 
           var fileBytes: Int64 = 0
@@ -783,13 +785,17 @@ final class NativeDocumentEngine: ObservableObject {
           try destinationHandle.synchronize()
           try Task.checkCancellation()
 
-          let sourceStatus = try fileStatus(for: sourceHandle.fileDescriptor)
-          let copiedStatus = try fileStatus(for: destinationHandle.fileDescriptor)
-          guard isRegularFile(sourceStatus), sourceStatus.st_size == fileBytes else {
+          let sourceStatus = try SecureFileTransfer.fileStatus(for: sourceHandle.fileDescriptor)
+          let copiedStatus = try SecureFileTransfer.fileStatus(
+            for: destinationHandle.fileDescriptor)
+          guard SecureFileTransfer.isUnchanged(initialSourceStatus, sourceStatus),
+            sourceStatus.st_size == fileBytes
+          else {
             throw NativeDocumentError.invalidFile(
               "\(document.name) 在复制过程中发生变化，请重新选择。")
           }
-          guard isRegularFile(copiedStatus), copiedStatus.st_size == fileBytes else {
+          guard SecureFileTransfer.isRegularFile(copiedStatus), copiedStatus.st_size == fileBytes
+          else {
             throw NativeDocumentError.invalidFile(
               "\(document.name) 复制后不是有效的普通文件。")
           }
@@ -810,60 +816,6 @@ final class NativeDocumentEngine: ObservableObject {
     return try await withTaskCancellationHandler(
       operation: { try await transfer.value },
       onCancel: { transfer.cancel() })
-  }
-
-  private nonisolated static func openRegularSource(
-    _ source: URL, displayName: String
-  ) throws -> (handle: FileHandle, size: Int64) {
-    let descriptor = source.withUnsafeFileSystemRepresentation { path -> Int32 in
-      guard let path else { return -1 }
-      return Darwin.open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-    }
-    guard descriptor >= 0 else {
-      let errorNumber = errno
-      if errorNumber == ELOOP {
-        throw NativeDocumentError.invalidFile(
-          "\(displayName) 不是可复制的普通文件，请选择原始文件。")
-      }
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errorNumber))
-    }
-
-    do {
-      let status = try fileStatus(for: descriptor)
-      guard isRegularFile(status), status.st_size >= 0 else {
-        throw NativeDocumentError.invalidFile(
-          "\(displayName) 不是可复制的普通文件，请选择原始文件。")
-      }
-      return (FileHandle(fileDescriptor: descriptor, closeOnDealloc: true), status.st_size)
-    } catch {
-      Darwin.close(descriptor)
-      throw error
-    }
-  }
-
-  private nonisolated static func openNewDestination(_ destination: URL) throws -> FileHandle {
-    let descriptor = destination.withUnsafeFileSystemRepresentation { path -> Int32 in
-      guard let path else { return -1 }
-      return Darwin.open(
-        path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
-        mode_t(S_IRUSR | S_IWUSR))
-    }
-    guard descriptor >= 0 else {
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-    }
-    return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-  }
-
-  private nonisolated static func fileStatus(for descriptor: Int32) throws -> stat {
-    var status = stat()
-    guard fstat(descriptor, &status) == 0 else {
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-    }
-    return status
-  }
-
-  private nonisolated static func isRegularFile(_ status: stat) -> Bool {
-    (status.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG)
   }
 
   private func allowedExtensions(for source: String) -> Set<String> {
@@ -1190,29 +1142,145 @@ final class NativeDocumentEngine: ObservableObject {
   }
 }
 
+private enum SecureFileTransfer {
+  static func openRegularSource(
+    _ source: URL, nonRegularMessage: String
+  ) throws -> (handle: FileHandle, status: stat) {
+    var openError = Int32(EINVAL)
+    let descriptor = source.withUnsafeFileSystemRepresentation { path -> Int32 in
+      guard let path else { return -1 }
+      let result = Darwin.open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+      if result < 0 { openError = errno }
+      return result
+    }
+    guard descriptor >= 0 else {
+      if openError == ELOOP {
+        throw NativeDocumentError.invalidFile(nonRegularMessage)
+      }
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(openError))
+    }
+
+    do {
+      let status = try fileStatus(for: descriptor)
+      guard isRegularFile(status), status.st_size >= 0 else {
+        throw NativeDocumentError.invalidFile(nonRegularMessage)
+      }
+      return (FileHandle(fileDescriptor: descriptor, closeOnDealloc: true), status)
+    } catch {
+      Darwin.close(descriptor)
+      throw error
+    }
+  }
+
+  static func openNewDestination(_ destination: URL) throws -> FileHandle {
+    var openError = Int32(EINVAL)
+    let descriptor = destination.withUnsafeFileSystemRepresentation { path -> Int32 in
+      guard let path else { return -1 }
+      let result = Darwin.open(
+        path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+        mode_t(S_IRUSR | S_IWUSR))
+      if result < 0 { openError = errno }
+      return result
+    }
+    guard descriptor >= 0 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(openError))
+    }
+    return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+  }
+
+  static func fileStatus(for descriptor: Int32) throws -> stat {
+    var status = stat()
+    guard fstat(descriptor, &status) == 0 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    return status
+  }
+
+  static func isRegularFile(_ status: stat) -> Bool {
+    (status.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG)
+  }
+
+  static func isUnchanged(_ initial: stat, _ final: stat) -> Bool {
+    isRegularFile(final) && initial.st_dev == final.st_dev && initial.st_ino == final.st_ino
+      && initial.st_size == final.st_size
+      && initial.st_mtimespec.tv_sec == final.st_mtimespec.tv_sec
+      && initial.st_mtimespec.tv_nsec == final.st_mtimespec.tv_nsec
+      && initial.st_ctimespec.tv_sec == final.st_ctimespec.tv_sec
+      && initial.st_ctimespec.tv_nsec == final.st_ctimespec.tv_nsec
+  }
+}
+
 enum AtomicResultSaver {
-  static func copyReplacing(source: URL, destination: URL) throws {
+  static func copyReplacing(
+    source: URL, destination: URL, chunkSize: Int = 1_024 * 1_024
+  ) throws {
+    guard source.isFileURL, destination.isFileURL else {
+      throw ResultSaveError.invalidDestination
+    }
+    guard chunkSize > 0 else {
+      throw NativeDocumentError.invalidFile("结果保存分块大小无效。")
+    }
     let manager = FileManager.default
     let temporary = destination.deletingLastPathComponent().appendingPathComponent(
       ".transall-save-\(UUID().uuidString)", isDirectory: false)
-    do {
-      try Task.checkCancellation()
-      let sourceValues = try source.resourceValues(
-        forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-      guard sourceValues.isSymbolicLink != true, sourceValues.isRegularFile == true else {
-        throw NativeDocumentError.invalidFile("任务结果不是有效的普通文件。")
+    var removeTemporary = true
+    defer {
+      if removeTemporary {
+        try? manager.removeItem(at: temporary)
       }
-      try manager.copyItem(at: source, to: temporary)
-      try Task.checkCancellation()
-      if manager.fileExists(atPath: destination.path) {
-        _ = try manager.replaceItemAt(destination, withItemAt: temporary)
-      } else {
-        try manager.moveItem(at: temporary, to: destination)
-      }
-    } catch {
-      try? manager.removeItem(at: temporary)
-      throw error
     }
+
+    try Task.checkCancellation()
+    let (sourceHandle, initialSourceStatus) = try SecureFileTransfer.openRegularSource(
+      source, nonRegularMessage: "任务结果不是有效的普通文件。")
+    defer { try? sourceHandle.close() }
+
+    let destinationHandle = try SecureFileTransfer.openNewDestination(temporary)
+    var destinationClosed = false
+    defer {
+      if !destinationClosed { try? destinationHandle.close() }
+    }
+
+    var copiedBytes: Int64 = 0
+    while true {
+      try Task.checkCancellation()
+      guard let chunk = try sourceHandle.read(upToCount: chunkSize), !chunk.isEmpty else {
+        break
+      }
+      try Task.checkCancellation()
+      let (newTotal, overflow) = copiedBytes.addingReportingOverflow(Int64(chunk.count))
+      guard !overflow else {
+        throw NativeDocumentError.invalidFile("任务结果过大，无法保存。")
+      }
+      try destinationHandle.write(contentsOf: chunk)
+      copiedBytes = newTotal
+      try Task.checkCancellation()
+    }
+    try destinationHandle.synchronize()
+    try Task.checkCancellation()
+
+    let finalSourceStatus = try SecureFileTransfer.fileStatus(for: sourceHandle.fileDescriptor)
+    let copiedStatus = try SecureFileTransfer.fileStatus(
+      for: destinationHandle.fileDescriptor)
+    guard SecureFileTransfer.isUnchanged(initialSourceStatus, finalSourceStatus),
+      finalSourceStatus.st_size == copiedBytes
+    else {
+      throw NativeDocumentError.invalidFile("任务结果在保存期间发生变化，请重新保存。")
+    }
+    guard SecureFileTransfer.isRegularFile(copiedStatus), copiedStatus.st_size == copiedBytes
+    else {
+      throw NativeDocumentError.invalidFile("结果副本保存不完整，请重试。")
+    }
+
+    try destinationHandle.close()
+    destinationClosed = true
+    try Task.checkCancellation()
+    if manager.fileExists(atPath: destination.path) {
+      _ = try manager.replaceItemAt(destination, withItemAt: temporary)
+    } else {
+      try manager.moveItem(at: temporary, to: destination)
+    }
+    removeTemporary = false
   }
 }
 

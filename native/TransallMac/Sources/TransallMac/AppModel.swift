@@ -18,6 +18,9 @@ private struct DocumentImportError: LocalizedError, Sendable {
 
 @MainActor
 final class AppModel: ObservableObject {
+  typealias JobCreator = @MainActor (
+    _ route: RouteDefinition, _ files: [SelectedDocument], _ options: JobOptions
+  ) async throws -> JobResponse
   typealias ResultDestinationPicker = @MainActor (_ suggestedName: String) -> URL?
   typealias ResultDownloader = @MainActor (_ jobID: String, _ destination: URL) async throws -> Void
   typealias ResultRevealer = @MainActor (_ destination: URL) -> Void
@@ -44,8 +47,10 @@ final class AppModel: ObservableObject {
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
   private var retentionCleanupTask: Task<Void, Never>?
+  private var jobSubmissionTask: Task<Void, Never>?
   private var resultSaveTask: Task<Void, Never>?
   private let preferences: UserDefaults
+  private let jobCreator: JobCreator
   private let resultDestinationPicker: ResultDestinationPicker
   private let resultDownloader: ResultDownloader
   private let resultRevealer: ResultRevealer
@@ -57,12 +62,17 @@ final class AppModel: ObservableObject {
 
   init(
     backend: NativeDocumentEngine, preferences: UserDefaults = .standard,
+    jobCreator: JobCreator? = nil,
     resultDestinationPicker: ResultDestinationPicker? = nil,
     resultDownloader: ResultDownloader? = nil,
     resultRevealer: ResultRevealer? = nil
   ) {
     self.backend = backend
     self.preferences = preferences
+    self.jobCreator =
+      jobCreator ?? { route, files, options in
+        try await backend.createJob(route: route, files: files, options: options)
+      }
     self.resultDestinationPicker = resultDestinationPicker ?? Self.pickResultDestination
     self.resultDownloader =
       resultDownloader ?? { jobID, destination in
@@ -324,34 +334,79 @@ final class AppModel: ObservableObject {
     return message
   }
 
-  func runJob() async {
-    guard canRun, let route else { return }
+  func startJob() {
+    guard jobSubmissionTask == nil, canRun, let route else { return }
     let submittedDocuments = documents
+    let submittedOptions = options
     isSubmitting = true
     errorMessage = nil
     previewPages = []
     previewError = nil
     isLoadingPreview = false
     preflightWarnings = []
+
+    jobSubmissionTask = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        isSubmitting = false
+        jobSubmissionTask = nil
+      }
+      await submitJob(
+        route: route, documents: submittedDocuments, options: submittedOptions)
+    }
+  }
+
+  func runJob() async {
+    startJob()
+    guard let jobSubmissionTask else { return }
+    await jobSubmissionTask.value
+  }
+
+  func requestJobSubmissionCancellation() {
+    jobSubmissionTask?.cancel()
+  }
+
+  func cancelJobSubmission() async {
+    guard let jobSubmissionTask else { return }
+    jobSubmissionTask.cancel()
+    await jobSubmissionTask.value
+  }
+
+  private func submitJob(
+    route: RouteDefinition, documents: [SelectedDocument], options: JobOptions
+  ) async {
+    var createdJob: JobResponse?
     do {
+      try Task.checkCancellation()
       let preflight = backend.preflight(route: route, files: documents, options: options)
       preflightWarnings = preflight.warnings
       guard preflight.ok else {
         errorMessage = preflight.blockingIssues
           .map { [$0.message, $0.hint].compactMap { $0 }.joined(separator: "：") }
           .joined(separator: "\n")
-        isSubmitting = false
         return
       }
 
-      let job = try await backend.createJob(route: route, files: documents, options: options)
+      try Task.checkCancellation()
+      let job = try await jobCreator(route, documents, options)
+      createdJob = job
+      try Task.checkCancellation()
       currentJob = job
-      resultOriginalDocuments = submittedDocuments
+      resultOriginalDocuments = documents
       preferences.set(job.id, forKey: lastJobKey)
-      isSubmitting = false
       beginPolling(jobID: job.id)
+    } catch is CancellationError {
+      guard let createdJob else { return }
+      let cleanupTask = Task { [backend] in
+        try await backend.discardJob(id: createdJob.id)
+      }
+      do {
+        try await cleanupTask.value
+      } catch {
+        errorMessage = "任务创建已取消，但临时任务未能删除：\(error.localizedDescription)"
+      }
     } catch {
-      isSubmitting = false
+      guard !Task.isCancelled else { return }
       errorMessage = error.localizedDescription
     }
   }
@@ -436,6 +491,7 @@ final class AppModel: ObservableObject {
   func prepareForTermination() {
     pollingTask?.cancel()
     retentionCleanupTask?.cancel()
+    jobSubmissionTask?.cancel()
     resultSaveTask?.cancel()
     backend.prepareForTermination()
   }

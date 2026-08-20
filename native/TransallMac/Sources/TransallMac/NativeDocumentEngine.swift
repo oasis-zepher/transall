@@ -14,6 +14,9 @@ final class NativeDocumentEngine: ObservableObject {
     @Sendable (
       RouteDefinition, [URL], JobOptions, URL, String?
     ) async throws -> NativeDocumentProcessor.Result
+  typealias InputCopier = @Sendable (
+    _ files: [SelectedDocument], _ inputDirectory: URL, _ maximumBytes: Int, _ maximumMB: Int
+  ) async throws -> [URL]
   typealias PreviewGenerator = @Sendable (URL, URL) async throws -> [URL]
 
   private struct PreviewOperation {
@@ -51,6 +54,7 @@ final class NativeDocumentEngine: ObservableObject {
   private let dataDirectoryOverride: URL?
   private let jobPersister: JobPersister
   private let jobProcessor: JobProcessor
+  private let inputCopier: InputCopier
   private let credentialStore: any ProviderCredentialStoring
   private let previewGenerator: PreviewGenerator
   private var isTerminating = false
@@ -59,6 +63,7 @@ final class NativeDocumentEngine: ObservableObject {
     dataDirectoryOverride: URL? = nil, jobPersister: JobPersister? = nil,
     credentialStore: (any ProviderCredentialStoring)? = nil,
     jobProcessor: JobProcessor? = nil,
+    inputCopier: InputCopier? = nil,
     previewGenerator: PreviewGenerator? = nil
   ) {
     self.dataDirectoryOverride = dataDirectoryOverride
@@ -67,6 +72,11 @@ final class NativeDocumentEngine: ObservableObject {
       jobProcessor ?? { route, inputs, options, outputURL, apiKey in
         try await NativeDocumentProcessor.process(
           route: route, inputs: inputs, options: options, outputURL: outputURL, apiKey: apiKey)
+      }
+    self.inputCopier =
+      inputCopier ?? { files, inputDirectory, maximumBytes, maximumMB in
+        try await Self.copyInputs(
+          files, to: inputDirectory, maximumBytes: maximumBytes, maximumMB: maximumMB)
       }
     self.previewGenerator =
       previewGenerator ?? { pdfURL, directory in
@@ -234,10 +244,9 @@ final class NativeDocumentEngine: ObservableObject {
     let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
     do {
       try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
-      let copiedInputs = try await Self.copyInputs(
-        files, to: inputDirectory,
-        maximumBytes: NativeCapabilities.inputLimitBytes(for: canonicalRoute),
-        maximumMB: NativeCapabilities.inputLimitMB(for: canonicalRoute))
+      let copiedInputs = try await inputCopier(
+        files, inputDirectory, NativeCapabilities.inputLimitBytes(for: canonicalRoute),
+        NativeCapabilities.inputLimitMB(for: canonicalRoute))
 
       let now = ISO8601DateFormatter().string(from: Date())
       let job = JobResponse(
@@ -331,6 +340,14 @@ final class NativeDocumentEngine: ObservableObject {
       appendPersistenceWarning(jobID: id, action: "保存取消状态", error: error)
     }
     return job
+  }
+
+  func discardJob(id: String) async throws {
+    let job = try job(id: id)
+    if job.isRunning {
+      _ = try? cancelJob(id: id)
+    }
+    try await deleteJob(id: id)
   }
 
   func deleteJob(id: String) async throws {

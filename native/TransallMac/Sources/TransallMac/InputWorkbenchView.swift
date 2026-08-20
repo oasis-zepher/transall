@@ -293,7 +293,7 @@ struct InputWorkbenchView: View {
   private func actionBar(_ route: RouteDefinition) -> some View {
     HStack(spacing: 10) {
       Button {
-        Task { await model.runJob() }
+        model.startJob()
       } label: {
         if model.isImporting {
           HStack(spacing: 7) {
@@ -303,7 +303,7 @@ struct InputWorkbenchView: View {
         } else if model.isSubmitting {
           HStack(spacing: 7) {
             ProgressView().controlSize(.small)
-            Text("正在预检")
+            Text("正在准备任务")
           }
         } else {
           Text("开始\(route.kindLabel)")
@@ -312,7 +312,12 @@ struct InputWorkbenchView: View {
       .buttonStyle(PrimaryButtonStyle())
       .disabled(!model.canRun)
 
-      if model.currentJob?.isRunning == true {
+      if model.isSubmitting {
+        Button("取消创建") {
+          model.requestJobSubmissionCancellation()
+        }
+        .buttonStyle(QuietButtonStyle())
+      } else if model.currentJob?.isRunning == true {
         Button("取消任务") {
           Task { await model.cancelJob() }
         }

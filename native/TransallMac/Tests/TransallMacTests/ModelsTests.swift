@@ -992,6 +992,175 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func jobSubmissionStartsOnceAndCancelsWithoutReportingFailure() async {
+    let gate = DeletionRaceGate()
+    let fallbackJob = completedTestJob()
+    var creationCalls = 0
+    var submittedDocuments: [SelectedDocument] = []
+    var submittedOptions = JobOptions()
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      jobCreator: { _, documents, options in
+        creationCalls += 1
+        submittedDocuments = documents
+        submittedOptions = options
+        await gate.markStarted()
+        do {
+          try await Task.sleep(for: .seconds(60))
+          return fallbackJob
+        } catch is CancellationError {
+          await gate.markCancelled()
+          throw CancellationError()
+        }
+      })
+    let original = SelectedDocument(
+      url: URL(fileURLWithPath: "/tmp/transall-submission-source.txt"), size: 128)
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    model.documents = [original]
+    model.options.watermark = "submitted option snapshot"
+
+    model.startJob()
+
+    #expect(model.isSubmitting)
+    #expect(!model.canRun)
+    model.startJob()
+    await gate.waitUntilStarted()
+    #expect(creationCalls == 1)
+
+    model.documents = [
+      SelectedDocument(url: URL(fileURLWithPath: "/tmp/replacement.txt"), size: 64)
+    ]
+    model.options.watermark = "later option"
+    await model.cancelJobSubmission()
+
+    await gate.waitUntilCancelled()
+    #expect(submittedDocuments == [original])
+    #expect(submittedOptions.watermark == "submitted option snapshot")
+    #expect(!model.isSubmitting)
+    #expect(model.currentJob == nil)
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test @MainActor
+  func terminatingAppCancelsInFlightJobSubmission() async {
+    let gate = DeletionRaceGate()
+    let fallbackJob = completedTestJob()
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      jobCreator: { _, _, _ in
+        await gate.markStarted()
+        do {
+          try await Task.sleep(for: .seconds(60))
+          return fallbackJob
+        } catch is CancellationError {
+          await gate.markCancelled()
+          throw CancellationError()
+        }
+      })
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    model.documents = [
+      SelectedDocument(
+        url: URL(fileURLWithPath: "/tmp/transall-termination-source.txt"), size: 128)
+    ]
+
+    model.startJob()
+    await gate.waitUntilStarted()
+    model.prepareForTermination()
+    await gate.waitUntilCancelled()
+
+    for _ in 0..<20 where model.isSubmitting {
+      await Task.yield()
+    }
+    #expect(!model.isSubmitting)
+    #expect(model.currentJob == nil)
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test @MainActor
+  func cancelledSubmissionDiscardsJobCreatedDuringCancellationRace() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-submission-race-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    let input = temporary.appendingPathComponent("source.txt")
+    try Data("source document".utf8).write(to: input)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let gate = DeletionRaceGate()
+    var createdJobID: String?
+    let suiteName = "transall-submission-race-preferences-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+    let model = AppModel(
+      backend: engine, preferences: preferences,
+      jobCreator: { route, documents, options in
+        let job = try await engine.createJob(
+          route: route, files: documents, options: options)
+        createdJobID = job.id
+        await gate.markStarted()
+        await gate.waitForRelease()
+        return job
+      })
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    model.documents = [SelectedDocument(url: input, size: 15)]
+
+    model.startJob()
+    await gate.waitUntilStarted()
+    model.requestJobSubmissionCancellation()
+    await gate.release()
+    await model.cancelJobSubmission()
+
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    #expect(createdJobID != nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path).isEmpty)
+    #expect(model.currentJob == nil)
+    #expect(model.errorMessage == nil)
+    #expect(preferences.string(forKey: "transall.native.lastJobId") == nil)
+  }
+
+  @Test @MainActor
+  func successfulJobSubmissionPersistsAndPollsCreatedJob() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-submission-success-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    let input = temporary.appendingPathComponent("source.txt")
+    try Data("source document".utf8).write(to: input)
+    let suiteName = "transall-submission-success-preferences-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: temporary.appendingPathComponent("Data", isDirectory: true))
+    let model = AppModel(backend: engine, preferences: preferences)
+    defer { model.prepareForTermination() }
+    await engine.start()
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    model.documents = [SelectedDocument(url: input, size: 15)]
+
+    await model.runJob()
+
+    let submittedJob = try #require(model.currentJob)
+    #expect(preferences.string(forKey: "transall.native.lastJobId") == submittedJob.id)
+    for _ in 0..<200 where model.currentJob?.isFinished != true {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.currentJob?.status == "done")
+    #expect(!model.isSubmitting)
+  }
+
+  @Test @MainActor
   func resultSavingCanBeCancelledWithoutReportingFailureOrRevealingDestination() async {
     let gate = DeletionRaceGate()
     let destination = URL(fileURLWithPath: "/tmp/transall-cancelled-result.pdf")
@@ -1346,6 +1515,55 @@ struct ModelsTests {
     #expect(observedPartialCopy)
     #expect(receivedCancellation)
     #expect(try FileManager.default.contentsOfDirectory(atPath: inputDirectory.path).isEmpty)
+  }
+
+  @Test @MainActor
+  func cancellingJobCreationRemovesIncompleteTaskDirectory() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-cancelled-creation-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    let source = temporary.appendingPathComponent("source.txt")
+    try Data("source".utf8).write(to: source)
+    let gate = DeletionRaceGate()
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      inputCopier: { _, inputDirectory, _, _ in
+        try Data("partial".utf8).write(
+          to: inputDirectory.appendingPathComponent("1-source.txt"))
+        await gate.markStarted()
+        do {
+          try await Task.sleep(for: .seconds(60))
+          return []
+        } catch is CancellationError {
+          await gate.markCancelled()
+          throw CancellationError()
+        }
+      })
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" && $0.source == "data" })
+    let creation = Task {
+      try await engine.createJob(
+        route: route, files: [SelectedDocument(url: source, size: 6)],
+        options: JobOptions())
+    }
+
+    await gate.waitUntilStarted()
+    creation.cancel()
+    do {
+      _ = try await creation.value
+      Issue.record("Cancelled task creation should not return a job")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Cancelled task creation returned an unexpected error: \(error)")
+    }
+
+    await gate.waitUntilCancelled()
+    let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: jobsDirectory.path).isEmpty)
   }
 
   @Test @MainActor

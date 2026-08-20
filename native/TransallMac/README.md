@@ -43,6 +43,8 @@ Result export uses the same bounded transfer path. It writes to a sibling tempor
 
 Keychain reads, saves, deletion, migration, rollback, and reconciliation run on a serial background actor. Launch diagnostics, Settings, and translation preflight therefore remain responsive if macOS Keychain access is delayed, while Settings publications stay isolated to the main actor.
 
+The circular format router uses semantic SwiftUI type. Accessibility text sizes expand its nodes, allow two-line format labels without shrinking them, and adjust the orbit radius to keep the controls inside the workbench.
+
 Choose both the source and target formats before adding files. After the route is complete, use the file well or **File → 选择文件…** (`⌘O`); the picker is filtered to the selected source format. Incomplete routes do not accept clicks, drops, accessibility actions, or menu imports.
 
 ## Tests

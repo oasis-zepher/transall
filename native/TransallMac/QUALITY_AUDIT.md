@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. A 2026-08-21 follow-up found four new P2 issues; task-creation cancellation and main-actor Keychain work are now resolved, leaving fixed small type in the format router and no repeated-navigation bypass on the support site. Xcode 26.6 verification still passes. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Current native and website verification passes. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -17,57 +17,40 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. A 2026-08-2
 
 | # | Dimension | Baseline | Current | Evidence |
 | --- | --- | ---: | ---: | --- |
-| 1 | Accessibility | 3/4 | 3/4 | Contrast, labels, state announcements, focus, and reduced-motion behavior are strong, but the 9–10 pt format-node labels do not use semantic scalable type and the website has no skip link around repeated navigation. |
+| 1 | Accessibility | 3/4 | 4/4 | Contrast, semantic scalable type, labels, state announcements, focus, reduced-motion behavior, keyboard targets, and repeated-navigation bypasses are covered across both surfaces. |
 | 2 | Performance | 2/4 | 4/4 | Heavy document work is bounded, task submission owns cancellation through input copying, and complete Keychain reads and transactions run on a serial background actor. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **19/20** | **Excellent foundation; two accessibility P2 items remain before the next release audit.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no code-level P0–P3 finding remains in the current audit.** |
 
 ## Executive summary
 
-- Audit health score: **19/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 2 P2, 0 P3**.
-- Remaining work is accessibility text sizing in the native format router and a repeated-navigation bypass on the support site.
+- Audit health score: **20/20 — Excellent**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - No new privacy, sandboxing, dependency, theme, responsive-layout, or AI-aesthetic issue was found.
 
 ## Open follow-up findings
 
-### [P2] Format-router labels do not scale with accessibility text size
-
-- **Location:** `FormatRouterView.FormatNode` and the route-core arrow label.
-- **Category:** Accessibility.
-- **Impact:** The primary route controls use fixed 9–10 pt text and may shrink to roughly 7 pt through `minimumScaleFactor`. Users who increase text size still receive the same small labels, making the most important controls harder to read even though VoiceOver labels are present.
-- **WCAG/standard:** WCAG 1.4.4 Resize Text principle; macOS accessibility text-size expectations.
-- **Recommendation:** Use semantic scalable fonts, allow short two-line labels or adapt node geometry at larger dynamic type sizes, and keep the existing circular-router identity.
-- **Suggested command:** `$adapt`.
-
-### [P2] Support pages cannot bypass repeated navigation
-
-- **Location:** `store/support-site/app/layout.tsx`, `site-chrome.tsx`, and `globals.css`.
-- **Category:** Accessibility.
-- **Impact:** Keyboard and switch-control users must traverse the wordmark and navigation links before reaching `<main>` on every page. The repeated block is small but still lacks a direct bypass mechanism.
-- **WCAG/standard:** WCAG 2.4.1 Bypass Blocks (Level A).
-- **Recommendation:** Add a visually hidden “跳到主要内容” link that becomes visible on focus, give the shared `<main>` target a stable identifier, and cover it in the rendered HTML tests.
-- **Suggested command:** `$adapt`.
+None in the current code audit.
 
 ## Patterns and systemic issues
 
 - Input transfer and result export have model-owned cancellation lifecycles, and Keychain access is isolated from the main actor.
-- Most native text uses semantic SwiftUI styles; the fixed-size circular-router labels are the remaining exception in a primary workflow.
-- Website semantics, contrast, focus rings, and target sizes are covered, but repeated-navigation bypass was omitted from the current HTML contract.
+- Native text uses semantic SwiftUI styles, including accessibility-size-aware geometry for the circular format router.
+- Website semantics, contrast, focus rings, target sizes, and repeated-navigation bypasses share one rendered-HTML contract across all routes.
 
 ## Positive findings
 
 - Current foreground/background contrast checks pass: muted text is 4.95:1 on panels and 4.70:1 on paper; primary white text is 5.41:1 on the accent, 6.00:1 on source green, and 10.99:1 on target blue.
 - Native controls use explicit labels and values where iconography or status color alone would be ambiguous. Preview and Keychain failures request VoiceOver announcements without moving focus.
-- The support site uses semantic navigation and main landmarks, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
+- The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
 ## Recommended actions
 
-1. **[P2] `$adapt`** — support accessibility text sizing in the circular router and add the website bypass link.
-2. **[P3] `$polish`** — rerun native and website interaction checks after the two fixes.
+No corrective command remains for the current code audit. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 
@@ -89,6 +72,8 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. A 2026-08-2
 8. **Partial and unsafe file selection** — document metadata inspection runs off the main actor; any invalid item rejects the full batch without replacing the current selection, and both the UI and engine reject directories and symbolic links.
 9. **Task-creation cancellation** — `AppModel` owns the submission task, captures an immutable route, file, and option snapshot, exposes “取消创建” while preflight and input copying run, and cancels it during termination. Normal cancellation shows no error, incomplete task directories are removed, and a job that completes creation during the cancellation race is cancelled, awaited, and deleted before it can become an inaccessible background task.
 10. **Main-actor Keychain work** — a serial `ProviderCredentialWorker` now owns Security framework calls for launch diagnostics, Settings load/save/delete, translation preflight, and processing. Multi-provider save, rollback, and reconciliation remain one isolated transaction; published Settings state remains on the main actor. Delayed-store tests prove the main actor continues while a read or complete save transaction is blocked.
+11. **Format-router text scaling** — node labels and the route arrow use semantic SwiftUI fonts. Accessibility text sizes expand nodes from 58 to 78 pt, allow two-line labels without shrinking them, widen the route core, and reduce the orbit radius so controls remain inside the existing 348 pt circular router. A layout-policy regression test covers the accessibility geometry.
+12. **Website repeated-navigation bypass** — every support route begins with a focus-visible “跳到主要内容” link targeting the same focusable `main-content` landmark. Rendered HTML tests cover the link, target, source order, and focus-visible CSS on the support, privacy, and publisher pages.
 
 ## Resolved P3 findings
 
@@ -137,8 +122,8 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. A 2026-08-2
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 119/119 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 119/119 passed |
+| Swift package tests with Xcode 26.6 | 120/120 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 120/120 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

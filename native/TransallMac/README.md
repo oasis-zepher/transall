@@ -61,7 +61,7 @@ Choose both the source and target formats before adding files. After the route i
 
 The input heading uses **FILE** for exactly one selected document and **FILES** for zero or multiple documents. Regression coverage checks 0, 1, and 2 files; the current universal Release build was also verified with one imported PDF.
 
-PDF crop input is validated before task creation and again before processing. Entered endpoints and the derived width and height must all be finite, ordered, and positive. The requested rectangle must fit every selected page, and the processor verifies the bounds PDFKit actually applied before reporting success.
+PDF crop input is validated before task creation and again before processing. It must contain exactly four individually valid numbers; entered endpoints and the derived width and height must all be finite, ordered, and positive. The requested rectangle must fit every selected page, and the processor verifies the bounds PDFKit actually applied before reporting success.
 
 ## Tests
 
@@ -87,7 +87,7 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-28: strict recursive Swift formatting passed with zero findings, 140/140 Swift package tests passed with strict concurrency and warnings as errors, 140/140 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent.
+Last verified on 2026-08-28: strict recursive Swift formatting passed with zero findings, 141/141 Swift package tests passed with strict concurrency and warnings as errors, 141/141 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent.
 
 The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) enforces the same native formatting command before compilation. It also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 

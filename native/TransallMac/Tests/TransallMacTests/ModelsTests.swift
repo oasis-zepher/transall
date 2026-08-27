@@ -1949,6 +1949,42 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func newJobAssignmentClearsPreviewPublishedDuringSubmission() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-preview-task-identity-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let input = temporary.appendingPathComponent("source.txt")
+    try Data("source".utf8).write(to: input)
+
+    let oldJob = completedTestJob()
+    let newJob = testJob(status: "queued")
+    var model: AppModel!
+    model = AppModel(
+      backend: NativeDocumentEngine(),
+      jobCreator: { _, _, _ in
+        model.previewPages = [PreviewPage(page: 1, url: "old-preview.png")]
+        model.previewError = "旧任务预览错误"
+        model.isLoadingPreview = true
+        return newJob
+      })
+    defer { model.prepareForTermination() }
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    model.documents = [SelectedDocument(url: input, size: 6)]
+    model.currentJob = oldJob
+
+    await model.runJob()
+
+    #expect(model.currentJob == newJob)
+    #expect(model.previewPages.isEmpty)
+    #expect(model.previewError == nil)
+    #expect(!model.isLoadingPreview)
+  }
+
+  @Test @MainActor
   func resultSavingCanBeCancelledWithoutReportingFailureOrRevealingDestination() async {
     let gate = DeletionRaceGate()
     let destination = URL(fileURLWithPath: "/tmp/transall-cancelled-result.pdf")

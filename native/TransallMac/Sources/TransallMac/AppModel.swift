@@ -491,6 +491,9 @@ final class AppModel: ObservableObject {
       let job = try await jobCreator(route, documents, options)
       createdJob = job
       try Task.checkCancellation()
+      previewPages = []
+      previewError = nil
+      isLoadingPreview = false
       currentJob = job
       resultOriginalDocuments = documents
       preferences.set(job.id, forKey: lastJobKey)

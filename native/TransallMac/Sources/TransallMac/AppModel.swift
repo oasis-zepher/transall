@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
   typealias ResultDestinationPicker = @MainActor (_ suggestedName: String) -> URL?
   typealias ResultDownloader = @MainActor (_ jobID: String, _ destination: URL) async throws -> Void
   typealias ResultRevealer = @MainActor (_ destination: URL) -> Void
+  typealias DocumentInspector = @Sendable ([URL]) async throws -> [SelectedDocument]
 
   @Published var capabilities: CapabilitiesResponse?
   @Published var diagnostics: [String: DiagnosticDefinition] = [:]
@@ -47,6 +48,7 @@ final class AppModel: ObservableObject {
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
   private var retentionCleanupTask: Task<Void, Never>?
+  private var documentImportTask: Task<Void, Never>?
   private var jobSubmissionTask: Task<Void, Never>?
   private var resultSaveTask: Task<Void, Never>?
   private var isStarting = false
@@ -56,6 +58,7 @@ final class AppModel: ObservableObject {
   private let resultDestinationPicker: ResultDestinationPicker
   private let resultDownloader: ResultDownloader
   private let resultRevealer: ResultRevealer
+  private let documentInspector: DocumentInspector
   private let lastJobKey = "transall.native.lastJobId"
 
   convenience init() {
@@ -67,7 +70,8 @@ final class AppModel: ObservableObject {
     jobCreator: JobCreator? = nil,
     resultDestinationPicker: ResultDestinationPicker? = nil,
     resultDownloader: ResultDownloader? = nil,
-    resultRevealer: ResultRevealer? = nil
+    resultRevealer: ResultRevealer? = nil,
+    documentInspector: DocumentInspector? = nil
   ) {
     self.backend = backend
     self.preferences = preferences
@@ -83,6 +87,15 @@ final class AppModel: ObservableObject {
     self.resultRevealer =
       resultRevealer ?? { destination in
         NSWorkspace.shared.activateFileViewerSelecting([destination])
+      }
+    self.documentInspector =
+      documentInspector ?? { urls in
+        let inspection = Task.detached(priority: .userInitiated) {
+          try Self.inspectDocuments(urls)
+        }
+        return try await withTaskCancellationHandler(
+          operation: { try await inspection.value },
+          onCancel: { inspection.cancel() })
       }
   }
 
@@ -241,12 +254,12 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func importDocuments(_ urls: [URL], appending: Bool = false) async {
+  func startDocumentImport(_ urls: [URL], appending: Bool = false) {
     guard !urls.isEmpty else {
       errorMessage = "没有选择文件。"
       return
     }
-    guard !isImporting else { return }
+    guard documentImportTask == nil, !isImporting else { return }
     guard !isSubmitting else {
       errorMessage = "正在创建任务，请稍后再修改输入文件。"
       return
@@ -255,6 +268,37 @@ final class AppModel: ObservableObject {
       errorMessage = "请先选择源格式和目标格式。"
       return
     }
+
+    isImporting = true
+    errorMessage = nil
+    documentImportTask = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        isImporting = false
+        documentImportTask = nil
+      }
+      await performDocumentImport(urls, appending: appending)
+    }
+  }
+
+  func importDocuments(_ urls: [URL], appending: Bool = false) async {
+    startDocumentImport(urls, appending: appending)
+    guard let documentImportTask else { return }
+    await documentImportTask.value
+  }
+
+  func requestDocumentImportCancellation() {
+    documentImportTask?.cancel()
+  }
+
+  func cancelDocumentImport() async {
+    guard let documentImportTask else { return }
+    documentImportTask.cancel()
+    await documentImportTask.value
+  }
+
+  private func performDocumentImport(_ urls: [URL], appending: Bool) async {
+    guard !Task.isCancelled else { return }
 
     var seenURLs = Set(
       (appending ? documents : []).map { $0.url.standardizedFileURL })
@@ -267,21 +311,14 @@ final class AppModel: ObservableObject {
       return
     }
 
-    isImporting = true
-    errorMessage = nil
-    defer { isImporting = false }
-
-    let inspection = Task.detached(priority: .userInitiated) {
-      try Self.inspectDocuments(uniqueURLs)
-    }
     let imported: [SelectedDocument]
     do {
-      imported = try await withTaskCancellationHandler(
-        operation: { try await inspection.value },
-        onCancel: { inspection.cancel() })
+      imported = try await documentInspector(uniqueURLs)
+      try Task.checkCancellation()
     } catch is CancellationError {
       return
     } catch {
+      guard !Task.isCancelled else { return }
       errorMessage = error.localizedDescription
       return
     }
@@ -309,6 +346,7 @@ final class AppModel: ObservableObject {
       errorMessage = "所选文件超过 \(inputLimitMB) MB 限制。"
       return
     }
+    guard !Task.isCancelled else { return }
     documents = combined
     errorMessage = nil
   }
@@ -520,6 +558,7 @@ final class AppModel: ObservableObject {
   func prepareForTermination() {
     pollingTask?.cancel()
     retentionCleanupTask?.cancel()
+    documentImportTask?.cancel()
     jobSubmissionTask?.cancel()
     resultSaveTask?.cancel()
     backend.prepareForTermination()

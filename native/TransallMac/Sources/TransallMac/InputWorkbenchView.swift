@@ -50,7 +50,7 @@ struct InputWorkbenchView: View {
       switch result {
       case .success(let urls):
         let appending = viewState.isAppending
-        Task { await model.importDocuments(urls, appending: appending) }
+        model.startDocumentImport(urls, appending: appending)
       case .failure(let error): model.errorMessage = error.localizedDescription
       }
     }
@@ -165,7 +165,7 @@ struct InputWorkbenchView: View {
     .dropDestination(for: URL.self) { urls, _ in
       guard model.canSelectDocuments, !urls.isEmpty else { return false }
       let appending = !model.documents.isEmpty
-      Task { await model.importDocuments(urls, appending: appending) }
+      model.startDocumentImport(urls, appending: appending)
       return !urls.isEmpty
     } isTargeted: { targeted in
       viewState.isDropTargeted = targeted
@@ -333,7 +333,13 @@ struct InputWorkbenchView: View {
       .buttonStyle(PrimaryButtonStyle())
       .disabled(!model.canRun)
 
-      if model.isSubmitting {
+      if model.isImporting {
+        Button("取消读取") {
+          model.requestDocumentImportCancellation()
+        }
+        .buttonStyle(QuietButtonStyle())
+        .help("停止读取文件；当前文件列表保持不变")
+      } else if model.isSubmitting {
         Button("取消创建") {
           model.requestJobSubmissionCancellation()
         }

@@ -325,6 +325,61 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func documentImportCancellationIsSilentAtomicAndRejectsOverlappingStarts() async {
+    let gate = ImportInspectionGate()
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      documentInspector: { urls in try await gate.inspect(urls) })
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
+    let existing = SelectedDocument(
+      url: URL(fileURLWithPath: "/tmp/existing.pdf"), size: 8)
+    model.documents = [existing]
+
+    model.startDocumentImport(
+      [URL(fileURLWithPath: "/tmp/candidate.pdf")], appending: true)
+    await gate.waitUntilStarted()
+
+    #expect(model.isImporting)
+    #expect(!model.canSelectDocuments)
+    model.startDocumentImport([URL(fileURLWithPath: "/tmp/overlap.pdf")])
+    model.requestDocumentImportCancellation()
+    await model.cancelDocumentImport()
+    let snapshot = await gate.snapshot()
+
+    #expect(snapshot.startCount == 1)
+    #expect(snapshot.wasCancelled)
+    #expect(!model.isImporting)
+    #expect(model.canSelectDocuments)
+    #expect(model.documents == [existing])
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test @MainActor
+  func terminationCancelsDocumentImportWithoutPublishingSelection() async {
+    let gate = ImportInspectionGate()
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      documentInspector: { urls in try await gate.inspect(urls) })
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
+
+    model.startDocumentImport([URL(fileURLWithPath: "/tmp/candidate.pdf")])
+    await gate.waitUntilStarted()
+    model.prepareForTermination()
+    await gate.waitUntilCancelled()
+    for _ in 0..<100 where model.isImporting {
+      await Task.yield()
+    }
+
+    #expect(!model.isImporting)
+    #expect(model.documents.isEmpty)
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test @MainActor
   func documentSelectionRequiresACompleteRoute() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-route-import-test-\(UUID().uuidString).pdf")
@@ -4203,6 +4258,42 @@ private final class ResultSaveRecorder {
   func waitUntilRevealed() async {
     guard revealedDestination == nil else { return }
     await withCheckedContinuation { revealWaiters.append($0) }
+  }
+}
+
+private actor ImportInspectionGate {
+  private var startCount = 0
+  private var wasCancelled = false
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+  private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func inspect(_ urls: [URL]) async throws -> [SelectedDocument] {
+    startCount += 1
+    for waiter in startWaiters { waiter.resume() }
+    startWaiters.removeAll()
+    do {
+      try await Task.sleep(for: .seconds(30))
+    } catch {
+      wasCancelled = true
+      for waiter in cancellationWaiters { waiter.resume() }
+      cancellationWaiters.removeAll()
+      throw error
+    }
+    return urls.map { SelectedDocument(url: $0, size: 1) }
+  }
+
+  func waitUntilStarted() async {
+    guard startCount == 0 else { return }
+    await withCheckedContinuation { startWaiters.append($0) }
+  }
+
+  func waitUntilCancelled() async {
+    guard !wasCancelled else { return }
+    await withCheckedContinuation { cancellationWaiters.append($0) }
+  }
+
+  func snapshot() -> (startCount: Int, wasCancelled: Bool) {
+    (startCount, wasCancelled)
   }
 }
 

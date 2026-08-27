@@ -119,6 +119,43 @@ struct ModelsTests {
     #expect(model.backend.serviceLog.count { $0.contains("已就绪") } == 1)
   }
 
+  @Test @MainActor
+  func cancelledAppStartDoesNotPublishEnvironmentAndCanRetry() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let suiteName = "TransallTests.CancelledStart.\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+    let store = BlockingCredentialStore(
+      blocking: .read, values: [.deepseek: "deepseek-key", .openAI: "openai-key"])
+    let model = AppModel(
+      backend: NativeDocumentEngine(
+        dataDirectoryOverride: temporary, credentialStore: store),
+      preferences: preferences)
+    defer { model.prepareForTermination() }
+
+    let startup = Task { await model.start() }
+    for _ in 0..<200 where !store.hasStarted {
+      try? await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(store.hasStarted)
+
+    startup.cancel()
+    store.release()
+    await startup.value
+
+    #expect(model.capabilities == nil)
+    #expect(model.providers.isEmpty)
+
+    await model.start()
+
+    #expect(model.capabilities != nil)
+    #expect(model.providers.allSatisfy { $0.configured })
+    #expect(model.backend.serviceLog.count { $0.contains("已就绪") } == 1)
+  }
+
   @Test
   func pageSelectionParsesRangesAndRejectsOutOfBounds() throws {
     #expect(try PageSelectionParser.indexes("1, 3-5", pageCount: 5) == [0, 2, 3, 4])

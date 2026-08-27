@@ -147,9 +147,12 @@ final class AppModel: ObservableObject {
     if backend.state != .running {
       await backend.start()
     }
+    guard !Task.isCancelled else { return }
     guard case .running = backend.state else { return }
     await reloadEnvironment()
+    guard !Task.isCancelled else { return }
     await restoreLastJob()
+    guard !Task.isCancelled else { return }
     beginRetentionCleanup()
     hasStarted = true
   }
@@ -157,6 +160,7 @@ final class AppModel: ObservableObject {
   func reloadEnvironment() async {
     let capabilities = backend.capabilities()
     let environment = await backend.environment()
+    guard !Task.isCancelled else { return }
     self.capabilities = capabilities
     self.diagnostics = Dictionary(
       uniqueKeysWithValues: environment.diagnostics.dependencies.map { ($0.name, $0) })

@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Current native and website verification passes. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. A later P2 in same-format route state reporting is resolved as well. Current native and website verification passes. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -74,6 +74,7 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 10. **Main-actor Keychain work** — a serial `ProviderCredentialWorker` now owns Security framework calls for launch diagnostics, Settings load/save/delete, translation preflight, and processing. Multi-provider save, rollback, and reconciliation remain one isolated transaction; published Settings state remains on the main actor. Delayed-store tests prove the main actor continues while a read or complete save transaction is blocked.
 11. **Format-router text scaling** — node labels and the route arrow use semantic SwiftUI fonts. Accessibility text sizes expand nodes from 58 to 78 pt, allow two-line labels without shrinking them, widen the route core, and reduce the orbit radius so controls remain inside the existing 348 pt circular router. A layout-policy regression test covers the accessibility geometry.
 12. **Website repeated-navigation bypass** — every support route begins with a focus-visible “跳到主要内容” link targeting the same focusable `main-content` landmark. Rendered HTML tests cover the link, target, source order, and focus-visible CSS on the support, privacy, and publisher pages.
+13. **Same-format route state** — a node selected as both source and target now keeps both roles instead of being overwritten by the target state. The node uses the target fill with a source-colored outer ring, and VoiceOver reports “已选为源格式和目标格式”. A state-policy regression test covers the combined and single-role cases.
 
 ## Resolved P3 findings
 
@@ -123,8 +124,8 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 126/126 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 126/126 passed |
+| Swift package tests with Xcode 26.6 | 127/127 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 127/127 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

@@ -45,7 +45,7 @@ Keychain reads, saves, deletion, migration, rollback, and reconciliation run on 
 
 App startup is idempotent: repeated or overlapping SwiftUI lifecycle callbacks initialize the native engine, credential environment, restored task, and retention cleanup only once after startup succeeds. A failed engine start remains retryable. Cancellation between asynchronous startup stages stops before later state is published or cleanup begins, and a later lifecycle callback can finish initialization.
 
-The circular format router uses semantic SwiftUI type. Accessibility text sizes expand its nodes, allow two-line format labels without shrinking them, and adjust the orbit radius to keep the controls inside the workbench.
+The circular format router uses semantic SwiftUI type. Accessibility text sizes expand its nodes, allow two-line format labels without shrinking them, and adjust the orbit radius to keep the controls inside the workbench. For routes such as PDF → PDF, the shared node retains both roles visually and reports both roles to assistive technology.
 
 Choose both the source and target formats before adding files. After the route is complete, use the file well or **File → 选择文件…** (`⌘O`); the empty file well can be focused and opened with Return or Space, and the picker is filtered to the selected source format. Incomplete routes do not accept clicks, drops, keyboard activation, accessibility actions, or menu imports.
 
@@ -55,7 +55,7 @@ Choose both the source and target formats before adding files. After the route i
 swift test
 ```
 
-Last verified on 2026-08-27: 126/126 Swift package tests passed with strict concurrency and warnings as errors, and 126/126 Xcode scheme tests passed.
+Last verified on 2026-08-27: 127/127 Swift package tests passed with strict concurrency and warnings as errors, and 127/127 Xcode scheme tests passed.
 
 Some Command Line Tools installations do not ship the XCTest module or Swift Testing runtime in the paths expected by SwiftPM. The package itself still builds with `swift build`; a complete Xcode installation provides the normal test and signing runtime.
 

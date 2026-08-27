@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, and exact crop-field parsing are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. Translation requests reject every HTTP redirect before URLSession follows it. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, and exact crop-field parsing are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. Translation requests reject every HTTP redirect before URLSession follows it. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. The current follow-up found one open P2: a successful provider response whose translation content contains only whitespace is accepted and can produce a visually blank PDF marked as complete. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,15 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; one blank-translation P2 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
+
+## Open follow-up finding
+
+### [P2] Whitespace-only provider content is accepted as a translation
+
+- **Location:** `TranslationService.translateChunk(_:source:target:glossary:)` in `NativeDocumentProcessor.swift` accepts the first provider `message.content` whenever the string is not exactly empty; it does not test whether the content contains any non-whitespace character.
+- **Category:** Reliability / provider-response validation / release quality.
+- **Impact:** A provider can return HTTP 2xx with `content` equal to spaces, tabs, or line breaks. Transall accepts that response, lays it out as a visually blank page, and can mark the paid translation task complete even though no usable translation was returned.
+- **Standard:** Truthful task completion and complete remote-response validation; no WCAG criterion applies.
+- **Recommendation:** Treat content whose whitespace-and-newline-trimmed form is empty as a missing translation while preserving valid content exactly as returned. Add a transport-independent regression proving that the response fails once without retrying or accumulating a blank result.
+- **Suggested command:** `$harden`, then rerun translation response, retry, PDF generation, strict concurrency, formatting, and Release checks.
 
 ## Resolved follow-up findings
 
@@ -112,7 +123,10 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
-## Remaining release actions
+## Recommended actions
+
+1. **[P2] `$harden`** — reject whitespace-only provider translation content before page accumulation or PDF generation.
+2. **[P3] `$polish`** — rerun the full native release matrix and synchronize readiness evidence after blank translation responses are rejected.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 

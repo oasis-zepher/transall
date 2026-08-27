@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 137/137 Swift package tests with strict concurrency and warnings as errors, 137/137 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. The rebuilt product reports Simplified Chinese (`zh-Hans`) as its development region and only declared localization, matching the source plist, Xcode project, and planned App Store primary language. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-28, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 138/138 Swift package tests with strict concurrency and warnings as errors, 138/138 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. The rebuilt product reports Simplified Chinese (`zh-Hans`) as its development region and only declared localization, matching the source plist, Xcode project, and planned App Store primary language. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -45,10 +45,10 @@ The repository workflow validates three release surfaces:
 | Job | Required checks |
 | --- | --- |
 | Browser edition | Python tests, dependency lock verification, Ruff, Bandit, and `pip-audit` |
-| Native macOS app | Strict Swift formatting, release metadata, 137 strict SwiftPM tests, 137 Xcode scheme tests, and Xcode Release analysis |
+| Native macOS app | Strict Swift formatting, release metadata, 138 strict SwiftPM tests, 138 Xcode scheme tests, and Xcode Release analysis |
 | Support site | Locked install, high-severity npm audit, ESLint, production build, and 5 rendered-page tests |
 
-The new native and support-site commands were reproduced successfully on 2026-08-27. This is local evidence only; GitHub Actions has not executed the new jobs for the unpushed commits.
+The new native and support-site commands were reproduced successfully on 2026-08-28. This is local evidence only; GitHub Actions has not executed the new jobs for the unpushed commits.
 
 ## Verified release candidate behavior
 
@@ -61,6 +61,7 @@ The new native and support-site commands were reproduced successfully on 2026-08
 - Translation retries only temporary network failures and HTTP 408, 425, 429, 500, 502, 503, and 504 responses. It honors bounded `Retry-After` delays, stops after two retries, cancels during backoff, and does not retry authentication failures.
 - Each translation response is limited to 2 MB while it is received. An oversized declared `Content-Length` is rejected before reading the body; a chunked or undeclared response is cancelled as soon as the next chunk would cross the bound, so the full remote payload is never accumulated first. A translated chunk may use a 4,000-character minimum allowance but cannot exceed eight times its source length or 100,000 characters; abnormal expansion fails before page accumulation and PDF layout. Provider error details are normalized and limited to 1,000 characters before entering task state or logs.
 - Translation uses a dedicated ephemeral network session with URL caching, cookies, and shared URL credential storage disabled; individual requests also reject caching and cookies.
+- Translation rejects every HTTP redirect before URLSession follows it. A regression submits a bearer credential and private document text to the original address, then verifies that the original request starts once, the redirect-target request starts zero times, and the session is stopped with a specific non-retryable privacy error.
 - Task-state writes no longer fail silently: processing does not start until the running state is saved, completion/failure/cancellation write errors remain visible, and a complete output can restore its finished state without reprocessing.
 - Restart recovery requires a completion receipt written only after the processor returns successfully. The receipt records the output name, byte count, and a bounded SHA-256 content fingerprint; recovery rechecks all three plus the output's structural validity. Missing, legacy filename-only, or mismatched receipts cannot present a readable but replaced or partial PDF as completed.
 - Active-session preview and export apply the same receipt checks outside the main actor. Preview verifies before and after generation and removes its cache if the result changes. Export fingerprints the bytes read from the opened source while copying, rejects replacement or mid-copy mutation, and leaves an existing destination unchanged on failure.

@@ -4197,6 +4197,30 @@ struct ModelsTests {
   }
 
   @Test
+  func translationRejectsWhitespaceOnlyContent() async throws {
+    let body = try JSONSerialization.data(withJSONObject: [
+      "choices": [["message": ["content": " \n\t "]]]
+    ])
+    let responses = TranslationResponseSequence([
+      .http(status: 200, headers: [:], body: body)
+    ])
+    let service = TranslationService(
+      provider: "openai", apiKey: "test-key",
+      requestSender: { try await responses.send($0) },
+      sleeper: { await responses.record(delay: $0) })
+
+    do {
+      _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+      Issue.record("Whitespace-only translations must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("没有返回译文") == true)
+    }
+    let snapshot = await responses.snapshot()
+    #expect(snapshot.requestCount == 1)
+    #expect(snapshot.delays.isEmpty)
+  }
+
+  @Test
   func translationBoundsProviderErrorDetails() async throws {
     let providerMessage = String(repeating: "provider failure detail ", count: 200)
     let body = try JSONSerialization.data(withJSONObject: [

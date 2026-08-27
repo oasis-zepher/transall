@@ -1140,7 +1140,8 @@ struct TranslationService {
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
       let choices = object["choices"] as? [[String: Any]],
       let message = choices.first?["message"] as? [String: Any],
-      let content = message["content"] as? String, !content.isEmpty
+      let content = message["content"] as? String,
+      !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else {
       throw NativeDocumentError.provider("翻译服务没有返回译文。")
     }

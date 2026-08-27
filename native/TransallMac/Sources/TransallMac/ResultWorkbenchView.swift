@@ -205,6 +205,12 @@ struct ResultWorkbenchView: View {
           .lineLimit(3)
           .truncationMode(.middle)
           .help(output)
+        if model.requiresNewResultDestination {
+          Label("恢复的任务只能另存为新文件", systemImage: "lock.doc")
+            .font(.caption2)
+            .foregroundStyle(TransallTheme.warning)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         if model.isSaving {
           ProgressView("正在保存")
             .controlSize(.small)

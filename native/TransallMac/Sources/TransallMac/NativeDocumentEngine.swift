@@ -466,7 +466,10 @@ final class NativeDocumentEngine: ObservableObject {
     return removed
   }
 
-  func download(jobID: String, to destination: URL) async throws {
+  func download(
+    jobID: String, to destination: URL,
+    allowReplacingExistingDestination: Bool = true
+  ) async throws {
     let job = try job(id: jobID)
     guard job.status == "done", let output = job.output else {
       throw NativeDocumentError.processing("任务还没有可保存的结果。")
@@ -478,7 +481,8 @@ final class NativeDocumentEngine: ObservableObject {
       let verified = try Self.validatedCompletedResult(named: output, in: directory)
       try AtomicResultSaver.copyReplacing(
         source: verified.url, destination: destination,
-        expectedFingerprint: verified.fingerprint)
+        expectedFingerprint: verified.fingerprint,
+        allowReplacingExistingDestination: allowReplacingExistingDestination)
     }
     try await withTaskCancellationHandler(
       operation: { try await transfer.value },
@@ -1371,7 +1375,8 @@ private enum SecureFileTransfer {
 enum AtomicResultSaver {
   static func copyReplacing(
     source: URL, destination: URL, chunkSize: Int = 1_024 * 1_024,
-    expectedFingerprint: CompletedResultFingerprint? = nil
+    expectedFingerprint: CompletedResultFingerprint? = nil,
+    allowReplacingExistingDestination: Bool = true
   ) throws {
     guard source.isFileURL, destination.isFileURL else {
       throw ResultSaveError.invalidDestination
@@ -1380,6 +1385,9 @@ enum AtomicResultSaver {
       throw NativeDocumentError.invalidFile("结果保存分块大小无效。")
     }
     let manager = FileManager.default
+    if !allowReplacingExistingDestination, manager.fileExists(atPath: destination.path) {
+      throw ResultSaveError.restoredTaskExistingDestination
+    }
     let temporary = destination.deletingLastPathComponent().appendingPathComponent(
       ".transall-save-\(UUID().uuidString)", isDirectory: false)
     var removeTemporary = true
@@ -1469,22 +1477,51 @@ enum AtomicResultSaver {
     try destinationHandle.close()
     destinationClosed = true
     try Task.checkCancellation()
-    if manager.fileExists(atPath: destination.path) {
-      _ = try manager.replaceItemAt(destination, withItemAt: temporary)
+    if allowReplacingExistingDestination {
+      if manager.fileExists(atPath: destination.path) {
+        _ = try manager.replaceItemAt(destination, withItemAt: temporary)
+      } else {
+        try manager.moveItem(at: temporary, to: destination)
+      }
     } else {
-      try manager.moveItem(at: temporary, to: destination)
+      try moveExclusively(temporary, to: destination)
     }
     removeTemporary = false
+  }
+
+  private static func moveExclusively(_ source: URL, to destination: URL) throws {
+    var renameError = Int32(EINVAL)
+    let result = source.withUnsafeFileSystemRepresentation { sourcePath -> Int32 in
+      guard let sourcePath else { return -1 }
+      return destination.withUnsafeFileSystemRepresentation { destinationPath -> Int32 in
+        guard let destinationPath else { return -1 }
+        let result = renamex_np(sourcePath, destinationPath, UInt32(RENAME_EXCL))
+        if result < 0 { renameError = errno }
+        return result
+      }
+    }
+    guard result == 0 else {
+      if renameError == EEXIST {
+        throw ResultSaveError.restoredTaskExistingDestination
+      }
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(renameError))
+    }
   }
 }
 
 enum ResultSavePolicy {
   static let panelMessage =
-    "处理过程不会修改原始文件；不能把结果存回本次任务的原文件。替换其他已有文件时，macOS 会先要求确认。"
+    "处理过程不会修改原始文件；不能把结果存回本次任务的原文件。恢复的任务只能保存为新文件。替换其他已有文件时，macOS 会先要求确认。"
 
-  static func validate(destination: URL, originalDocuments: [SelectedDocument]) throws {
+  static func validate(destination: URL, originalDocuments: [SelectedDocument]?) throws {
     guard destination.isFileURL else {
       throw ResultSaveError.invalidDestination
+    }
+    guard let originalDocuments else {
+      if FileManager.default.fileExists(atPath: destination.path) {
+        throw ResultSaveError.restoredTaskExistingDestination
+      }
+      return
     }
     for document in originalDocuments where refersToSameFile(destination, document.url) {
       throw ResultSaveError.originalFile
@@ -1510,6 +1547,7 @@ enum ResultSavePolicy {
 enum ResultSaveError: LocalizedError {
   case invalidDestination
   case originalFile
+  case restoredTaskExistingDestination
 
   var errorDescription: String? {
     switch self {
@@ -1517,6 +1555,8 @@ enum ResultSaveError: LocalizedError {
       "只能把结果保存为本机文件。"
     case .originalFile:
       "不能覆盖本次任务的原始文件。请选择其他位置或文件名。"
+    case .restoredTaskExistingDestination:
+      "恢复的任务无法确认原文件身份，不能替换已有文件。请选择新文件名或其他空位置。"
     }
   }
 }

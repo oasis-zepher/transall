@@ -1415,6 +1415,79 @@ struct ModelsTests {
   }
 
   @Test
+  func exclusiveResultSavingCreatesOnlyANewDestination() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-exclusive-new-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.pdf")
+    let destination = temporary.appendingPathComponent("new.pdf")
+    try Data("new result".utf8).write(to: source)
+
+    try AtomicResultSaver.copyReplacing(
+      source: source, destination: destination,
+      allowReplacingExistingDestination: false)
+
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "new result")
+    #expect(FileManager.default.fileExists(atPath: source.path))
+  }
+
+  @Test
+  func exclusiveResultSavingRejectsDestinationCreatedDuringCopy() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-save-exclusive-race-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.pdf")
+    let destination = temporary.appendingPathComponent("late.pdf")
+    #expect(FileManager.default.createFile(atPath: source.path, contents: nil))
+    let sourceHandle = try FileHandle(forWritingTo: source)
+    try sourceHandle.truncate(atOffset: 64 * 1_024)
+    try sourceHandle.close()
+
+    let saveTask = Task.detached {
+      try AtomicResultSaver.copyReplacing(
+        source: source, destination: destination, chunkSize: 1,
+        allowReplacingExistingDestination: false)
+    }
+    var transferStarted = false
+    for _ in 0..<200 {
+      let entries = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+      if entries.contains(where: { $0.hasPrefix(".transall-save-") }) {
+        transferStarted = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+
+    if transferStarted {
+      try Data("created during copy".utf8).write(to: destination)
+    } else {
+      saveTask.cancel()
+    }
+
+    var rejectedReplacement = false
+    do {
+      try await saveTask.value
+      Issue.record("Exclusive result saving should not replace a late destination")
+    } catch let error as ResultSaveError {
+      rejectedReplacement = error.localizedDescription.contains("不能替换已有文件")
+    } catch {
+      Issue.record("Exclusive result saving returned an unexpected error: \(error)")
+    }
+
+    #expect(transferStarted)
+    #expect(rejectedReplacement)
+    #expect(try String(contentsOf: destination, encoding: .utf8) == "created during copy")
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: temporary.path)
+    #expect(!leftovers.contains { $0.hasPrefix(".transall-save-") })
+  }
+
+  @Test
   func cancelledResultSavingPreservesExistingFileAndRemovesTemporaryCopy() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(
@@ -1591,6 +1664,29 @@ struct ModelsTests {
       destination: newDestination, originalDocuments: [document])
   }
 
+  @Test
+  func restoredResultSavingRejectsExistingDestinationButAllowsNewPath() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-restored-save-policy-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let existing = temporary.appendingPathComponent("existing.pdf")
+    let newDestination = temporary.appendingPathComponent("new.pdf")
+    try Data("existing".utf8).write(to: existing)
+
+    do {
+      try ResultSavePolicy.validate(destination: existing, originalDocuments: nil)
+      Issue.record("A restored result should not replace an existing destination")
+    } catch let error as ResultSaveError {
+      #expect(error.localizedDescription.contains("恢复的任务"))
+      #expect(error.localizedDescription.contains("不能替换已有文件"))
+    }
+
+    try ResultSavePolicy.validate(destination: newDestination, originalDocuments: nil)
+  }
+
   @Test @MainActor
   func resultSavingKeepsSubmittedOriginalsAfterInputSelectionChanges() async throws {
     let temporary = FileManager.default.temporaryDirectory
@@ -1623,6 +1719,64 @@ struct ModelsTests {
       try ResultSavePolicy.validate(
         destination: input, originalDocuments: model.resultOriginalDocuments)
     }
+    #expect(!model.requiresNewResultDestination)
+  }
+
+  @Test @MainActor
+  func restoredResultCannotOverwriteExistingFileWithoutOriginalSnapshot() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-restored-save-model-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let source = temporary.appendingPathComponent("source.txt")
+    try Data("source document".utf8).write(to: source)
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let suiteName = "transall-restored-save-preferences-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+
+    let initialEngine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    let initialModel = AppModel(backend: initialEngine, preferences: preferences)
+    await initialModel.start()
+    initialModel.selection.source = "data"
+    initialModel.selection.target = "pdf"
+    initialModel.documents = [SelectedDocument(url: source, size: 15)]
+    await initialModel.runJob()
+    let jobID = try #require(initialModel.currentJob?.id)
+
+    var completedJob: JobResponse?
+    for _ in 0..<400 {
+      let job = try initialEngine.job(id: jobID)
+      if job.status == "done" {
+        completedJob = job
+        break
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    _ = try #require(completedJob)
+    initialModel.prepareForTermination()
+
+    var downloadCalls = 0
+    let restoredEngine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    let restoredModel = AppModel(
+      backend: restoredEngine, preferences: preferences,
+      resultDestinationPicker: { _ in source },
+      resultDownloader: { _, _, _ in downloadCalls += 1 })
+    defer { restoredModel.prepareForTermination() }
+    await restoredModel.start()
+
+    #expect(restoredModel.currentJob?.status == "done")
+    #expect(restoredModel.resultOriginalDocuments == nil)
+    #expect(restoredModel.requiresNewResultDestination)
+
+    restoredModel.startSavingResult()
+
+    #expect(downloadCalls == 0)
+    #expect(!restoredModel.isSaving)
+    #expect(restoredModel.errorMessage?.contains("不能替换已有文件") == true)
+    #expect(try String(contentsOf: source, encoding: .utf8) == "source document")
   }
 
   @Test @MainActor
@@ -1806,7 +1960,7 @@ struct ModelsTests {
         destinationPickerCalls += 1
         return destination
       },
-      resultDownloader: { _, _ in
+      resultDownloader: { _, _, _ in
         await gate.markStarted()
         do {
           try await Task.sleep(for: .seconds(60))
@@ -1852,7 +2006,7 @@ struct ModelsTests {
       resultDestinationPicker: { _ in
         URL(fileURLWithPath: "/tmp/transall-termination-result.pdf")
       },
-      resultDownloader: { _, _ in
+      resultDownloader: { _, _, _ in
         await gate.markStarted()
         do {
           try await Task.sleep(for: .seconds(60))
@@ -1887,7 +2041,7 @@ struct ModelsTests {
         #expect(suggestedName == job.output)
         return destination
       },
-      resultDownloader: { jobID, downloadedDestination in
+      resultDownloader: { jobID, downloadedDestination, _ in
         recorder.recordDownload(jobID: jobID, destination: downloadedDestination)
       },
       resultRevealer: { recorder.recordReveal(destination: $0) })

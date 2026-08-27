@@ -58,7 +58,10 @@ final class AppModel: ObservableObject {
       _ route: RouteDefinition, _ files: [SelectedDocument], _ options: JobOptions
     ) async throws -> JobResponse
   typealias ResultDestinationPicker = @MainActor (_ suggestedName: String) -> URL?
-  typealias ResultDownloader = @MainActor (_ jobID: String, _ destination: URL) async throws -> Void
+  typealias ResultDownloader =
+    @MainActor (
+      _ jobID: String, _ destination: URL, _ allowReplacingExistingDestination: Bool
+    ) async throws -> Void
   typealias ResultRevealer = @MainActor (_ destination: URL) -> Void
   typealias DocumentInspector = @Sendable ([URL]) async throws -> [SelectedDocument]
 
@@ -79,7 +82,7 @@ final class AppModel: ObservableObject {
   @Published var isDeletingJob = false
   @Published var isLoadingPreview = false
   @Published var showAdvanced = false
-  private(set) var resultOriginalDocuments: [SelectedDocument] = []
+  private(set) var resultOriginalDocuments: [SelectedDocument]?
 
   let backend: NativeDocumentEngine
   private var pollingTask: Task<Void, Never>?
@@ -117,8 +120,10 @@ final class AppModel: ObservableObject {
       }
     self.resultDestinationPicker = resultDestinationPicker ?? Self.pickResultDestination
     self.resultDownloader =
-      resultDownloader ?? { jobID, destination in
-        try await backend.download(jobID: jobID, to: destination)
+      resultDownloader ?? { jobID, destination, allowReplacingExistingDestination in
+        try await backend.download(
+          jobID: jobID, to: destination,
+          allowReplacingExistingDestination: allowReplacingExistingDestination)
       }
     self.resultRevealer =
       resultRevealer ?? { destination in
@@ -182,6 +187,10 @@ final class AppModel: ObservableObject {
   var canDeleteCurrentJob: Bool {
     guard let currentJob else { return false }
     return !currentJob.isRunning && !isSaving && !isDeletingJob
+  }
+
+  var requiresNewResultDestination: Bool {
+    currentJob?.status == "done" && resultOriginalDocuments == nil
   }
 
   var inputLimitMB: Int {
@@ -264,7 +273,7 @@ final class AppModel: ObservableObject {
       selection.clear()
       documents = []
       currentJob = nil
-      resultOriginalDocuments = []
+      resultOriginalDocuments = nil
       previewPages = []
       previewError = nil
       isLoadingPreview = false
@@ -535,7 +544,8 @@ final class AppModel: ObservableObject {
         resultSaveTask = nil
       }
       do {
-        try await resultDownloader(job.id, destination)
+        try await resultDownloader(
+          job.id, destination, resultOriginalDocuments != nil)
         try Task.checkCancellation()
         resultRevealer(destination)
       } catch is CancellationError {
@@ -638,7 +648,7 @@ final class AppModel: ObservableObject {
     }
     guard currentJob?.id == id else { return }
     currentJob = nil
-    resultOriginalDocuments = []
+    resultOriginalDocuments = nil
     previewPages = []
     previewError = nil
     isLoadingPreview = false
@@ -669,6 +679,7 @@ final class AppModel: ObservableObject {
     guard let jobID = preferences.string(forKey: lastJobKey) else { return }
     do {
       let job = try backend.job(id: jobID)
+      resultOriginalDocuments = nil
       currentJob = job
       if job.isRunning {
         beginPolling(jobID: job.id)

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 134/134 Swift package tests with strict concurrency and warnings as errors, 134/134 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 134/134 Swift package tests with strict concurrency and warnings as errors, 134/134 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. The rebuilt product reports Simplified Chinese (`zh-Hans`) as its development region and only declared localization, matching the source plist, Xcode project, and planned App Store primary language. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -34,6 +34,7 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 
 - `project.yml` is the source of truth for XcodeGen.
 - `Transall.xcodeproj` is generated and committed for direct use in Xcode.
+- The project, source `Info.plist`, and rebuilt Release app declare only Simplified Chinese (`zh-Hans`), matching the planned App Store primary language.
 - Debug and Release builds both run in App Sandbox.
 - Release archives contain one universal native executable and Apple-owned system-framework links only.
 

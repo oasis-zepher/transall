@@ -2,6 +2,8 @@
 
 This package is the native SwiftUI edition of Transall. It does not use a `WebView` or a Python sidecar.
 
+Simplified Chinese (`zh-Hans`) is currently the app's only declared bundle localization. The XcodeGen source, generated Xcode project, source `Info.plist`, and rebuilt Release product use the same language metadata.
+
 ```text
 SwiftUI document workbench
     ├── PDFKit / Core Graphics: PDF operations and rendering
@@ -79,7 +81,7 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-27: strict recursive Swift formatting passed with zero findings, 134/134 Swift package tests passed with strict concurrency and warnings as errors, and 134/134 Xcode scheme tests passed.
+Last verified on 2026-08-27: strict recursive Swift formatting passed with zero findings, 134/134 Swift package tests passed with strict concurrency and warnings as errors, 134/134 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
 
 The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) enforces the same native formatting command before compilation. It also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 

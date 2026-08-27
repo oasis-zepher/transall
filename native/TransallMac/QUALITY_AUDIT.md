@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, and exact crop-field parsing are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. Translation requests reject every HTTP redirect before URLSession follows it. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. The current follow-up found one open P2: a successful provider response whose translation content contains only whitespace is accepted and can produce a visually blank PDF marked as complete. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, and blank translation response handling are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,28 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; one blank-translation P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
-
-### [P2] Whitespace-only provider content is accepted as a translation
-
-- **Location:** `TranslationService.translateChunk(_:source:target:glossary:)` in `NativeDocumentProcessor.swift` accepts the first provider `message.content` whenever the string is not exactly empty; it does not test whether the content contains any non-whitespace character.
-- **Category:** Reliability / provider-response validation / release quality.
-- **Impact:** A provider can return HTTP 2xx with `content` equal to spaces, tabs, or line breaks. Transall accepts that response, lays it out as a visually blank page, and can mark the paid translation task complete even though no usable translation was returned.
-- **Standard:** Truthful task completion and complete remote-response validation; no WCAG criterion applies.
-- **Recommendation:** Treat content whose whitespace-and-newline-trimmed form is empty as a missing translation while preserving valid content exactly as returned. Add a transport-independent regression proving that the response fails once without retrying or accumulating a blank result.
-- **Suggested command:** `$harden`, then rerun translation response, retry, PDF generation, strict concurrency, formatting, and Release checks.
-
 ## Resolved follow-up findings
+
+### [P2] Whitespace-only provider content was accepted as a translation
+
+- **Location before the fix:** `TranslationService.translateChunk(_:source:target:glossary:)` in `NativeDocumentProcessor.swift` accepted the first provider `message.content` whenever the string was not exactly empty; it did not test whether the content contained any non-whitespace character.
+- **Category:** Reliability / provider-response validation / release quality.
+- **Impact before the fix:** A provider could return HTTP 2xx with `content` equal to spaces, tabs, or line breaks. Transall accepted that response, laid it out as a visually blank page, and could mark the paid translation task complete even though no usable translation was returned.
+- **Standard:** Truthful task completion and complete remote-response validation; no WCAG criterion applies.
+- **Resolution:** Translation response validation now requires at least one non-whitespace character after trimming only for the emptiness check. Valid content is still returned exactly as the provider supplied it.
+- **Verification:** A transport-independent regression returns spaces, a tab, and a newline in HTTP 200 content. The request fails once with the missing-translation error, records no retry delay, and never produces a blank translation. Strict SwiftPM and Xcode scheme tests passed 142/142, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Crop parsing could discard malformed fields and shift coordinates
 
@@ -52,7 +50,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** Inputs such as `0,,0,100,100` or `0,abc,0,100,100` contained five fields but collapsed to `[0,0,100,100]` and passed validation. The task could therefore apply a different rectangle from the one the user entered instead of returning an actionable format error.
 - **Standard:** Exact structured-input parsing and truthful task results; no WCAG criterion applies.
 - **Resolution:** The parser now preserves empty comma-separated fields, requires exactly four components, and requires each trimmed component to parse successfully before validating numeric bounds or calculating rectangle dimensions.
-- **Verification:** Direct parser and preflight regressions reject empty, non-numeric, and extra crop fields, while a whitespace-padded four-number rectangle remains valid. Strict SwiftPM and Xcode scheme tests passed 141/141, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Direct parser and preflight regressions reject empty, non-numeric, and extra crop fields, while a whitespace-padded four-number rectangle remains valid. Strict SwiftPM and Xcode scheme tests passed 142/142, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] PDF crops were not checked against page bounds or verified after application
 
@@ -61,7 +59,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** PDFKit could silently alter or ignore a finite but out-of-page crop. On a 100 × 100 point page, requesting `200,200,300,300` produced an empty crop box, while an extremely large finite rectangle could leave the original bounds unchanged. Transall then wrote the PDF and reported success even though the requested edit was not applied as entered.
 - **Standard:** Truthful task results and complete page-relative validation; no WCAG criterion applies.
 - **Resolution:** The processor first gathers every selected page and rejects the request unless the crop rectangle is fully contained in each page's current crop bounds. It then applies the crop, reads the bounds back, and fails with a page-specific error unless all four components match within 0.001 point.
-- **Verification:** A valid crop is written with the requested bounds. Fully out-of-page, partially out-of-page, and extremely large finite crop boxes fail before creating a result. Strict SwiftPM and Xcode scheme tests passed 141/141, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A valid crop is written with the requested bounds. Fully out-of-page, partially out-of-page, and extremely large finite crop boxes fail before creating a result. Strict SwiftPM and Xcode scheme tests passed 142/142, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Crop-box arithmetic could overflow after finite endpoint validation
 
@@ -70,7 +68,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** A value such as `-1e308,0,1e308,100` passed the endpoint checks, but `x1 - x0` became positive infinity. The resulting rectangle had a non-finite width. PDFKit ignored this invalid crop box and retained the original page bounds, so Transall could report a successful edit even though the requested crop was not applied.
 - **Standard:** Complete boundary validation and truthful task results; no WCAG criterion applies.
 - **Resolution:** The parser now calculates width and height before creating the rectangle and rejects the crop box unless every endpoint and both derived dimensions are finite, ordered, and positive.
-- **Verification:** A regression rejects horizontal and vertical subtraction overflow at both parser and preflight boundaries while accepting an extreme rectangle whose derived dimensions remain finite. Strict SwiftPM and Xcode scheme tests passed 141/141, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A regression rejects horizontal and vertical subtraction overflow at both parser and preflight boundaries while accepting an extreme rectangle whose derived dimensions remain finite. Strict SwiftPM and Xcode scheme tests passed 142/142, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Translation requests did not reject provider redirects
 
@@ -79,7 +77,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** A provider, proxy, or intercepted endpoint could return a redirect. Depending on the status and redirected request produced by the URL loading system, extracted document text could be resent to a destination that Transall did not approve; the app also had no explicit guarantee that its bearer credential would stay on the original provider request.
 - **Standard:** Data minimization, secure credential handling, and the product promise that translation text goes only to the user-selected DeepSeek or OpenAI service; no WCAG criterion applies.
 - **Resolution:** `BoundedResponseLoader` now rejects every HTTP redirect before following it, invalidates the session, and returns a specific non-retryable provider error explaining that API Key and document text are being protected from a changed destination.
-- **Verification:** A custom URL-protocol regression submits a POST containing a bearer credential and private document text, then returns a 307 redirect. The original address receives one request, the redirect address receives zero requests, and the session is stopped. Strict SwiftPM and Xcode scheme tests passed 141/141, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A custom URL-protocol regression submits a POST containing a bearer credential and private document text, then returns a 307 redirect. The original address receives one request, the redirect address receives zero requests, and the session is stopped. Strict SwiftPM and Xcode scheme tests passed 142/142, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Active-session preview and export did not verify the completion receipt
 
@@ -88,7 +86,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** If a completed task result was replaced or modified before preview or export, the active app could use the changed file while still presenting the task as complete. Restarting the app detected the mismatch, but the active session did not.
 - **Standard:** Result integrity and secure local-file handling; no WCAG criterion applies.
 - **Resolution:** Preview and export now require a bounded, no-follow completion receipt whose output name, byte count, structural validity, and SHA-256 sample fingerprint match. Preview verifies before and after generation and removes its cache on failure. Export hashes the bytes read from the opened source while copying, rejects a replacement or mid-copy change, and preserves the selected destination on failure.
-- **Verification:** Regressions replace a valid completed PDF before preview/export and inject a copied-file fingerprint mismatch. Strict SwiftPM and Xcode scheme tests passed 141/141, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Regressions replace a valid completed PDF before preview/export and inject a copied-file fingerprint mismatch. Strict SwiftPM and Xcode scheme tests passed 142/142, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Final task status was not announced to VoiceOver
 
@@ -97,7 +95,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** A VoiceOver user who started a task received no proactive notification when processing completed, failed, or was cancelled. The user had to navigate back through the output panel to discover the final state and whether a result could be saved.
 - **Standard:** WCAG 2.2 Success Criterion 4.1.3 (Status Messages).
 - **Resolution:** Completion and cancellation now request medium-priority announcements; failure requests a high-priority announcement with its error and recovery hint. Queued and running updates remain silent, keyboard focus does not move, and announcements are limited to 500 characters.
-- **Verification:** The announcement-policy regression covers all five job states, priority, failure context, and the length bound. Strict SwiftPM and Xcode scheme tests passed 141/141, and Release analysis passed.
+- **Verification:** The announcement-policy regression covers all five job states, priority, failure context, and the length bound. Strict SwiftPM and Xcode scheme tests passed 142/142, and Release analysis passed.
 
 ### [P2] Bundle language metadata contradicted the product language
 
@@ -106,7 +104,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** The Release bundle resolved `CFBundleDevelopmentRegion` to `en` and had no `CFBundleLocalizations`, while the interface and App Store primary language were Simplified Chinese. macOS and App Store metadata could therefore advertise English support that the product did not provide and omit its actual language.
 - **Standard:** Accurate App Store product metadata; no WCAG criterion applies.
 - **Resolution:** Set the project development language, `CFBundleDevelopmentRegion`, and `CFBundleLocalizations` to `zh-Hans`; regenerated the committed Xcode project; added exact CI assertions for both plist values.
-- **Verification:** Strict SwiftPM tests passed 141/141, Xcode scheme tests passed 141/141, Release analysis passed, and the rebuilt app reports `zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
+- **Verification:** Strict SwiftPM tests passed 142/142, Xcode scheme tests passed 142/142, Release analysis passed, and the rebuilt app reports `zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
 
 ## Patterns and systemic issues
 
@@ -123,10 +121,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
-## Recommended actions
-
-1. **[P2] `$harden`** — reject whitespace-only provider translation content before page accumulation or PDF generation.
-2. **[P3] `$polish`** — rerun the full native release matrix and synchronize readiness evidence after blank translation responses are rejected.
+## Remaining release actions
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
@@ -163,6 +158,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 20. **Crop-box arithmetic overflow** — crop validation checks both entered endpoints and derived width and height, rejecting subtraction overflow before an invalid rectangle can reach PDFKit or be persisted for recovery.
 21. **Page-relative crop validation** — every requested crop must fit the current bounds of each selected page, and the applied PDFKit bounds must match within 0.001 point before the result can succeed.
 22. **Exact crop-field parsing** — crop input preserves empty comma fields and requires exactly four individually valid numbers, so malformed or extra components cannot shift the rectangle silently.
+23. **Blank translation response validation** — provider content must contain a non-whitespace character before it can enter page accumulation or PDF generation; whitespace-only HTTP 200 responses fail without retrying.
 
 ## Resolved P3 findings
 
@@ -218,8 +214,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Check | Result |
 | --- | --- |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 141/141 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 141/141 passed |
+| Swift package tests with Xcode 26.6 | 142/142 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 142/142 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |

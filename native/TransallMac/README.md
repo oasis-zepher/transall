@@ -53,6 +53,8 @@ Keychain reads, saves, deletion, migration, rollback, and reconciliation run on 
 
 Translation requests reject every HTTP redirect before URLSession follows it. The redirect target receives neither the API Key nor document text, the network session is stopped, and the task reports a specific non-retryable privacy error.
 
+Successful provider responses must contain at least one non-whitespace translation character. A response made only of spaces, tabs, or line breaks fails before it can produce a visually blank PDF result.
+
 App startup is idempotent: repeated or overlapping SwiftUI lifecycle callbacks initialize the native engine, credential environment, restored task, and retention cleanup only once after startup succeeds. A failed engine start remains retryable. Cancellation between asynchronous startup stages stops before later state is published or cleanup begins, and a later lifecycle callback can finish initialization.
 
 The circular format router uses semantic SwiftUI type. Accessibility text sizes expand its nodes, allow two-line format labels without shrinking them, and adjust the orbit radius to keep the controls inside the workbench. For routes such as PDF → PDF, the shared node retains both roles visually and reports both roles to assistive technology.
@@ -87,7 +89,7 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-28: strict recursive Swift formatting passed with zero findings, 141/141 Swift package tests passed with strict concurrency and warnings as errors, 141/141 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent.
+Last verified on 2026-08-28: strict recursive Swift formatting passed with zero findings, 142/142 Swift package tests passed with strict concurrency and warnings as errors, 142/142 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent.
 
 The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) enforces the same native formatting command before compilation. It also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 

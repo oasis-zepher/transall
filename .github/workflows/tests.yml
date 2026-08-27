@@ -46,14 +46,7 @@ jobs:
       - name: Lint Swift formatting
         run: xcrun swift-format lint --strict --recursive --parallel Sources Tests
       - name: Validate release metadata
-        run: |
-          plutil -lint
-          Support/Info.plist
-          Support/Transall.entitlements
-          Support/Transall.Debug.entitlements
-          Resources/PrivacyInfo.xcprivacy
-          test "$(plutil -extract CFBundleDevelopmentRegion raw Support/Info.plist)" = "zh-Hans"
-          test "$(plutil -extract CFBundleLocalizations.0 raw Support/Info.plist)" = "zh-Hans"
+        run: scripts/validate_release_metadata.sh
       - name: Run strict Swift package tests
         run: >-
           swift test

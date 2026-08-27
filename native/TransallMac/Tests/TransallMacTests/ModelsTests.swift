@@ -3869,16 +3869,22 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func runningJobLocksRouteControlsAndRejectsMutations() {
+  func runningJobLocksRouteControlsAndRejectsMutations() async {
     let model = AppModel(backend: NativeDocumentEngine())
     model.capabilities = NativeCapabilities.response
     model.selection.source = "pdf"
     model.selection.target = "pdf"
+    let original = SelectedDocument(
+      url: URL(fileURLWithPath: "/tmp/running-original.pdf"), size: 128)
+    model.documents = [original]
     model.currentJob = testJob(status: "running")
 
     #expect(model.routeChangeLock == .running)
     #expect(model.routeChangeLock?.statusLabel == "任务运行中")
     #expect(!model.canChangeRoute)
+    #expect(!model.canEditTaskDraft)
+    #expect(!model.canSelectDocuments)
+    #expect(model.taskDraftLockMessage == "任务运行中，完成或取消后可修改文件和参数")
 
     model.chooseFormat("image", animated: false)
     #expect(model.selection.source == "pdf")
@@ -3890,6 +3896,21 @@ struct ModelsTests {
     #expect(model.selection.target == "pdf")
     #expect(model.currentJob?.status == "running")
     #expect(model.errorMessage == "任务运行中，请先取消任务再重选路径。")
+
+    model.removeDocument(original)
+    #expect(model.documents.map(\.id) == [original.id])
+
+    await model.importDocuments(
+      [URL(fileURLWithPath: "/tmp/running-replacement.pdf")], appending: false)
+    #expect(model.documents.map(\.id) == [original.id])
+    #expect(model.errorMessage == "任务运行中，完成或取消后可修改文件和参数。")
+
+    model.currentJob = testJob(status: "done")
+    #expect(model.canEditTaskDraft)
+    #expect(model.canSelectDocuments)
+    #expect(model.taskDraftLockMessage == nil)
+    model.removeDocument(original)
+    #expect(model.documents.isEmpty)
   }
 
   @Test @MainActor
@@ -3909,6 +3930,9 @@ struct ModelsTests {
     model.documents = [original]
     model.isSubmitting = true
 
+    #expect(!model.canEditTaskDraft)
+    #expect(model.taskDraftLockMessage == "正在创建任务，完成后可修改文件和参数")
+
     model.chooseFormat("image", animated: false)
     #expect(model.selection.source == "pdf")
     #expect(model.selection.target == "pdf")
@@ -3923,7 +3947,7 @@ struct ModelsTests {
     await model.importDocuments(
       [URL(fileURLWithPath: "/tmp/replacement.pdf")], appending: false)
     #expect(model.documents.map(\.id) == [original.id])
-    #expect(model.errorMessage == "正在创建任务，请稍后再修改输入文件。")
+    #expect(model.errorMessage == "正在创建任务，完成后可修改文件和参数。")
 
     model.removeDocument(original)
     #expect(model.documents.map(\.id) == [original.id])

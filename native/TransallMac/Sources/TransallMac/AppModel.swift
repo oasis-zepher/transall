@@ -172,8 +172,18 @@ final class AppModel: ObservableObject {
   }
 
   var canSelectDocuments: Bool {
-    route?.enabled == true && !isImporting && !isSubmitting
+    route?.enabled == true && !isImporting && canEditTaskDraft
       && documents.count < NativeCapabilities.maximumInputFileCount
+  }
+
+  var canEditTaskDraft: Bool {
+    taskDraftLockMessage == nil
+  }
+
+  var taskDraftLockMessage: String? {
+    if isSubmitting { return "正在创建任务，完成后可修改文件和参数" }
+    if currentJob?.isRunning == true { return "任务运行中，完成或取消后可修改文件和参数" }
+    return nil
   }
 
   var routeTitle: String {
@@ -298,8 +308,8 @@ final class AppModel: ObservableObject {
       return
     }
     guard documentImportTask == nil, !isImporting else { return }
-    guard !isSubmitting else {
-      errorMessage = "正在创建任务，请稍后再修改输入文件。"
+    guard canEditTaskDraft else {
+      errorMessage = taskDraftLockMessage.map { "\($0)。" } ?? "当前无法修改文件和参数。"
       return
     }
     guard route?.enabled == true else {
@@ -421,7 +431,7 @@ final class AppModel: ObservableObject {
   }
 
   func removeDocument(_ document: SelectedDocument) {
-    guard !isImporting, !isSubmitting else { return }
+    guard !isImporting, canEditTaskDraft else { return }
     documents.removeAll { $0.id == document.id }
   }
 

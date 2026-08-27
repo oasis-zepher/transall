@@ -35,7 +35,7 @@ struct InputWorkbenchView: View {
 
         if let route = model.route, route.enabled {
           routeOptions(route)
-            .disabled(model.isSubmitting)
+            .disabled(!model.canEditTaskDraft)
           actionBar(route)
         } else {
           unavailableHint
@@ -135,11 +135,7 @@ struct InputWorkbenchView: View {
         }
         .buttonStyle(QuietButtonStyle())
         .disabled(!model.canSelectDocuments)
-        .help(
-          model.documents.count >= NativeCapabilities.maximumInputFileCount
-            ? "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件"
-            : "向当前任务继续添加文件"
-        )
+        .help(addDocumentsHelp)
       }
     }
     .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty || model.isImporting ? 116 : 76)
@@ -375,7 +371,7 @@ struct InputWorkbenchView: View {
   }
 
   private var inputIsLocked: Bool {
-    model.isImporting || model.isSubmitting
+    model.isImporting || !model.canEditTaskDraft
   }
 
   private var canActivateEmptyFileWell: Bool {
@@ -388,13 +384,21 @@ struct InputWorkbenchView: View {
   private var inputAccessibilityHint: String {
     if model.route?.enabled != true { return "先选择源格式和目标格式" }
     if model.isImporting { return "全部文件通过校验后才会加入列表" }
-    if model.isSubmitting { return "正在创建任务，完成后可修改文件" }
+    if let taskDraftLockMessage = model.taskDraftLockMessage { return taskDraftLockMessage }
     if model.documents.count >= NativeCapabilities.maximumInputFileCount {
       return "已达到每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件的限制，可先移除文件"
     }
     return model.documents.isEmpty
       ? "按回车键选择文件，也可以将文件拖到这里"
       : "可继续添加或移除文件"
+  }
+
+  private var addDocumentsHelp: String {
+    if let taskDraftLockMessage = model.taskDraftLockMessage { return taskDraftLockMessage }
+    if model.documents.count >= NativeCapabilities.maximumInputFileCount {
+      return "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件"
+    }
+    return "向当前任务继续添加文件"
   }
 
   private var allowedContentTypes: [UTType] {

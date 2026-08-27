@@ -211,6 +211,7 @@ struct ResultWorkbenchView: View {
         Image(systemName: "doc.circle.fill")
           .font(.title2)
           .foregroundStyle(TransallTheme.source)
+          .accessibilityHidden(true)
         Text(output)
           .font(.caption2.weight(.medium))
           .lineLimit(3)

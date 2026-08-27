@@ -93,6 +93,7 @@ struct InputWorkbenchView: View {
         Image(systemName: "doc.badge.plus")
           .font(.title2.weight(.light))
           .foregroundStyle(TransallTheme.accent)
+          .accessibilityHidden(true)
         Text("拖入文件，或点击选择")
           .font(.callout.weight(.semibold))
         Text(fileHint)
@@ -104,6 +105,7 @@ struct InputWorkbenchView: View {
           HStack(spacing: 10) {
             Image(systemName: "doc.text")
               .foregroundStyle(TransallTheme.source)
+              .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
               Text(document.name)
                 .font(.caption.weight(.medium))

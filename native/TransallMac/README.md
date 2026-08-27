@@ -58,6 +58,12 @@ The input heading uses **FILE** for exactly one selected document and **FILES** 
 ## Tests
 
 ```bash
+xcrun swift-format lint \
+  --strict \
+  --recursive \
+  --parallel \
+  Sources Tests
+
 swift test \
   -Xswiftc -strict-concurrency=complete \
   -Xswiftc -warnings-as-errors
@@ -73,9 +79,9 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-27: 134/134 Swift package tests passed with strict concurrency and warnings as errors, and 134/134 Xcode scheme tests passed.
+Last verified on 2026-08-27: strict recursive Swift formatting passed with zero findings, 134/134 Swift package tests passed with strict concurrency and warnings as errors, and 134/134 Xcode scheme tests passed.
 
-The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
+The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) enforces the same native formatting command before compilation. It also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 
 Some Command Line Tools installations do not ship the XCTest module or Swift Testing runtime in the paths expected by SwiftPM. The package itself still builds with `swift build`; a complete Xcode installation provides the normal test and signing runtime.
 

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed 134/134 Swift package tests with strict concurrency and warnings as errors, 134/134 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds the strict native tests and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 134/134 Swift package tests with strict concurrency and warnings as errors, 134/134 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -44,7 +44,7 @@ The repository workflow validates three release surfaces:
 | Job | Required checks |
 | --- | --- |
 | Browser edition | Python tests, dependency lock verification, Ruff, Bandit, and `pip-audit` |
-| Native macOS app | Release metadata, 134 strict SwiftPM tests, 134 Xcode scheme tests, and Xcode Release analysis |
+| Native macOS app | Strict Swift formatting, release metadata, 134 strict SwiftPM tests, 134 Xcode scheme tests, and Xcode Release analysis |
 | Support site | Locked install, high-severity npm audit, ESLint, production build, and 5 rendered-page tests |
 
 The new native and support-site commands were reproduced successfully on 2026-08-27. This is local evidence only; GitHub Actions has not executed the new jobs for the unpushed commits.

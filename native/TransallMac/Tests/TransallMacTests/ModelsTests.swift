@@ -981,6 +981,30 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func credentialSettingsSaveAvailabilityTracksDrafts() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "stored-deepseek", .openAI: "stored-openai"])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+
+    #expect(!settings.hasUnsavedChanges)
+    await settings.reload(showSuccess: false)
+    #expect(!settings.hasUnsavedChanges)
+
+    settings.deepseekKey = "replacement-deepseek"
+    #expect(settings.hasUnsavedChanges)
+    settings.deepseekKey = "stored-deepseek"
+    #expect(!settings.hasUnsavedChanges)
+
+    settings.openAIKey = "replacement-openai"
+    #expect(settings.hasUnsavedChanges)
+    await settings.save(appModel: appModel)
+
+    #expect(!settings.hasUnsavedChanges)
+    #expect(store.values[.openAI] == "replacement-openai")
+  }
+
+  @Test @MainActor
   func credentialSettingsExposeMalformedStoredValueAsInvalidAndDeletable() async {
     let store = TestCredentialStore(values: [.deepseek: "first\r\nsecond"])
     let settings = ProviderSettingsModel(store: store)

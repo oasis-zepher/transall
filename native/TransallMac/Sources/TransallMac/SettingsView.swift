@@ -87,6 +87,13 @@ final class ProviderSettingsModel: ObservableObject {
   private let worker: ProviderCredentialWorker
   private var storedValues: [ProviderCredential: String] = [:]
 
+  var hasUnsavedChanges: Bool {
+    guard isLoaded else { return false }
+    return ProviderCredential.allCases.contains { credential in
+      draftValue(for: credential) != (storedValues[credential] ?? "")
+    }
+  }
+
   init(
     store: (any ProviderCredentialStoring)? = nil,
     worker: ProviderCredentialWorker? = nil
@@ -254,11 +261,7 @@ final class ProviderSettingsModel: ObservableObject {
     }
 
     let storedValue = storedValues[credential] ?? ""
-    let draftValue =
-      switch credential {
-      case .deepseek: deepseekKey
-      case .openAI: openAIKey
-      }
+    let draftValue = draftValue(for: credential)
     let storage: ProviderCredentialStorageState
     do {
       let normalized = try ProviderCredentialPolicy.normalizedValue(
@@ -294,6 +297,13 @@ final class ProviderSettingsModel: ObservableObject {
     openAIKey = ""
     storedValues = [:]
     isLoaded = false
+  }
+
+  private func draftValue(for credential: ProviderCredential) -> String {
+    switch credential {
+    case .deepseek: deepseekKey
+    case .openAI: openAIKey
+    }
   }
 }
 
@@ -366,7 +376,9 @@ struct SettingsView: View {
             Task { await settings.save(appModel: appModel) }
           }
           .buttonStyle(PrimaryButtonStyle())
-          .disabled(settings.isSaving || settings.isLoading || !settings.isLoaded)
+          .disabled(
+            settings.isSaving || settings.isLoading || !settings.isLoaded
+              || !settings.hasUnsavedChanges)
         }
       }
       .padding(24)

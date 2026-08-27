@@ -226,7 +226,7 @@ struct ResultWorkbenchView: View {
             model.startSavingResult()
           }
           .buttonStyle(PrimaryButtonStyle())
-          .disabled(model.isDeletingJob)
+          .disabled(!model.canStartSavingResult)
         }
 
         if model.hasPreviewableResult {

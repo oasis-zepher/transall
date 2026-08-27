@@ -189,6 +189,11 @@ final class AppModel: ObservableObject {
     return !currentJob.isRunning && !isSaving && !isDeletingJob
   }
 
+  var canStartSavingResult: Bool {
+    !isSubmitting && !isSaving && !isDeletingJob
+      && currentJob?.status == "done" && currentJob?.output != nil
+  }
+
   var requiresNewResultDestination: Bool {
     currentJob?.status == "done" && resultOriginalDocuments == nil
   }
@@ -525,14 +530,16 @@ final class AppModel: ObservableObject {
   }
 
   func startSavingResult() {
-    guard resultSaveTask == nil, !isSaving, !isDeletingJob,
+    guard resultSaveTask == nil, canStartSavingResult,
       let job = currentJob, job.status == "done", let output = job.output
     else { return }
+    let originalDocuments = resultOriginalDocuments
+    let allowReplacingExistingDestination = originalDocuments != nil
     guard let destination = resultDestinationPicker(output) else { return }
 
     do {
       try ResultSavePolicy.validate(
-        destination: destination, originalDocuments: resultOriginalDocuments)
+        destination: destination, originalDocuments: originalDocuments)
     } catch {
       errorMessage = error.localizedDescription
       return
@@ -548,7 +555,7 @@ final class AppModel: ObservableObject {
       }
       do {
         try await resultDownloader(
-          job.id, destination, resultOriginalDocuments != nil)
+          job.id, destination, allowReplacingExistingDestination)
         try Task.checkCancellation()
         resultRevealer(destination)
       } catch is CancellationError {

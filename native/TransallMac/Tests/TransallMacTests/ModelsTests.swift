@@ -1985,6 +1985,53 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func resultSavingCannotStartWhileReplacementJobIsSubmitting() async {
+    let gate = DeletionRaceGate()
+    var destinationPickerCalls = 0
+    var downloaderCalls = 0
+    let model = AppModel(
+      backend: NativeDocumentEngine(),
+      jobCreator: { _, _, _ in
+        await gate.markStarted()
+        do {
+          try await Task.sleep(for: .seconds(60))
+          return testJob(status: "queued")
+        } catch is CancellationError {
+          await gate.markCancelled()
+          throw CancellationError()
+        }
+      },
+      resultDestinationPicker: { _ in
+        destinationPickerCalls += 1
+        return URL(fileURLWithPath: "/tmp/transall-overlapping-result-save.pdf")
+      },
+      resultDownloader: { _, _, _ in downloaderCalls += 1 })
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "data"
+    model.selection.target = "pdf"
+    model.documents = [
+      SelectedDocument(
+        url: URL(fileURLWithPath: "/tmp/transall-replacement-source.txt"), size: 128)
+    ]
+    model.currentJob = completedTestJob()
+
+    model.startJob()
+    await gate.waitUntilStarted()
+
+    #expect(model.isSubmitting)
+    #expect(!model.canStartSavingResult)
+    model.startSavingResult()
+    #expect(destinationPickerCalls == 0)
+    #expect(downloaderCalls == 0)
+    #expect(!model.isSaving)
+
+    await model.cancelJobSubmission()
+    await gate.waitUntilCancelled()
+    #expect(!model.isSubmitting)
+    #expect(model.canStartSavingResult)
+  }
+
+  @Test @MainActor
   func resultSavingCanBeCancelledWithoutReportingFailureOrRevealingDestination() async {
     let gate = DeletionRaceGate()
     let destination = URL(fileURLWithPath: "/tmp/transall-cancelled-result.pdf")

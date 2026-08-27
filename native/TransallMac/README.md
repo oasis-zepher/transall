@@ -43,7 +43,7 @@ Result export uses the same bounded transfer path. It writes to a sibling tempor
 
 Keychain reads, saves, deletion, migration, rollback, and reconciliation run on a serial background actor. Launch diagnostics, Settings, and translation preflight therefore remain responsive if macOS Keychain access is delayed, while Settings publications stay isolated to the main actor. Environment refresh reuses one credential-status snapshot for diagnostics and provider availability, translation startup reads only the selected provider key once, and Settings rejects overlapping save or delete mutations before they reach Keychain.
 
-App startup is idempotent: repeated or overlapping SwiftUI lifecycle callbacks initialize the native engine, credential environment, restored task, and retention cleanup only once after startup succeeds. A failed engine start remains retryable.
+App startup is idempotent: repeated or overlapping SwiftUI lifecycle callbacks initialize the native engine, credential environment, restored task, and retention cleanup only once after startup succeeds. A failed engine start remains retryable. Cancellation between asynchronous startup stages stops before later state is published or cleanup begins, and a later lifecycle callback can finish initialization.
 
 The circular format router uses semantic SwiftUI type. Accessibility text sizes expand its nodes, allow two-line format labels without shrinking them, and adjust the orbit radius to keep the controls inside the workbench.
 
@@ -55,7 +55,7 @@ Choose both the source and target formats before adding files. After the route i
 swift test
 ```
 
-Last verified on 2026-08-27: 124/124 Swift package tests passed with strict concurrency and warnings as errors, and 124/124 Xcode scheme tests passed.
+Last verified on 2026-08-27: 125/125 Swift package tests passed with strict concurrency and warnings as errors, and 125/125 Xcode scheme tests passed.
 
 Some Command Line Tools installations do not ship the XCTest module or Swift Testing runtime in the paths expected by SwiftPM. The package itself still builds with `swift build`; a complete Xcode installation provides the normal test and signing runtime.
 

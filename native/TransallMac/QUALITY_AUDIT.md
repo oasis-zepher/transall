@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, provider credential validation, and truthful credential-row state are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 findings in native formatting enforcement and running-task route controls are resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header now share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row now derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. The current follow-up found one open P1: a completed task restored after relaunch has no original-file snapshot, so the save policy can no longer enforce the promise that results cannot overwrite that task's source files. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, provider credential validation, and truthful credential-row state are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 findings in native formatting enforcement and running-task route controls are resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header now share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row now derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Restored results now require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,28 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; one restored-result P1 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no P0-P3 findings remain open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
-
-### [P1] A restored task can overwrite its original input file
-
-- **Location:** `AppModel.submitJob(route:documents:options:)` retains the submitted originals in `resultOriginalDocuments`, and `startSavingResult()` passes that snapshot to `ResultSavePolicy`. `AppModel.restoreLastJob()` restores only `currentJob`; `resultOriginalDocuments` remains empty after relaunch. `ResultSavePolicy.validate(destination:originalDocuments:)` therefore has no source reference to reject.
-- **Category:** Reliability / data-loss prevention / truthful result saving.
-- **Impact:** After a completed task is restored on the next launch, selecting one of that task's original files in the save panel passes Transall's validation. The atomic exporter can then replace the original with the generated result. macOS still presents its generic replacement confirmation, but the app's explicit promise that the current task cannot overwrite its source file is no longer enforced. A user following the same save flow before and after relaunch therefore receives different protection, with possible permanent loss of the source document.
-- **Standard:** Consistent destructive-action safeguards, truthful product claims, and App Store release reliability; no WCAG criterion applies.
-- **Recommendation:** Represent original-file guard availability explicitly instead of using an empty array for both “known empty” and “not restored”. For a restored task whose original identities are unavailable, allow saving only to a path that does not already exist. Explain this restriction beside the save control and in the save-panel message. Keep the existing exact path, symbolic-link, and hard-link checks for tasks created in the current session.
-- **Suggested verification:** Restore a completed task in a new `AppModel`, select an existing destination, and verify validation fails before the downloader is called. Verify a new destination remains allowed, active-session tasks still reject original paths and links while allowing unrelated existing files, and the UI identifies the restored-task restriction.
-
 ## Resolved follow-up findings
+
+### [P1] A restored task could overwrite its original input file
+
+- **Location before the fix:** `AppModel.submitJob(route:documents:options:)` retained the submitted originals in `resultOriginalDocuments`, and `startSavingResult()` passed that snapshot to `ResultSavePolicy`. `AppModel.restoreLastJob()` restored only `currentJob`; `resultOriginalDocuments` remained empty after relaunch. `ResultSavePolicy.validate(destination:originalDocuments:)` therefore had no source reference to reject.
+- **Category:** Reliability / data-loss prevention / truthful result saving.
+- **Impact before the fix:** After a completed task was restored on the next launch, selecting one of that task's original files in the save panel passed Transall's validation. The atomic exporter could then replace the original with the generated result. macOS still presented its generic replacement confirmation, but the app's explicit promise that the current task could not overwrite its source file was no longer enforced. A user following the same save flow before and after relaunch therefore received different protection, with possible permanent loss of the source document.
+- **Standard:** Consistent destructive-action safeguards, truthful product claims, and App Store release reliability; no WCAG criterion applies.
+- **Resolution:** `resultOriginalDocuments` is now optional, distinguishing a current-session snapshot from unavailable restored identities. Current-session tasks retain exact path, symbolic-link, and hard-link protection. Restored tasks show a visible restriction and reject every existing destination before download. The no-replacement flag also reaches the exporter, which installs the completed temporary copy with `renamex_np(..., RENAME_EXCL)` so a destination created during the transfer cannot be overwritten. No security-scoped bookmark or external file access is persisted.
+- **Verification:** A real text-to-PDF task is completed, the engine and model are reopened from persisted state, and an attempted save to the original source is rejected before the downloader runs while the source content remains unchanged. Policy tests allow a new restored-task destination and reject an existing one. Export tests verify exclusive creation succeeds and a destination created after copying starts remains untouched, with the temporary copy removed. Strict SwiftPM and Xcode scheme tests passed 157/157, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Settings reported stored credential state from unsaved draft text
 
@@ -52,7 +50,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** Editing a field changed the visible stored-state claim before any Keychain transaction occurred. Clearing a valid key immediately showed “未配置” and disabled direct deletion even though the key remained stored and usable until “保存并应用” succeeded. Conversely, an old malformed but non-empty Keychain value that preflight rejected still appeared “已配置”. Users therefore could not reliably tell what was stored, what was only a draft, or whether the delete action applied to an existing secret.
 - **Standard:** Truthful credential and privacy controls, consistent state semantics, and WCAG 2.2 Success Criterion 4.1.2 (Name, Role, Value).
 - **Resolution:** `ProviderCredentialRowState` derives confirmed configuration, invalid stored data, and deletion availability from `storedValues`. It validates the editable draft separately and reports explicit pending or invalid-unsaved states without overwriting the confirmed claim. VoiceOver receives the same truthful status value. A no-op save restores the normalized confirmed snapshot so whitespace-only draft differences do not remain pending.
-- **Verification:** Regressions cover valid, empty, and malformed stored values; valid and invalid unsaved drafts; deletion availability; and successful, failed, and no-op save reconciliation. Strict SwiftPM and Xcode scheme tests passed 153/153, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Regressions cover valid, empty, and malformed stored values; valid and invalid unsaved drafts; deletion availability; and successful, failed, and no-op save reconciliation. The current strict SwiftPM and Xcode scheme runs passed 157/157, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Provider API keys accepted invalid header characters and unbounded values
 
@@ -61,7 +59,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** A pasted key containing CR, LF, or another control character could be saved and reported as configured. Foundation silently dropped the resulting `Authorization` header, but Transall could still send the extracted document text and JSON body to the selected provider. The task then failed with a remote authentication response instead of identifying the malformed key locally. There was also no byte limit preventing an abnormal Keychain value from flowing into preflight and request construction.
 - **Standard:** Secure credential handling, data minimization, bounded external input, and actionable local validation; no WCAG criterion applies.
 - **Resolution:** One shared policy now trims ordinary outer whitespace, requires a non-empty single-line value without control characters, and caps the normalized key at 4,096 UTF-8 bytes. Settings rejects invalid edits before starting a Keychain transaction and publishes a high-priority announcement. The production store enforces the same write boundary, while environment status, preflight, job startup, the processor, and the request service revalidate stored or non-UI values. Request construction also verifies that Foundation retained the authentication header before sending document text.
-- **Verification:** Policy regressions cover ordinary DeepSeek and OpenAI values, CR, LF, NUL, DEL, empty required input, and the exact 4,096/4,097-byte boundary. Settings and simulated-Keychain tests prove invalid values cause no write. Preflight and task-start regressions reject an old malformed value with a specific local error before the processor runs, and transport-independent tests verify zero request-sender calls. The current strict SwiftPM and Xcode scheme runs passed 153/153, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Policy regressions cover ordinary DeepSeek and OpenAI values, CR, LF, NUL, DEL, empty required input, and the exact 4,096/4,097-byte boundary. Settings and simulated-Keychain tests prove invalid values cause no write. Preflight and task-start regressions reject an old malformed value with a specific local error before the processor runs, and transport-independent tests verify zero request-sender calls. The current strict SwiftPM and Xcode scheme runs passed 157/157, strict recursive formatting passed, and Release analysis passed.
 
 ### [P3] Format nodes remained actionable while a running task locked the route
 
@@ -170,10 +168,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 
 ## Recommended actions
 
-1. **[P1] `$harden`** — prevent restored results from replacing any existing destination when the task's original-file identities are unavailable.
-2. **[P3] `$polish`** — rerun strict formatting, SwiftPM and Xcode tests, and Release analysis, then synchronize release evidence.
-
-Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+No P0-P3 repository fix remains. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 
@@ -183,6 +178,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 4. **Website contrast** — the muted text token now meets WCAG AA for its rendered small-text usage.
 5. **Large-file UI blocking** — input imports, result saves, startup and hourly retention checks, and task deletion use cancellable detached work instead of synchronously copying or removing large task data on the main actor.
 6. **Release CI coverage** — GitHub Actions now validates native release metadata, strict SwiftPM and Xcode tests, Release analysis, support-site lint/build/render tests, and high-severity npm dependency findings. Workflow permissions are restricted to read-only repository contents, and every job has a timeout.
+7. **Restored-result overwrite protection** — current-session tasks reject their submitted originals and links, while restored tasks whose original identities are not persisted can write only a new destination. The final install uses an atomic exclusive rename, preventing a destination that appears during copying from being replaced.
 
 ## Resolved P2 findings
 
@@ -269,8 +265,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Check | Result |
 | --- | --- |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 153/153 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 153/153 passed |
+| Swift package tests with Xcode 26.6 | 157/157 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 157/157 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |

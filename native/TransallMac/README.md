@@ -37,6 +37,8 @@ Input limits are route-specific so text rendering cannot create an excessive in-
 
 The displayed limit is enforced during file selection and task preflight, checked again from the opened source file, and enforced while copying in 1 MiB chunks. A source that grows past the limit, a cancellation, or a copy error removes the partial batch before task processing starts. Text data is checked once more before PDF generation loads it.
 
+Every task is also limited to 256 input files. Exact duplicate URLs are removed before metadata inspection, and the workbench stops accepting additional selections at capacity. Preflight, file copying, persisted metadata, and restart recovery enforce the same limit for non-UI and restored tasks.
+
 While preflight and input copying run, the workbench shows **取消创建**. `AppModel` owns this submission task, keeps the submitted route, files, and options immutable, and cancels it when requested or when the app terminates. Normal cancellation does not show an error or publish a task. Incomplete task data is removed, including the narrow case where backend creation finishes at the same time as cancellation.
 
 Result export uses the same bounded transfer path. It writes to a sibling temporary file, rejects symbolic-link or changing task results, and replaces the selected destination only after the copy is complete. The result panel shows save progress and a cancel action; cancellation or app termination stops the active copy without showing an error or opening Finder. Cancellation or failure removes the temporary copy without changing an existing destination, and conflicting result or route operations stay disabled until saving ends.
@@ -69,7 +71,7 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-27: 128/128 Swift package tests passed with strict concurrency and warnings as errors, and 128/128 Xcode scheme tests passed.
+Last verified on 2026-08-27: 132/132 Swift package tests passed with strict concurrency and warnings as errors, and 132/132 Xcode scheme tests passed.
 
 The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 

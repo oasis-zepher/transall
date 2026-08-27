@@ -9,6 +9,7 @@ import Testing
 
 @testable import TransallMac
 
+@Suite(.serialized)
 struct ModelsTests {
   @Test
   func inputFileCountUsesCorrectEnglishPlural() {
@@ -2018,6 +2019,100 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func replacedCompletedResultCannotBePreviewedOrDownloaded() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-active-result-integrity-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+
+    let originalText = temporary.appendingPathComponent("original.txt")
+    try Data("original completed result".utf8).write(to: originalText, options: .atomic)
+    let outputName = "result.pdf"
+    let output = jobDirectory.appendingPathComponent(outputName)
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [originalText], options: JobOptions(), outputURL: output, apiKey: nil)
+    let originalData = try Data(contentsOf: output)
+    #expect(originalData.count <= 128 * 1_024)
+    try persistTestCompletionReceipt(output: output, in: jobDirectory)
+
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: route.kind, status: "done", inputs: [originalText.lastPathComponent],
+      createdAt: now, updatedAt: now, output: outputName, error: nil, stage: "complete",
+      message: "任务完成。", errorCode: nil, errorHint: nil, retryable: false, progress: 100,
+      cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+
+    let replacementText = temporary.appendingPathComponent("replacement.txt")
+    let replacement = temporary.appendingPathComponent("replacement.pdf")
+    try Data("different valid replacement".utf8).write(to: replacementText, options: .atomic)
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [replacementText], options: JobOptions(), outputURL: replacement,
+      apiKey: nil)
+    try FileManager.default.removeItem(at: output)
+    try FileManager.default.moveItem(at: replacement, to: output)
+    #expect(PDFDocument(url: output)?.pageCount == 1)
+
+    do {
+      _ = try await engine.previewPages(jobID: jobID)
+      Issue.record("A replaced completed result must not be previewed")
+    } catch {
+      #expect(error.localizedDescription.contains("完成凭据不一致"))
+    }
+    #expect(
+      !FileManager.default.fileExists(atPath: jobDirectory.appendingPathComponent("Preview").path))
+
+    let destination = temporary.appendingPathComponent("existing.pdf")
+    let existingData = Data("keep existing destination".utf8)
+    try existingData.write(to: destination, options: .atomic)
+    do {
+      try await engine.download(jobID: jobID, to: destination)
+      Issue.record("A replaced completed result must not be exported")
+    } catch {
+      #expect(error.localizedDescription.contains("完成凭据不一致"))
+    }
+    #expect(try Data(contentsOf: destination) == existingData)
+  }
+
+  @Test
+  func atomicResultSavingRechecksTheCopiedResultFingerprint() throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-copy-fingerprint-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let expectedData = Data("expected result".utf8)
+    let expectedHash = SHA256.hash(data: expectedData)
+      .map { String(format: "%02x", $0) }.joined()
+    let source = temporary.appendingPathComponent("source.txt")
+    try Data("replaced result".utf8).write(to: source, options: .atomic)
+    let destination = temporary.appendingPathComponent("destination.txt")
+    let destinationData = Data("existing destination".utf8)
+    try destinationData.write(to: destination, options: .atomic)
+
+    do {
+      try AtomicResultSaver.copyReplacing(
+        source: source, destination: destination,
+        expectedFingerprint: CompletedResultFingerprint(
+          byteCount: Int64(expectedData.count), sampleSHA256: expectedHash))
+      Issue.record("The exact result copied to the destination must match the completion receipt")
+    } catch {
+      #expect(error.localizedDescription.contains("完成凭据不一致"))
+    }
+    #expect(try Data(contentsOf: destination) == destinationData)
+  }
+
+  @Test @MainActor
   func localJobDoesNotReadTranslationCredentials() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(
@@ -3441,8 +3536,14 @@ struct ModelsTests {
     let jobID = UUID().uuidString.lowercased()
     let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
     try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
-    try Data("preview source".utf8).write(
-      to: jobDirectory.appendingPathComponent("result.pdf"), options: .atomic)
+    let source = temporary.appendingPathComponent("source.txt")
+    try Data("preview source".utf8).write(to: source, options: .atomic)
+    let output = jobDirectory.appendingPathComponent("result.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [source], options: JobOptions(), outputURL: output, apiKey: nil)
+    try persistTestCompletionReceipt(output: output, in: jobDirectory)
     let now = ISO8601DateFormatter().string(from: Date())
     let job = JobResponse(
       id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
@@ -3611,6 +3712,7 @@ struct ModelsTests {
       NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
     _ = try await NativeDocumentProcessor.process(
       route: route, inputs: [text], options: JobOptions(), outputURL: output, apiKey: nil)
+    try persistTestCompletionReceipt(output: output, in: jobDirectory)
 
     await model.refreshPreview()
 
@@ -4565,6 +4667,22 @@ private func paddedJSON<T: Encodable>(_ value: T, minimumBytes: Int) throws -> D
 private func persistTestJob(_ job: JobResponse, in directory: URL) throws {
   try JSONEncoder().encode(job).write(
     to: directory.appendingPathComponent("job.json"), options: .atomic)
+}
+
+private func persistTestCompletionReceipt(output: URL, in directory: URL) throws {
+  let data = try Data(contentsOf: output, options: .mappedIfSafe)
+  let sampleSize = 64 * 1_024
+  var sample = data
+  if data.count > sampleSize * 2 {
+    sample = Data(data.prefix(sampleSize))
+    sample.append(data.suffix(sampleSize))
+  }
+  let hash = SHA256.hash(data: sample)
+    .map { String(format: "%02x", $0) }.joined()
+  let receipt = PersistedCompletionReceipt(
+    output: output.lastPathComponent, byteCount: Int64(data.count), sampleSHA256: hash)
+  try JSONEncoder().encode(receipt).write(
+    to: directory.appendingPathComponent("completion.json"), options: .atomic)
 }
 
 private func loadTestJSON<T: Decodable>(_ name: String, from directory: URL) throws -> T {

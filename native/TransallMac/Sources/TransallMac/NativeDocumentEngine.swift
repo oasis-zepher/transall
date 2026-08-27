@@ -465,12 +465,14 @@ final class NativeDocumentEngine: ObservableObject {
     guard job.status == "done", let output = job.output else {
       throw NativeDocumentError.processing("任务还没有可保存的结果。")
     }
-    let source = try Self.validatedRegularFile(
-      named: output, in: jobDirectory(jobID), description: "任务结果")
+    let directory = try jobDirectory(jobID)
     let transfer = Task.detached(priority: .userInitiated) {
       let accessing = destination.startAccessingSecurityScopedResource()
       defer { if accessing { destination.stopAccessingSecurityScopedResource() } }
-      try AtomicResultSaver.copyReplacing(source: source, destination: destination)
+      let verified = try Self.validatedCompletedResult(named: output, in: directory)
+      try AtomicResultSaver.copyReplacing(
+        source: verified.url, destination: destination,
+        expectedFingerprint: verified.fingerprint)
     }
     try await withTaskCancellationHandler(
       operation: { try await transfer.value },
@@ -485,17 +487,22 @@ final class NativeDocumentEngine: ObservableObject {
     }
     let directory = try jobDirectory(jobID)
     let previewDirectory = directory.appendingPathComponent("Preview", isDirectory: true)
-    let outputURL = try Self.validatedRegularFile(
-      named: output, in: directory, description: "任务结果")
     guard previewOperations[jobID] == nil else {
       throw NativeDocumentError.processing("这个任务的 PDF 预览正在生成。")
     }
     let token = UUID()
     let previewGenerator = self.previewGenerator
     let operation = Task.detached(priority: .userInitiated) {
-      let pages = try await previewGenerator(outputURL, previewDirectory)
-      try Task.checkCancellation()
-      return pages
+      do {
+        let verified = try Self.validatedCompletedResult(named: output, in: directory)
+        let pages = try await previewGenerator(verified.url, previewDirectory)
+        _ = try Self.validatedCompletedResult(named: output, in: directory)
+        try Task.checkCancellation()
+        return pages
+      } catch {
+        try? FileManager.default.removeItem(at: previewDirectory)
+        throw error
+      }
     }
     previewOperations[jobID] = PreviewOperation(token: token, task: operation)
     defer {
@@ -1008,39 +1015,66 @@ final class NativeDocumentEngine: ObservableObject {
   private nonisolated static func completionReceiptMatches(
     _ receipt: NativeJobCompletionReceipt, expectedOutput: String, outputURL: URL
   ) -> Bool {
-    guard receipt.output == expectedOutput, let expectedByteCount = receipt.byteCount,
-      let expectedSampleSHA256 = receipt.sampleSHA256, isCompleteResult(outputURL),
+    guard receipt.output == expectedOutput, let expected = fingerprint(from: receipt),
+      isCompleteResult(outputURL),
       let fingerprint = try? resultFingerprint(outputURL)
     else {
       return false
     }
-    return fingerprint.byteCount == expectedByteCount
-      && fingerprint.sampleSHA256 == expectedSampleSHA256
+    return fingerprint == expected
   }
 
-  private nonisolated static func resultFingerprint(_ url: URL) throws -> (
-    byteCount: Int64, sampleSHA256: String
-  ) {
-    let values = try url.resourceValues(
-      forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
-    guard values.isSymbolicLink != true, values.isRegularFile == true,
-      let fileSize = values.fileSize, fileSize >= 0
-    else {
-      throw NativeDocumentError.processing("无法读取任务结果指纹。")
+  private nonisolated static func validatedCompletedResult(
+    named output: String, in directory: URL
+  ) throws -> (url: URL, fingerprint: CompletedResultFingerprint) {
+    let outputURL = try validatedRegularFile(
+      named: output, in: directory, description: "任务结果")
+    let receipt: NativeJobCompletionReceipt
+    do {
+      let data = try boundedTaskFileData(
+        named: "completion.json", in: directory, description: "任务完成凭据",
+        maximumBytes: maximumCompletionReceiptBytes)
+      receipt = try JSONDecoder().decode(NativeJobCompletionReceipt.self, from: data)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      throw NativeDocumentError.invalidFile("任务完成凭据缺失或无效，请重新运行任务。")
     }
+    guard receipt.output == output, let expected = fingerprint(from: receipt),
+      isCompleteResult(outputURL), try resultFingerprint(outputURL) == expected
+    else {
+      throw NativeDocumentError.invalidFile("任务结果与完成凭据不一致，请重新运行任务。")
+    }
+    return (outputURL, expected)
+  }
 
+  private nonisolated static func fingerprint(
+    from receipt: NativeJobCompletionReceipt
+  ) -> CompletedResultFingerprint? {
+    guard let byteCount = receipt.byteCount, byteCount >= 0,
+      let sampleSHA256 = receipt.sampleSHA256, sampleSHA256.count == 64,
+      sampleSHA256.allSatisfy({ $0.isHexDigit })
+    else { return nil }
+    return CompletedResultFingerprint(byteCount: byteCount, sampleSHA256: sampleSHA256)
+  }
+
+  private nonisolated static func resultFingerprint(_ url: URL) throws
+    -> CompletedResultFingerprint
+  {
     let sampleSize = 64 * 1_024
-    let handle = try FileHandle(forReadingFrom: url)
+    let (handle, initialStatus) = try SecureFileTransfer.openRegularSource(
+      url, nonRegularMessage: "任务结果不是有效的普通文件。")
     defer { try? handle.close() }
+    let fileSize = initialStatus.st_size
     var sample = Data()
-    if fileSize <= sampleSize * 2 {
+    if fileSize <= Int64(sampleSize * 2) {
       sample = try handle.readToEnd() ?? Data()
-      guard sample.count == fileSize else {
+      guard Int64(sample.count) == fileSize else {
         throw NativeDocumentError.processing("任务结果大小在验证期间发生变化。")
       }
     } else {
       let prefix = try handle.read(upToCount: sampleSize) ?? Data()
-      try handle.seek(toOffset: UInt64(fileSize - sampleSize))
+      try handle.seek(toOffset: UInt64(fileSize - Int64(sampleSize)))
       let suffix = try handle.read(upToCount: sampleSize) ?? Data()
       guard prefix.count == sampleSize, suffix.count == sampleSize else {
         throw NativeDocumentError.processing("任务结果大小在验证期间发生变化。")
@@ -1048,8 +1082,12 @@ final class NativeDocumentEngine: ObservableObject {
       sample.append(prefix)
       sample.append(suffix)
     }
+    let finalStatus = try SecureFileTransfer.fileStatus(for: handle.fileDescriptor)
+    guard SecureFileTransfer.isUnchanged(initialStatus, finalStatus) else {
+      throw NativeDocumentError.processing("任务结果在验证期间发生变化。")
+    }
     let digest = SHA256.hash(data: sample).map { String(format: "%02x", $0) }.joined()
-    return (Int64(fileSize), digest)
+    return CompletedResultFingerprint(byteCount: fileSize, sampleSHA256: digest)
   }
 
   private func load<T: Decodable>(_ name: String, from directory: URL) throws -> T {
@@ -1240,6 +1278,11 @@ final class NativeDocumentEngine: ObservableObject {
   }
 }
 
+struct CompletedResultFingerprint: Equatable, Sendable {
+  let byteCount: Int64
+  let sampleSHA256: String
+}
+
 private enum SecureFileTransfer {
   static func openRegularSource(
     _ source: URL, nonRegularMessage: String
@@ -1310,7 +1353,8 @@ private enum SecureFileTransfer {
 
 enum AtomicResultSaver {
   static func copyReplacing(
-    source: URL, destination: URL, chunkSize: Int = 1_024 * 1_024
+    source: URL, destination: URL, chunkSize: Int = 1_024 * 1_024,
+    expectedFingerprint: CompletedResultFingerprint? = nil
   ) throws {
     guard source.isFileURL, destination.isFileURL else {
       throw ResultSaveError.invalidDestination
@@ -1340,6 +1384,11 @@ enum AtomicResultSaver {
     }
 
     var copiedBytes: Int64 = 0
+    let sampleSize = 64 * 1_024
+    var smallResultSample = Data()
+    var firstSample = Data()
+    var lastSample = Data()
+    var canUseCompleteSample = true
     while true {
       try Task.checkCancellation()
       guard let chunk = try sourceHandle.read(upToCount: chunkSize), !chunk.isEmpty else {
@@ -1350,9 +1399,39 @@ enum AtomicResultSaver {
       guard !overflow else {
         throw NativeDocumentError.invalidFile("任务结果过大，无法保存。")
       }
+      if expectedFingerprint != nil {
+        if canUseCompleteSample, newTotal <= Int64(sampleSize * 2) {
+          smallResultSample.append(chunk)
+        } else {
+          canUseCompleteSample = false
+          smallResultSample.removeAll(keepingCapacity: false)
+        }
+        if firstSample.count < sampleSize {
+          firstSample.append(chunk.prefix(sampleSize - firstSample.count))
+        }
+        if chunk.count >= sampleSize {
+          lastSample = Data(chunk.suffix(sampleSize))
+        } else {
+          lastSample.append(chunk)
+          if lastSample.count > sampleSize {
+            lastSample.removeFirst(lastSample.count - sampleSize)
+          }
+        }
+      }
       try destinationHandle.write(contentsOf: chunk)
       copiedBytes = newTotal
       try Task.checkCancellation()
+    }
+    if let expectedFingerprint {
+      var sample = canUseCompleteSample ? smallResultSample : firstSample
+      if !canUseCompleteSample { sample.append(lastSample) }
+      let digest = SHA256.hash(data: sample).map { String(format: "%02x", $0) }.joined()
+      let actual = CompletedResultFingerprint(
+        byteCount: copiedBytes, sampleSHA256: digest)
+      guard actual == expectedFingerprint else {
+        throw NativeDocumentError.invalidFile(
+          "任务结果与完成凭据不一致，未保存结果。请重新运行任务。")
+      }
     }
     try destinationHandle.synchronize()
     try Task.checkCancellation()

@@ -286,6 +286,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 9. Native source and tests now pass Xcode 26.6 `swift-format` in strict recursive mode. The follow-up found 12 findings across five files; targeted formatting removed all of them, and the native CI job runs the same check before compilation.
 10. Format nodes and the header now use the same model-level route lock. During import, task creation, result saving, or task processing, every route control is disabled and reports the current visible and accessible reason instead of accepting an action that must fail.
 11. Settings now disables “保存并应用” unless at least one provider draft differs from the last confirmed Keychain snapshot; model regressions and a rebuilt-app interaction check cover the state change.
+12. Decorative document symbols in the empty file well, selected-file rows, and completed-result pane are hidden from accessibility. VoiceOver now reaches the adjacent task-specific text directly instead of announcing generic or incorrect icon names such as “纯文本文稿” for a PDF.
 
 ## Additional reliability hardening
 

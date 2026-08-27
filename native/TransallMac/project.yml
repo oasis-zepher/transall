@@ -1,5 +1,6 @@
 name: Transall
 options:
+  developmentLanguage: zh-Hans
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -21,7 +22,10 @@ targets:
     info:
       path: Support/Info.plist
       properties:
+        CFBundleDevelopmentRegion: zh-Hans
         CFBundleDisplayName: Transall
+        CFBundleLocalizations:
+          - zh-Hans
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false

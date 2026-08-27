@@ -189,11 +189,11 @@
 				};
 			};
 			buildConfigurationList = 2A6344846A4ABF8F51B630C5 /* Build configuration list for PBXProject "Transall" */;
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
-				en,
+				"zh-Hans",
 			);
 			mainGroup = 4A0E63344278C5EBEA943E5E;
 			minimizedProjectReferenceProxies = 1;

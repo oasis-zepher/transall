@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting and unbounded multi-file batches are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting and unbounded multi-file batches are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The current follow-up found one open P2: file metadata inspection runs in the background but has no model-owned lifecycle or cancel control. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -18,27 +18,34 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | # | Dimension | Baseline | Current | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Contrast, semantic scalable type, labels, state announcements, focus, reduced-motion behavior, keyboard targets, and repeated-navigation bypasses are covered across both surfaces. |
-| 2 | Performance | 2/4 | 4/4 | Byte-heavy work is bounded and cancellable; multi-file routes now reject more than 256 inputs before inspection, copying, or recovery. |
+| 2 | Performance | 2/4 | 3/4 | Byte-heavy work is bounded, but file metadata inspection cannot be cancelled from the workbench or app lifecycle. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no code-level P0–P3 finding remains in the current audit.** |
+| **Total** |  | **16/20** | **19/20** | **Excellent; one input-lifecycle P2 remains open.** |
 
 ## Executive summary
 
-- Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Audit health score: **19/20 — Excellent**.
+- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-None in the current code audit.
+### [P2] File metadata inspection cannot be cancelled
+
+- **Location:** `InputWorkbenchView` file-importer and drop handlers, `AppModel.importDocuments`, and `AppModel.prepareForTermination`.
+- **Category:** Performance / reliability.
+- **Impact:** File metadata inspection runs outside the main actor, but both UI entry points launch unreferenced tasks. A slow, disconnected, or unresponsive volume can leave the workbench locked in “正在读取文件” with no cancel action; termination also cannot propagate cancellation through the model. Users can wait or quit the app.
+- **Standard:** App Store release robustness; no WCAG criterion applies.
+- **Recommendation:** Let `AppModel` own one import task, reject overlapping starts, expose an explicit cancel action while inspection runs, cancel it during termination, and keep cancellation silent without replacing the existing document selection.
+- **Suggested command:** `$harden`, then `$polish` after lifecycle regressions pass.
 
 ## Patterns and systemic issues
 
-- Input transfer and result export have model-owned cancellation lifecycles, and Keychain access is isolated from the main actor.
+- Task creation and result export have model-owned cancellation lifecycles, but file metadata inspection still depends on an unreferenced view task.
 - Aggregate input bytes and the 256-file batch limit are enforced across selection, preflight, transfer, persistence, and recovery.
 - Native text uses semantic SwiftUI styles, including accessibility-size-aware geometry for the circular format router.
 - Website semantics, contrast, focus rings, target sizes, and repeated-navigation bypasses share one rendered-HTML contract across all routes.
@@ -52,7 +59,10 @@ None in the current code audit.
 
 ## Recommended actions
 
-No corrective code change remains for the current audit. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+1. **[P2] `$harden`** — move file metadata inspection into a model-owned task with explicit and termination cancellation while preserving atomic selection.
+2. **[P3] `$polish`** — add a compact “取消读取” action to the existing import state without changing the workbench hierarchy.
+
+After the fix, rerun this audit and the strict Swift/Xcode test matrix. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 

@@ -45,7 +45,7 @@ The repository workflow validates three release surfaces:
 | Job | Required checks |
 | --- | --- |
 | Browser edition | Python tests, dependency lock verification, Ruff, Bandit, and `pip-audit` |
-| Native macOS app | Strict Swift formatting, release metadata, 135 strict SwiftPM tests, 135 Xcode scheme tests, and Xcode Release analysis |
+| Native macOS app | Strict Swift formatting, release metadata, 137 strict SwiftPM tests, 137 Xcode scheme tests, and Xcode Release analysis |
 | Support site | Locked install, high-severity npm audit, ESLint, production build, and 5 rendered-page tests |
 
 The new native and support-site commands were reproduced successfully on 2026-08-27. This is local evidence only; GitHub Actions has not executed the new jobs for the unpushed commits.

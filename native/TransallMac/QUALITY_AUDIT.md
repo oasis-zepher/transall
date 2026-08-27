@@ -1,7 +1,7 @@
 # Transall release quality audit
 
 Audit date: 2026-08-15
-Last verified: 2026-08-21
+Last verified: 2026-08-27
 Quality bar: App Store-ready version 1.0
 Surfaces: native SwiftUI app and local support/privacy website
 
@@ -108,6 +108,7 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 - Persisted JSON is bounded before both writing and decoding: task state is limited to 1 MiB, route metadata to 128 KiB, and completion receipts to 16 KiB. Reads open the exact regular file without following symbolic links, stream at most 64 KiB per read, enforce the limit during transfer, and reject files whose size or timestamps change. Startup retention scanning uses the same bounded reader and falls back to the task directory timestamp for oversized or damaged state instead of loading it into memory.
 - Newly persisted options are canonicalized for the selected route. Local jobs no longer retain unrelated glossary, watermark, provider, or OCR values from another route, while translation and other option-bearing jobs keep exactly the values their processor and recovery path require.
 - Keychain reads and complete mutation transactions run on a serial background actor. One status snapshot supplies both launch diagnostics and provider availability, avoiding duplicate credential reads and inconsistent refresh state; translation processing reads only its selected credential once. Settings rejects overlapping save and delete requests before they can enqueue a transaction based on stale model state. Read failures disable credential editing until a successful reload. Failed multi-provider saves attempt to roll back every started write, including writes that mutate before throwing, then re-read Keychain and report the actual stored state. Failed deletions use the same reconciliation path, and malformed non-UTF-8 credential data is rejected. Local-only jobs do not read translation credentials; translation jobs report Keychain access errors before network work.
+- Repeated or overlapping app-start callbacks initialize shared engine, credential, restoration, and retention state only once after a successful start. An engine-start failure can still be retried, and regression coverage verifies that duplicate lifecycle callbacks do not repeat startup initialization.
 - Provider keys request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; existing legacy entries migrate without losing the credential, while unsigned development builds retain a tested legacy fallback when the application identity entitlement is unavailable.
 - Input copying opens source and destination descriptors without following symbolic links, confirms regular-file status on the opened descriptors, and prechecks the actual source size. It then copies in bounded 1 MiB chunks, enforces the cumulative route limit before every write, detects size changes during transfer, and checks cancellation between chunks. Oversize, changed, failed, or cancelled imports remove the partial destination and every completed copy from the same batch. Text-to-PDF input is capped at 20 MB, while other native routes retain the 250 MB limit; the UI, preflight, streaming copy, and text processor all apply the matching limit before text is loaded.
 - Task submission is retained by `AppModel` instead of an unowned view task. Duplicate starts are ignored, the UI keeps a visible cancel action while the immutable submission snapshot is validated and copied, and termination propagates cancellation. If creation returns after cancellation was requested, cleanup runs in a fresh task so the cancelled context cannot prevent the new backend job from being stopped and deleted.
@@ -122,8 +123,8 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 123/123 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 123/123 passed |
+| Swift package tests with Xcode 26.6 | 124/124 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 124/124 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

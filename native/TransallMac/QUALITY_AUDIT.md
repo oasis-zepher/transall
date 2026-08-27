@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, and repeated Settings announcements are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 findings in native formatting enforcement and running-task route controls are resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header now share the model's exact route-change lock and expose the current reason while a route cannot change. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, and repeated Settings announcements are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 findings in native formatting enforcement and running-task route controls are resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header now share the model's exact route-change lock and expose the current reason while a route cannot change. The current follow-up found one open P2: provider API keys accept control characters and unbounded values, so Foundation can silently remove the authentication header while the document request is still sent. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,15 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; one credential-validation P2 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
+
+## Open follow-up finding
+
+### [P2] Provider API keys accept invalid header characters and unbounded values
+
+- **Location:** `ProviderSettingsModel.save(appModel:)` and `ProviderCredentialStore.setValue(_:for:)` trim only leading and trailing whitespace; `NativeDocumentEngine.preflight(route:files:options:)` and `NativeDocumentProcessor.process(route:inputs:options:outputURL:apiKey:)` test only whether the stored value is empty; `TranslationService.translateChunk(_:source:target:glossary:)` inserts the unvalidated value directly into the `Authorization` request header.
+- **Category:** Reliability / privacy / credential input validation / release quality.
+- **Impact:** A pasted key containing CR, LF, or another control character can be saved and reported as configured. Foundation silently drops the resulting `Authorization` header, but Transall can still send the extracted document text and JSON body to the selected provider. The task then fails with a remote authentication response instead of identifying the malformed key locally. There is also no byte limit preventing an abnormal Keychain value from flowing into preflight and request construction.
+- **Standard:** Secure credential handling, data minimization, bounded external input, and actionable local validation; no WCAG criterion applies.
+- **Recommendation:** Define one shared provider-credential policy that accepts only a trimmed, non-empty, single-line value without control characters and no more than 4,096 UTF-8 bytes. Reject invalid edits before any Keychain transaction, enforce the same policy at the production store boundary, and revalidate old or non-UI Keychain values before preflight and processing so no request can start with an invalid key.
+- **Suggested verification:** Prove that CR, LF, other control characters, and a 4,097-byte value produce a specific local error and zero request-sender calls; verify the 4,096-byte boundary and ordinary DeepSeek and OpenAI keys. Settings regressions should also prove that invalid edits cause no Keychain write and publish a high-priority VoiceOver announcement.
 
 ## Resolved follow-up findings
 
@@ -139,7 +150,10 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
-## Remaining release actions
+## Recommended actions
+
+1. **[P2] `$harden`** — enforce one bounded, single-line provider-credential policy in Settings, the Keychain store, preflight, and translation processing.
+2. **[P3] `$polish`** — run strict formatting, SwiftPM and Xcode tests, and Release analysis, then synchronize the release evidence.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 

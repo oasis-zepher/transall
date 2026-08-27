@@ -22,6 +22,46 @@ enum ProviderCredential: String, CaseIterable, Identifiable, Sendable {
   }
 }
 
+enum ProviderCredentialValidationError: LocalizedError, Equatable, Sendable {
+  case missing
+  case invalidCharacters
+  case tooLong
+
+  var errorDescription: String? {
+    switch self {
+    case .missing:
+      "API Key 不能为空。"
+    case .invalidCharacters:
+      "API Key 必须是单行文字，不能包含换行符或控制字符。"
+    case .tooLong:
+      "API Key 不能超过 4,096 字节。"
+    }
+  }
+}
+
+enum ProviderCredentialPolicy {
+  static let maximumUTF8Bytes = 4_096
+
+  static func normalizedValue(_ rawValue: String, allowingEmpty: Bool) throws -> String {
+    let hasInvalidCharacter = rawValue.unicodeScalars.contains {
+      CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0)
+    }
+    guard !hasInvalidCharacter else {
+      throw ProviderCredentialValidationError.invalidCharacters
+    }
+
+    let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    if value.isEmpty {
+      if allowingEmpty { return "" }
+      throw ProviderCredentialValidationError.missing
+    }
+    guard value.utf8.count <= maximumUTF8Bytes else {
+      throw ProviderCredentialValidationError.tooLong
+    }
+    return value
+  }
+}
+
 enum ProviderCredentialStoreError: LocalizedError {
   case keychain(OSStatus)
 
@@ -91,19 +131,19 @@ struct ProviderCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
   }
 
   func setValue(_ value: String, for credential: ProviderCredential) throws {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.isEmpty {
+    let normalized = try ProviderCredentialPolicy.normalizedValue(value, allowingEmpty: true)
+    if normalized.isEmpty {
       try removeValue(for: credential)
       return
     }
 
     do {
-      try storeValue(trimmed, for: credential, dataProtection: true)
+      try storeValue(normalized, for: credential, dataProtection: true)
       try deleteLegacyValue(for: credential)
     } catch ProviderCredentialStoreError.keychain(let status)
       where status == errSecMissingEntitlement
     {
-      try storeValue(trimmed, for: credential, dataProtection: false)
+      try storeValue(normalized, for: credential, dataProtection: false)
     }
   }
 
@@ -245,7 +285,7 @@ actor ProviderCredentialWorker {
       do {
         let value = try store.value(for: credential)
         configured[credential] =
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          !(try ProviderCredentialPolicy.normalizedValue(value, allowingEmpty: true)).isEmpty
       } catch {
         configured[credential] = false
         errors[credential] = error.localizedDescription

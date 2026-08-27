@@ -132,7 +132,7 @@ final class NativeDocumentEngine: ObservableObject {
     let status = await credentialWorker.status()
     for credential in ProviderCredential.allCases {
       if let error = status.errors[credential] {
-        appendLog("无法读取 \(credential.displayName) API Key：\(error)")
+        appendLog("无法使用 \(credential.displayName) API Key：\(error)")
       }
     }
     return NativeEnvironmentSnapshot(
@@ -155,11 +155,17 @@ final class NativeDocumentEngine: ObservableObject {
     var blocking = response.blockingIssues
     do {
       let key = try await credentialWorker.value(for: credential)
-      if key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      do {
+        _ = try ProviderCredentialPolicy.normalizedValue(key, allowingEmpty: false)
+      } catch let error as ProviderCredentialValidationError {
+        let isMissing = error == .missing
         blocking.append(
           issue(
-            "provider_not_configured", "\(credential.displayName) API Key 尚未配置。",
-            hint: "打开 Transall 设置并保存 API Key。"))
+            isMissing ? "provider_not_configured" : "provider_key_invalid",
+            isMissing
+              ? "\(credential.displayName) API Key 尚未配置。"
+              : "\(credential.displayName) API Key 格式无效。",
+            hint: isMissing ? "打开 Transall 设置并保存 API Key。" : error.localizedDescription))
       }
     } catch {
       blocking.append(
@@ -531,11 +537,22 @@ final class NativeDocumentEngine: ObservableObject {
         if metadata.route.kind == "pdf_translate",
           let credential = ProviderCredential(rawValue: metadata.options.provider)
         {
+          let storedKey: String
           do {
-            apiKey = try await credentialWorker.value(for: credential)
+            storedKey = try await credentialWorker.value(for: credential)
           } catch {
             throw NativeDocumentError.provider(
               "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)")
+          }
+          do {
+            apiKey = try ProviderCredentialPolicy.normalizedValue(
+              storedKey, allowingEmpty: false)
+          } catch let error as ProviderCredentialValidationError {
+            if error == .missing {
+              throw NativeDocumentError.provider("\(credential.displayName) API Key 尚未配置。")
+            }
+            throw NativeDocumentError.provider(
+              "\(credential.displayName) API Key 格式无效：\(error.localizedDescription)")
           }
         }
         try Task.checkCancellation()
@@ -1206,7 +1223,7 @@ final class NativeDocumentEngine: ObservableObject {
     switch issue.code {
     case "missing_files", "too_many_files", "upload_too_large", "empty_file", "invalid_file_type":
       return .invalidFile(message)
-    case "provider_not_configured", "provider_keychain_unavailable":
+    case "provider_not_configured", "provider_key_invalid", "provider_keychain_unavailable":
       return .provider(message)
     default:
       return .invalidOption(message)

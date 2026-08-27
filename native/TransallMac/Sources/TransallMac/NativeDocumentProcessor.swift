@@ -403,11 +403,21 @@ enum NativeDocumentProcessor {
       guard inputs.count == 1, let input = inputs.first else {
         throw NativeDocumentError.invalidFile("PDF 翻译每次只能使用一个文件。")
       }
-      guard let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      guard let apiKey else {
         throw NativeDocumentError.provider("所选翻译服务尚未配置 API Key。")
       }
+      let validatedAPIKey: String
+      do {
+        validatedAPIKey = try ProviderCredentialPolicy.normalizedValue(
+          apiKey, allowingEmpty: false)
+      } catch let error as ProviderCredentialValidationError {
+        if error == .missing {
+          throw NativeDocumentError.provider("所选翻译服务尚未配置 API Key。")
+        }
+        throw NativeDocumentError.provider("API Key 格式无效：\(error.localizedDescription)")
+      }
       try await translatePDF(
-        input: input, options: options, outputURL: outputURL, apiKey: apiKey)
+        input: input, options: options, outputURL: outputURL, apiKey: validatedAPIKey)
       return Result(
         outputURL: outputURL,
         logs: ["文档文字已发送给 \(options.provider == "openai" ? "OpenAI" : "DeepSeek") 并生成译文 PDF。"])
@@ -1060,11 +1070,23 @@ struct TranslationService {
   func translate(_ text: String, source: String, target: String, glossary: String) async throws
     -> String
   {
+    let validatedAPIKey: String
+    do {
+      validatedAPIKey = try ProviderCredentialPolicy.normalizedValue(
+        apiKey, allowingEmpty: false)
+    } catch let error as ProviderCredentialValidationError {
+      if error == .missing {
+        throw NativeDocumentError.provider("所选翻译服务尚未配置 API Key。")
+      }
+      throw NativeDocumentError.provider("API Key 格式无效：\(error.localizedDescription)")
+    }
+
     var translated: [String] = []
     for chunk in Self.chunks(text) {
       try Task.checkCancellation()
       translated.append(
-        try await translateChunk(chunk, source: source, target: target, glossary: glossary))
+        try await translateChunk(
+          chunk, source: source, target: target, glossary: glossary, apiKey: validatedAPIKey))
     }
     return translated.joined(separator: "\n\n")
   }
@@ -1104,7 +1126,7 @@ struct TranslationService {
   }
 
   private func translateChunk(
-    _ text: String, source: String, target: String, glossary: String
+    _ text: String, source: String, target: String, glossary: String, apiKey: String
   ) async throws -> String {
     let isOpenAI = provider == "openai"
     let endpoint = URL(
@@ -1133,6 +1155,9 @@ struct TranslationService {
     request.cachePolicy = .reloadIgnoringLocalCacheData
     request.httpShouldHandleCookies = false
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    guard request.value(forHTTPHeaderField: "Authorization") != nil else {
+      throw NativeDocumentError.provider("API Key 无法构成有效的认证请求，请在设置中重新输入。")
+    }
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 120
     request.httpBody = try JSONSerialization.data(withJSONObject: payload)

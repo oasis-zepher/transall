@@ -62,13 +62,24 @@ final class ProviderSettingsModel: ObservableObject {
       publish("请先重新读取钥匙串，再保存 API Key。", isError: true)
       return
     }
-    isSaving = true
-    defer { isSaving = false }
 
-    let values: [ProviderCredential: String] = [
-      .deepseek: deepseekKey.trimmingCharacters(in: .whitespacesAndNewlines),
-      .openAI: openAIKey.trimmingCharacters(in: .whitespacesAndNewlines),
+    let editedValues: [ProviderCredential: String] = [
+      .deepseek: deepseekKey,
+      .openAI: openAIKey,
     ]
+    var values: [ProviderCredential: String] = [:]
+    for credential in ProviderCredential.allCases {
+      do {
+        values[credential] = try ProviderCredentialPolicy.normalizedValue(
+          editedValues[credential] ?? "", allowingEmpty: true)
+      } catch {
+        publish(
+          "\(credential.displayName) API Key 格式无效：\(error.localizedDescription)",
+          isError: true)
+        return
+      }
+    }
+
     let previousValues = storedValues
     let changed = ProviderCredential.allCases.filter { values[$0] != previousValues[$0] }
     guard !changed.isEmpty else {
@@ -76,6 +87,8 @@ final class ProviderSettingsModel: ObservableObject {
       return
     }
 
+    isSaving = true
+    defer { isSaving = false }
     do {
       applyLoadedValues(try await worker.save(values, replacing: previousValues))
       publish(await appModel.applyCredentialChanges(), isError: false)

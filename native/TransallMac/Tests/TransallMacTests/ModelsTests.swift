@@ -920,6 +920,29 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func credentialSettingsRejectInvalidValuesBeforeKeychainWrite() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "existing-deepseek", .openAI: "existing-openai"])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
+    settings.deepseekKey = "first\r\nsecond"
+    settings.openAIKey = "replacement-openai"
+
+    await settings.save(appModel: appModel)
+
+    #expect(settings.isLoaded)
+    #expect(!settings.isSaving)
+    #expect(settings.messageIsError)
+    #expect(settings.message.contains("DeepSeek"))
+    #expect(settings.message.contains("单行"))
+    #expect(settings.announcement?.priority == .high)
+    #expect(store.writes.isEmpty)
+    #expect(store.values[.deepseek] == "existing-deepseek")
+    #expect(store.values[.openAI] == "existing-openai")
+  }
+
+  @Test @MainActor
   func credentialSettingsRollBackPartialSaveFailure() async {
     let store = TestCredentialStore(
       values: [.deepseek: "old-deepseek", .openAI: "old-openai"],
@@ -1092,6 +1115,50 @@ struct ModelsTests {
     #expect(!result.blockingIssues.contains { $0.code == "provider_keychain_unavailable" })
   }
 
+  @Test
+  func providerCredentialPolicyEnforcesCharactersAndByteBoundary() throws {
+    #expect(
+      try ProviderCredentialPolicy.normalizedValue(
+        "  sk-deepseek-valid  ", allowingEmpty: false) == "sk-deepseek-valid")
+    #expect(
+      try ProviderCredentialPolicy.normalizedValue(
+        "sk-proj-openai-valid", allowingEmpty: false) == "sk-proj-openai-valid")
+    #expect(
+      try ProviderCredentialPolicy.normalizedValue("   ", allowingEmpty: true).isEmpty)
+
+    let boundary = String(repeating: "x", count: ProviderCredentialPolicy.maximumUTF8Bytes)
+    #expect(
+      try ProviderCredentialPolicy.normalizedValue(boundary, allowingEmpty: false).utf8.count
+        == ProviderCredentialPolicy.maximumUTF8Bytes)
+
+    for invalid in [
+      "first\rsecond", "first\nsecond", "first\u{0000}second", "first\u{007F}second",
+    ] {
+      do {
+        _ = try ProviderCredentialPolicy.normalizedValue(invalid, allowingEmpty: false)
+        Issue.record("Control characters must be rejected")
+      } catch let error as ProviderCredentialValidationError {
+        #expect(error == .invalidCharacters)
+      }
+    }
+
+    do {
+      _ = try ProviderCredentialPolicy.normalizedValue(
+        String(repeating: "x", count: ProviderCredentialPolicy.maximumUTF8Bytes + 1),
+        allowingEmpty: false)
+      Issue.record("Oversized credentials must be rejected")
+    } catch let error as ProviderCredentialValidationError {
+      #expect(error == .tooLong)
+    }
+
+    do {
+      _ = try ProviderCredentialPolicy.normalizedValue("   ", allowingEmpty: false)
+      Issue.record("A required credential must not be empty")
+    } catch let error as ProviderCredentialValidationError {
+      #expect(error == .missing)
+    }
+  }
+
   @Test @MainActor
   func keychainMigratesLegacyCredentialsToLockedDataProtectionStorage() throws {
     let keychain = SimulatedKeychain()
@@ -1111,6 +1178,30 @@ struct ModelsTests {
       keychain.protected[ProviderCredential.deepseek.rawValue] == Data("updated-key".utf8))
     try store.setValue("", for: .deepseek)
     #expect(keychain.protected[ProviderCredential.deepseek.rawValue] == nil)
+  }
+
+  @Test @MainActor
+  func keychainRejectsInvalidCredentialsBeforeMutation() {
+    let keychain = SimulatedKeychain()
+    let store = ProviderCredentialStore(client: keychain.client)
+    let invalidValues = [
+      "first\nsecond",
+      String(repeating: "x", count: ProviderCredentialPolicy.maximumUTF8Bytes + 1),
+    ]
+
+    for value in invalidValues {
+      do {
+        try store.setValue(value, for: .deepseek)
+        Issue.record("Invalid credentials must not reach Keychain")
+      } catch is ProviderCredentialValidationError {
+        // Expected.
+      } catch {
+        Issue.record("Unexpected error: \(error.localizedDescription)")
+      }
+    }
+
+    #expect(keychain.protected.isEmpty)
+    #expect(keychain.legacy.isEmpty)
   }
 
   @Test @MainActor
@@ -1158,6 +1249,27 @@ struct ModelsTests {
 
     #expect(result.blockingIssues.contains { $0.code == "provider_keychain_unavailable" })
     #expect(!result.blockingIssues.contains { $0.code == "provider_not_configured" })
+  }
+
+  @Test @MainActor
+  func preflightRejectsMalformedStoredCredential() async throws {
+    let store = TestCredentialStore(values: [.deepseek: "first\r\nsecond"])
+    let engine = NativeDocumentEngine(credentialStore: store)
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 1)
+
+    let result = await engine.preflight(
+      route: route, files: [file], options: JobOptions())
+
+    #expect(!result.ok)
+    #expect(
+      result.blockingIssues.contains {
+        $0.code == "provider_key_invalid" && $0.hint?.contains("单行") == true
+      })
+    #expect(!result.blockingIssues.contains { $0.code == "provider_keychain_unavailable" })
+    #expect(!result.blockingIssues.contains { $0.code == "provider_not_configured" })
+    #expect(store.reads == [.deepseek])
   }
 
   @Test @MainActor
@@ -2339,6 +2451,49 @@ struct ModelsTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: directory.appendingPathComponent("source-translated.pdf").path))
+  }
+
+  @Test @MainActor
+  func translationJobRejectsMalformedStoredCredentialBeforeProcessing() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-invalid-translation-key-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let input = temporary.appendingPathComponent("source.pdf")
+    let inputData = Data("not processed because the credential is invalid".utf8)
+    try inputData.write(to: input, options: .atomic)
+    let store = TestCredentialStore(values: [.deepseek: "first\r\nsecond"])
+    let capturedKeys = APIKeyCapture()
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory, credentialStore: store,
+      jobProcessor: { _, _, _, outputURL, apiKey in
+        await capturedKeys.append(apiKey)
+        try Data("unexpected output".utf8).write(to: outputURL, options: .atomic)
+        return NativeDocumentProcessor.Result(outputURL: outputURL, logs: [])
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
+
+    var job = try await engine.createJob(
+      route: route,
+      files: [SelectedDocument(url: input, size: Int64(inputData.count))],
+      options: JobOptions())
+    for _ in 0..<200 where !job.isFinished {
+      try await Task.sleep(for: .milliseconds(10))
+      job = try engine.job(id: job.id)
+    }
+
+    #expect(job.status == "failed")
+    #expect(job.errorCode == "translation_provider_failed")
+    #expect(job.error?.contains("API Key 格式无效") == true)
+    #expect(job.error?.contains("单行") == true)
+    #expect(store.reads == [.deepseek])
+    #expect(await capturedKeys.snapshot().isEmpty)
   }
 
   @Test @MainActor
@@ -4073,6 +4228,32 @@ struct ModelsTests {
     #expect(offline.errorDescription?.contains("没有网络") == true)
     #expect(timedOut.errorDescription?.contains("超时") == true)
     #expect(offline.code == "translation_provider_failed")
+  }
+
+  @Test
+  func translationRejectsInvalidCredentialBeforeSendingRequest() async throws {
+    let invalidKeys = [
+      "first\r\nsecond",
+      String(repeating: "x", count: ProviderCredentialPolicy.maximumUTF8Bytes + 1),
+    ]
+
+    for key in invalidKeys {
+      let responses = TranslationResponseSequence([])
+      let service = TranslationService(
+        provider: "deepseek", apiKey: key,
+        requestSender: { try await responses.send($0) },
+        sleeper: { await responses.record(delay: $0) })
+
+      do {
+        _ = try await service.translate("source", source: "en", target: "zh", glossary: "")
+        Issue.record("Invalid credentials must fail before a request starts")
+      } catch let error as NativeDocumentError {
+        #expect(error.errorDescription?.contains("API Key 格式无效") == true)
+      }
+      let snapshot = await responses.snapshot()
+      #expect(snapshot.requestCount == 0)
+      #expect(snapshot.delays.isEmpty)
+    }
   }
 
   @Test

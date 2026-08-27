@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, and final task status announcements are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. The current follow-up found one open P2: completion receipts protect restart recovery, but active-session preview and export do not recheck the result fingerprint before using the file. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, and active-session result integrity are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,28 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; one active-session result-integrity P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
-
-### [P2] Active-session preview and export do not verify the completion receipt
-
-- **Location:** `NativeDocumentEngine.download(jobID:to:)` and `previewPages(jobID:)`, which validate a regular task-local output path but do not call the completion-receipt fingerprint check used by restart recovery.
-- **Category:** Reliability / release quality.
-- **Impact:** If a completed task result is replaced or modified before preview or export, the active app can use the changed file while still presenting the task as complete. Restarting the app detects the mismatch, but the active session does not.
-- **Standard:** Result integrity and secure local-file handling; no WCAG criterion applies.
-- **Recommendation:** Require a bounded, no-follow completion receipt whose output name, byte count, structural validity, and SHA-256 sample fingerprint still match before both preview generation and export. Run this file work outside the main actor and preserve the destination on failure.
-- **Suggested command:** `$harden`, then rerun result-export, preview, strict concurrency, and Release checks.
-
 ## Resolved follow-up findings
+
+### [P2] Active-session preview and export did not verify the completion receipt
+
+- **Location before the fix:** `NativeDocumentEngine.download(jobID:to:)` and `previewPages(jobID:)` validated a regular task-local output path but did not call the completion-receipt fingerprint check used by restart recovery.
+- **Category:** Reliability / release quality.
+- **Impact before the fix:** If a completed task result was replaced or modified before preview or export, the active app could use the changed file while still presenting the task as complete. Restarting the app detected the mismatch, but the active session did not.
+- **Standard:** Result integrity and secure local-file handling; no WCAG criterion applies.
+- **Resolution:** Preview and export now require a bounded, no-follow completion receipt whose output name, byte count, structural validity, and SHA-256 sample fingerprint match. Preview verifies before and after generation and removes its cache on failure. Export hashes the bytes read from the opened source while copying, rejects a replacement or mid-copy change, and preserves the selected destination on failure.
+- **Verification:** Regressions replace a valid completed PDF before preview/export and inject a copied-file fingerprint mismatch. Strict SwiftPM and Xcode scheme tests passed 137/137, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Final task status was not announced to VoiceOver
 
@@ -52,7 +50,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** A VoiceOver user who started a task received no proactive notification when processing completed, failed, or was cancelled. The user had to navigate back through the output panel to discover the final state and whether a result could be saved.
 - **Standard:** WCAG 2.2 Success Criterion 4.1.3 (Status Messages).
 - **Resolution:** Completion and cancellation now request medium-priority announcements; failure requests a high-priority announcement with its error and recovery hint. Queued and running updates remain silent, keyboard focus does not move, and announcements are limited to 500 characters.
-- **Verification:** The announcement-policy regression covers all five job states, priority, failure context, and the length bound. Strict SwiftPM and Xcode scheme tests passed 135/135, and Release analysis passed.
+- **Verification:** The announcement-policy regression covers all five job states, priority, failure context, and the length bound. Strict SwiftPM and Xcode scheme tests passed 137/137, and Release analysis passed.
 
 ### [P2] Bundle language metadata contradicted the product language
 
@@ -61,7 +59,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** The Release bundle resolved `CFBundleDevelopmentRegion` to `en` and had no `CFBundleLocalizations`, while the interface and App Store primary language were Simplified Chinese. macOS and App Store metadata could therefore advertise English support that the product did not provide and omit its actual language.
 - **Standard:** Accurate App Store product metadata; no WCAG criterion applies.
 - **Resolution:** Set the project development language, `CFBundleDevelopmentRegion`, and `CFBundleLocalizations` to `zh-Hans`; regenerated the committed Xcode project; added exact CI assertions for both plist values.
-- **Verification:** Strict SwiftPM tests passed 135/135, Xcode scheme tests passed 135/135, Release analysis passed, and the rebuilt app reports `zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
+- **Verification:** Strict SwiftPM tests passed 137/137, Xcode scheme tests passed 137/137, Release analysis passed, and the rebuilt app reports `zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
 
 ## Patterns and systemic issues
 
@@ -79,9 +77,6 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
 ## Recommended actions
-
-1. **[P2] `$harden`** — verify the completion receipt before active-session preview and export, including a valid-but-replaced PDF regression.
-2. **[P3] `$polish`** — rerun the full native release matrix and update user-facing release evidence after the integrity fix.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
@@ -168,8 +163,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Check | Result |
 | --- | --- |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 135/135 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 135/135 passed |
+| Swift package tests with Xcode 26.6 | 137/137 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 137/137 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |

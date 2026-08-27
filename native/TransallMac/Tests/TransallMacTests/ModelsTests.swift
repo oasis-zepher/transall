@@ -621,6 +621,31 @@ struct ModelsTests {
     #expect(valid.height > 0)
   }
 
+  @Test @MainActor
+  func cropBoxParsingRequiresExactlyFourNumericFields() async throws {
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 4)
+
+    for value in ["0,,0,100,100", "0,abc,0,100,100", "0,0,100,100,200"] {
+      do {
+        _ = try JobOptionValidator.parseCropBox(value)
+        Issue.record("Malformed crop components must not be discarded")
+      } catch let error as NativeDocumentError {
+        #expect(error.code == "invalid_option")
+      }
+
+      var options = JobOptions()
+      options.cropPages = "1"
+      options.cropBox = value
+      let preflight = await NativeDocumentEngine().preflight(
+        route: route, files: [file], options: options)
+      #expect(preflight.blockingIssues.contains { $0.code == "invalid_crop_box" })
+    }
+
+    let valid = try JobOptionValidator.parseCropBox(" 0 , 10 , 100 , 200 ")
+    #expect(valid == CGRect(x: 0, y: 10, width: 100, height: 190))
+  }
+
   @Test
   func jobOptionsCanonicalizationKeepsOnlyRouteFields() throws {
     let textRoute = try #require(

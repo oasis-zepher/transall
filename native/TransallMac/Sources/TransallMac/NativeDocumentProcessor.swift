@@ -133,18 +133,26 @@ enum JobOptionValidator {
   }
 
   static func parseCropBox(_ value: String) throws -> CGRect {
-    let values = value.split(separator: ",").compactMap {
-      Double($0.trimmingCharacters(in: .whitespaces))
+    let invalidMessage = "裁剪区域必须是 x0,y0,x1,y1，且右下坐标大于左上坐标。"
+    let components = value.split(separator: ",", omittingEmptySubsequences: false)
+    guard components.count == 4 else {
+      throw NativeDocumentError.invalidOption(invalidMessage)
     }
-    guard values.count == 4 else {
-      throw NativeDocumentError.invalidOption("裁剪区域必须是 x0,y0,x1,y1，且右下坐标大于左上坐标。")
+    var values: [Double] = []
+    values.reserveCapacity(components.count)
+    for component in components {
+      let trimmed = component.trimmingCharacters(in: .whitespaces)
+      guard !trimmed.isEmpty, let number = Double(trimmed) else {
+        throw NativeDocumentError.invalidOption(invalidMessage)
+      }
+      values.append(number)
     }
     let width = values[2] - values[0]
     let height = values[3] - values[1]
     guard values.allSatisfy({ $0.isFinite }), values[2] > values[0],
       values[3] > values[1], width.isFinite, height.isFinite, width > 0, height > 0
     else {
-      throw NativeDocumentError.invalidOption("裁剪区域必须是 x0,y0,x1,y1，且右下坐标大于左上坐标。")
+      throw NativeDocumentError.invalidOption(invalidMessage)
     }
     return CGRect(x: values[0], y: values[1], width: width, height: height)
   }

@@ -17,6 +17,12 @@ enum DocumentSelectionActivationPolicy {
   }
 }
 
+enum InputFileCountLabel {
+  static func text(for count: Int) -> String {
+    "\(count) \(count == 1 ? "FILE" : "FILES")"
+  }
+}
+
 struct InputWorkbenchView: View {
   @EnvironmentObject private var model: AppModel
   @StateObject private var viewState = InputViewState()
@@ -65,7 +71,7 @@ struct InputWorkbenchView: View {
           .font(.system(.title3, design: .serif, weight: .semibold))
       }
       Spacer()
-      Text("\(model.documents.count) FILES")
+      Text(InputFileCountLabel.text(for: model.documents.count))
         .font(.system(.caption2, design: .rounded, weight: .semibold))
         .tracking(0.7)
         .foregroundStyle(TransallTheme.muted)

@@ -11,6 +11,13 @@ import Testing
 
 struct ModelsTests {
   @Test
+  func inputFileCountUsesCorrectEnglishPlural() {
+    #expect(InputFileCountLabel.text(for: 0) == "0 FILES")
+    #expect(InputFileCountLabel.text(for: 1) == "1 FILE")
+    #expect(InputFileCountLabel.text(for: 2) == "2 FILES")
+  }
+
+  @Test
   func sameFormatRouteReportsBothSelectionRoles() {
     let combined = FormatNodeState.selectedState(
       for: "pdf", source: "pdf", target: "pdf")

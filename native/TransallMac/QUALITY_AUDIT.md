@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, and bundle-language metadata are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. The current follow-up found one open P2: final task status changes are visible, but completion, failure, and cancellation do not request a VoiceOver announcement. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, and final task status announcements are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -17,33 +17,31 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 
 | # | Dimension | Baseline | Current | Evidence |
 | --- | --- | ---: | ---: | --- |
-| 1 | Accessibility | 3/4 | 3/4 | Contrast, scalable type, labels, focus, reduced-motion behavior, keyboard targets, and repeated-navigation bypasses are covered; final task status still lacks a VoiceOver announcement. |
+| 1 | Accessibility | 3/4 | 4/4 | Contrast, scalable type, labels, focus, reduced-motion behavior, keyboard targets, status announcements, and repeated-navigation bypasses are covered across both surfaces. |
 | 2 | Performance | 2/4 | 4/4 | Byte-heavy work and file metadata inspection are bounded, model-owned, and cancellable from the workbench and app lifecycle. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **19/20** | **Excellent; one task-status accessibility P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
 
 ## Executive summary
 
-- Audit health score: **19/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Audit health score: **20/20 — Excellent**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
+## Resolved follow-up findings
 
-### [P2] Final task status is not announced to VoiceOver
+### [P2] Final task status was not announced to VoiceOver
 
 - **Location:** `ResultWorkbenchView.swift`, where the visible status badge and progress view respond to `model.currentJob`, but the only announcement handler watches `model.previewError`.
 - **Category:** Accessibility.
-- **Impact:** A VoiceOver user who starts a task receives no proactive notification when processing completes, fails, or is cancelled. The user must navigate back through the output panel to discover the final state and whether a result can be saved.
+- **Impact before the fix:** A VoiceOver user who started a task received no proactive notification when processing completed, failed, or was cancelled. The user had to navigate back through the output panel to discover the final state and whether a result could be saved.
 - **Standard:** WCAG 2.2 Success Criterion 4.1.3 (Status Messages).
-- **Recommendation:** Derive a concise announcement from terminal job states, request a medium-priority announcement for completion/cancellation and a high-priority announcement for failure, and add regression coverage that excludes queued/running updates.
-- **Suggested command:** `$polish`, then rerun the native accessibility and release checks.
-
-## Resolved follow-up finding
+- **Resolution:** Completion and cancellation now request medium-priority announcements; failure requests a high-priority announcement with its error and recovery hint. Queued and running updates remain silent, keyboard focus does not move, and announcements are limited to 500 characters.
+- **Verification:** The announcement-policy regression covers all five job states, priority, failure context, and the length bound. Strict SwiftPM and Xcode scheme tests passed 135/135, and Release analysis passed.
 
 ### [P2] Bundle language metadata contradicted the product language
 
@@ -52,7 +50,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - **Impact before the fix:** The Release bundle resolved `CFBundleDevelopmentRegion` to `en` and had no `CFBundleLocalizations`, while the interface and App Store primary language were Simplified Chinese. macOS and App Store metadata could therefore advertise English support that the product did not provide and omit its actual language.
 - **Standard:** Accurate App Store product metadata; no WCAG criterion applies.
 - **Resolution:** Set the project development language, `CFBundleDevelopmentRegion`, and `CFBundleLocalizations` to `zh-Hans`; regenerated the committed Xcode project; added exact CI assertions for both plist values.
-- **Verification:** Strict SwiftPM tests passed 134/134, Xcode scheme tests passed 134/134, Release analysis passed, and the rebuilt app reports `zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
+- **Verification:** Strict SwiftPM tests passed 135/135, Xcode scheme tests passed 135/135, Release analysis passed, and the rebuilt app reports `zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
 
 ## Patterns and systemic issues
 
@@ -65,15 +63,13 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 ## Positive findings
 
 - Current foreground/background contrast checks pass: muted text is 4.95:1 on panels and 4.70:1 on paper; primary white text is 5.41:1 on the accent, 6.00:1 on source green, and 10.99:1 on target blue.
-- Native controls use explicit labels and values where iconography or status color alone would be ambiguous. Preview and Keychain failures request VoiceOver announcements without moving focus.
+- Native controls use explicit labels and values where iconography or status color alone would be ambiguous. Preview errors, Keychain status, and terminal task states request bounded VoiceOver announcements without moving focus.
 - The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
 ## Recommended actions
 
-1. **[P2] `$polish`** — announce terminal task states to VoiceOver without moving keyboard focus or repeatedly announcing queued/running updates.
-
-After the fix, rerun the native test matrix. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 
@@ -102,6 +98,7 @@ After the fix, rerun the native test matrix. Push the commits and require the ne
 14. **Unbounded multi-file batches** — every task now accepts at most 256 files. Exact duplicate URLs are removed before metadata inspection, the file picker/menu/drop paths stop accepting additions at capacity, preflight and copy boundaries reject oversized non-UI calls, and restart recovery rejects oversized persisted input lists. The workbench shows the limit next to its byte limit.
 15. **Uncancellable file metadata inspection** — `AppModel` now owns one import task, both picker and drop entry points use it, overlapping starts are ignored, and the workbench shows “取消读取”. Explicit and termination cancellation stop inspection silently without publishing a partial selection or replacing the existing file list.
 16. **Bundle language metadata** — the Xcode project development language, source plist, CI assertions, and built Release app now declare Simplified Chinese (`zh-Hans`) consistently. The bundle no longer advertises undeclared English support.
+17. **Final task status announcement** — completion and cancellation request medium-priority VoiceOver announcements, while failure requests a high-priority announcement with bounded error and recovery context. Queued and running updates remain silent, avoiding repeated status noise.
 
 ## Resolved P3 findings
 
@@ -119,6 +116,7 @@ After the fix, rerun the native test matrix. Push the commits and require the ne
 
 - PDF preview cache checks and rendering now run outside the main actor and propagate task cancellation.
 - Preview failures remain visible with a specific message and a retry action instead of silently clearing the preview area.
+- Terminal task states request concise VoiceOver announcements without moving focus. Failed-task announcements include the recovery context and are capped at 500 characters; queued and running updates do not interrupt the user.
 - Preview results are applied only to the job that requested them, preventing an older task from overwriting a newer task's state.
 - Preview cache directories and page images must be regular local entries. Symbolic-link substitutions are discarded and regenerated without reading or modifying the linked target.
 - Failed, cancelled, and otherwise non-running tasks expose the same confirmed local-data deletion control as successful tasks; deletion is no longer hidden when a job produces no result file.
@@ -156,8 +154,8 @@ After the fix, rerun the native test matrix. Push the commits and require the ne
 | Check | Result |
 | --- | --- |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 134/134 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 134/134 passed |
+| Swift package tests with Xcode 26.6 | 135/135 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 135/135 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |

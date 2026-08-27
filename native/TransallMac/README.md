@@ -81,7 +81,7 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-27: strict recursive Swift formatting passed with zero findings, 134/134 Swift package tests passed with strict concurrency and warnings as errors, 134/134 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`.
+Last verified on 2026-08-27: strict recursive Swift formatting passed with zero findings, 135/135 Swift package tests passed with strict concurrency and warnings as errors, 135/135 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent.
 
 The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) enforces the same native formatting command before compilation. It also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 

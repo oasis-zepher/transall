@@ -18,9 +18,10 @@ private struct DocumentImportError: LocalizedError, Sendable {
 
 @MainActor
 final class AppModel: ObservableObject {
-  typealias JobCreator = @MainActor (
-    _ route: RouteDefinition, _ files: [SelectedDocument], _ options: JobOptions
-  ) async throws -> JobResponse
+  typealias JobCreator =
+    @MainActor (
+      _ route: RouteDefinition, _ files: [SelectedDocument], _ options: JobOptions
+    ) async throws -> JobResponse
   typealias ResultDestinationPicker = @MainActor (_ suggestedName: String) -> URL?
   typealias ResultDownloader = @MainActor (_ jobID: String, _ destination: URL) async throws -> Void
   typealias ResultRevealer = @MainActor (_ destination: URL) -> Void

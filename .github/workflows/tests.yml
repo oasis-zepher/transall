@@ -43,6 +43,8 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Lint Swift formatting
+        run: xcrun swift-format lint --strict --recursive --parallel Sources Tests
       - name: Validate release metadata
         run: >-
           plutil -lint

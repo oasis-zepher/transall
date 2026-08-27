@@ -302,7 +302,7 @@ struct SettingsView: View {
             settings.isLoading
               ? TransallTheme.muted
               : settings.isLoaded
-              ? (configured ? TransallTheme.source : TransallTheme.muted) : TransallTheme.danger)
+                ? (configured ? TransallTheme.source : TransallTheme.muted) : TransallTheme.danger)
       }
 
       HStack {

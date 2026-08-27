@@ -1752,7 +1752,8 @@ struct ModelsTests {
   @Test
   func inputCopyEnforcesCumulativeLimitAndRemovesCompletedCopies() async throws {
     let temporary = FileManager.default.temporaryDirectory
-      .appendingPathComponent("transall-cumulative-copy-test-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent(
+        "transall-cumulative-copy-test-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
     let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
     try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
@@ -1832,7 +1833,8 @@ struct ModelsTests {
   @Test
   func inputCopyCancellationRemovesPartialDestination() async throws {
     let temporary = FileManager.default.temporaryDirectory
-      .appendingPathComponent("transall-cancelled-copy-test-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent(
+        "transall-cancelled-copy-test-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
     let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
     try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
@@ -4460,9 +4462,11 @@ private final class StreamingResponseURLProtocol: URLProtocol, @unchecked Sendab
       return
     }
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    let chunkCount = queryItems.first(where: { $0.name == "chunks" })
+    let chunkCount =
+      queryItems.first(where: { $0.name == "chunks" })
       .flatMap { Int($0.value ?? "") } ?? 1
-    let delayMilliseconds = queryItems.first(where: { $0.name == "delay_ms" })
+    let delayMilliseconds =
+      queryItems.first(where: { $0.name == "delay_ms" })
       .flatMap { Int($0.value ?? "") } ?? 5
     sendChunk(index: 0, count: chunkCount, delayMilliseconds: max(0, delayMilliseconds))
   }

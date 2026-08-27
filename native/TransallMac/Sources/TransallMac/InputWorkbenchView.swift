@@ -430,9 +430,9 @@ struct InputWorkbenchView: View {
   }
 }
 
-private extension View {
+extension View {
   @ViewBuilder
-  func documentSelectionAccessibilityAction(
+  fileprivate func documentSelectionAccessibilityAction(
     enabled: Bool, action: @escaping () -> Void
   ) -> some View {
     if enabled {

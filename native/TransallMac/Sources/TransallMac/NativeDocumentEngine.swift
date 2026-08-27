@@ -14,9 +14,10 @@ final class NativeDocumentEngine: ObservableObject {
     @Sendable (
       RouteDefinition, [URL], JobOptions, URL, String?
     ) async throws -> NativeDocumentProcessor.Result
-  typealias InputCopier = @Sendable (
-    _ files: [SelectedDocument], _ inputDirectory: URL, _ maximumBytes: Int, _ maximumMB: Int
-  ) async throws -> [URL]
+  typealias InputCopier =
+    @Sendable (
+      _ files: [SelectedDocument], _ inputDirectory: URL, _ maximumBytes: Int, _ maximumMB: Int
+    ) async throws -> [URL]
   typealias PreviewGenerator = @Sendable (URL, URL) async throws -> [URL]
 
   private struct PreviewOperation {

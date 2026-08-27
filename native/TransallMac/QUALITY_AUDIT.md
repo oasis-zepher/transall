@@ -7,7 +7,9 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, provider credential validation, truthful credential-row state, preview task identity, duplicate preview state, result-save task identity, deletion-confirmation task identity, and running-task draft state are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, provider credential validation, truthful credential-row state, preview task identity, duplicate preview state, result-save task identity, deletion-confirmation task identity, and running-task draft state are resolved as well.
+
+The 2026-08-27 release-automation follow-up added native-app and support-site CI coverage. The current audit found one new P1 in that workflow: the release-metadata step invokes `plutil -lint` without file arguments, then treats each plist path as a separate shell command. Replaying the committed step exactly exits with status 1 before validating any metadata. The workflow has not run on GitHub because these commits have not been pushed.
 
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
@@ -26,15 +28,26 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no technical audit findings remain open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent product quality; one release-CI P1 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
-- The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
+- Native and support-site CI coverage exists, but its release-metadata command currently fails before validation; remote execution also remains unverified until push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
+
+## Open follow-up finding
+
+### [P1] Release metadata CI step cannot execute its committed validation
+
+- **Location:** `.github/workflows/tests.yml`, `native-macos` job, “Validate release metadata” step.
+- **Category:** Release automation / metadata integrity / regression protection.
+- **Impact:** `plutil -lint` receives no paths and exits with “No files specified.” under the workflow shell's fail-fast behavior. The following plist path lines would also be interpreted as commands. Every native CI run therefore stops before SwiftPM, Xcode tests, and Release analysis, while malformed entitlements, privacy metadata, or language metadata remain untested.
+- **Standard:** App Store release gates must be executable exactly as committed and must fail only on invalid release inputs, not on shell syntax.
+- **Recommendation:** Pass all four files as arguments to one `plutil -lint` command, reproduce the exact multiline block locally under a fail-fast shell, and add a workflow-source regression that verifies the files remain attached to the command.
+- **Suggested verification:** Execute the exact block from the YAML, confirm all four files report `OK`, retain the two `zh-Hans` assertions, parse the workflow, and run the remaining native checks.
 
 ## Resolved follow-up findings
 
@@ -226,7 +239,8 @@ External release work remains with the account holder: activate the individual A
 
 ## Recommended actions
 
-1. **[P3] `$polish`** — repeat archive, package inspection, and launch checks on the final signed release candidate after signing becomes available.
+1. **[P1] `$harden`** — repair the release-metadata shell block and protect its command shape with a regression.
+2. **[P3] `$polish`** — repeat archive, package inspection, and launch checks on the final signed release candidate after signing becomes available.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
@@ -345,7 +359,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
 | Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. `npm audit --audit-level=high` reports 0 vulnerabilities after the build-dependency update. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
-| Release workflow | YAML parses locally; the `macos-26` runner documents Xcode 26.6 at the configured path. Strict native formatting, native tests/analysis, and support-site workflow commands pass when reproduced locally. |
+| Release workflow | YAML parses locally and the `macos-26` runner documents Xcode 26.6 at the configured path, but the committed release-metadata shell block currently exits with status 1 before validation. |
 | Remote GitHub Actions | Not yet run for these commits; no remote CI success is claimed until they are pushed and the jobs complete. |
 | Xcode 26.6 production verification | License accepted; current tests, analysis, and universal Release build passed; earlier archive inspection and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |

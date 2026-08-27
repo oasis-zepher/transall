@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. A later P2 in same-format route state reporting is resolved as well. Current native and website verification passes. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. A later P2 in same-format route state reporting is resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -29,7 +29,8 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - Audit health score: **20/20 — Excellent**.
 - Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
-- No new privacy, sandboxing, dependency, theme, responsive-layout, or AI-aesthetic issue was found.
+- The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
+- No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
@@ -50,7 +51,7 @@ None in the current code audit.
 
 ## Recommended actions
 
-No corrective command remains for the current code audit. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+No corrective code change remains for the current audit. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 
@@ -59,6 +60,7 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 3. **Unsafe overwrite saving** — result saving keeps the displayed result's submitted-original snapshot independent of later input-selection changes and rejects those originals plus their symbolic or hard links. Other existing destinations require standard macOS replacement confirmation. The exporter opens the task result and sibling temporary file without following symbolic links, copies in cancellable 1 MiB chunks, verifies that the source did not change and the copy is complete, then performs the atomic replacement. Cancellation, mutation, and copy errors remove the temporary file while preserving the existing destination. The model owns the active save task, exposes progress and a cancel control, cancels it during termination, and opens Finder only after a successful copy.
 4. **Website contrast** — the muted text token now meets WCAG AA for its rendered small-text usage.
 5. **Large-file UI blocking** — input imports, result saves, startup and hourly retention checks, and task deletion use cancellable detached work instead of synchronously copying or removing large task data on the main actor.
+6. **Release CI coverage** — GitHub Actions now validates native release metadata, strict SwiftPM and Xcode tests, Release analysis, support-site lint/build/render tests, and high-severity npm dependency findings. Workflow permissions are restricted to read-only repository contents, and every job has a timeout.
 
 ## Resolved P2 findings
 
@@ -134,7 +136,9 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 | Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure, and successful preview retry verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
-| Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
+| Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. `npm audit --audit-level=high` reports 0 vulnerabilities after the build-dependency update. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
+| Release workflow | YAML parses locally; the `macos-26` runner documents Xcode 26.6 at the configured path. Native and support-site workflow commands pass when reproduced locally. |
+| Remote GitHub Actions | Not yet run for these commits; no remote CI success is claimed until they are pushed and the jobs complete. |
 | Xcode 26.6 production verification | License accepted; current tests, analysis, and universal Release build passed; earlier archive inspection and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 

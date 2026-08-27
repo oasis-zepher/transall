@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed 128/128 Swift package tests with strict concurrency and warnings as errors, 128/128 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-27, Xcode 26.6 passed 128/128 Swift package tests with strict concurrency and warnings as errors, 128/128 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds the strict native tests and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -14,6 +14,7 @@ The native SwiftUI app is self-contained and uses only Apple system frameworks f
 | P1 | Published URLs | Publish the prepared support/privacy site after replacing legal-name, domain, and email placeholders. |
 | P1 | Store record | Create the App Store Connect app, age rating, categories, pricing, territories, DSA trader status, metadata, screenshots, and App Privacy answers. |
 | P1 | Review access | Provide a new rate-limited DeepSeek or OpenAI review key through App Store Connect so translation can be tested. |
+| P1 | Remote CI gate | Push the current commits and confirm the native, support-site, and browser-edition GitHub Actions jobs pass before selecting the submission archive. |
 
 The former engine, licensing, helper-signing, and feature-scope P0 items are resolved for the App Store edition: it contains no Python helper, PyMuPDF, LibreOffice, Chromium, OCRmyPDF, Tesseract, or BabelDOC. Those dependencies remain limited to the separately run browser edition.
 
@@ -35,6 +36,18 @@ Office conversion, full Chromium rendering, OCRmyPDF, and BabelDOC can remain in
 - `Transall.xcodeproj` is generated and committed for direct use in Xcode.
 - Debug and Release builds both run in App Sandbox.
 - Release archives contain one universal native executable and Apple-owned system-framework links only.
+
+## Continuous integration gate
+
+The repository workflow validates three release surfaces:
+
+| Job | Required checks |
+| --- | --- |
+| Browser edition | Python tests, dependency lock verification, Ruff, Bandit, and `pip-audit` |
+| Native macOS app | Release metadata, 128 strict SwiftPM tests, 128 Xcode scheme tests, and Xcode Release analysis |
+| Support site | Locked install, high-severity npm audit, ESLint, production build, and 5 rendered-page tests |
+
+The new native and support-site commands were reproduced successfully on 2026-08-27. This is local evidence only; GitHub Actions has not executed the new jobs for the unpushed commits.
 
 ## Verified release candidate behavior
 

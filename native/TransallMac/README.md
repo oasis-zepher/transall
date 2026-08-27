@@ -54,10 +54,24 @@ The input heading uses **FILE** for exactly one selected document and **FILES** 
 ## Tests
 
 ```bash
-swift test
+swift test \
+  -Xswiftc -strict-concurrency=complete \
+  -Xswiftc -warnings-as-errors
+
+xcodebuild \
+  -project Transall.xcodeproj \
+  -scheme Transall \
+  -destination 'platform=macOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  SWIFT_STRICT_CONCURRENCY=complete \
+  SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+  test
 ```
 
 Last verified on 2026-08-27: 128/128 Swift package tests passed with strict concurrency and warnings as errors, and 128/128 Xcode scheme tests passed.
+
+The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) also checks the release plist, entitlements, privacy manifest, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. The new jobs have not run on GitHub yet because the commits have not been pushed.
 
 Some Command Line Tools installations do not ship the XCTest module or Swift Testing runtime in the paths expected by SwiftPM. The package itself still builds with `swift build`; a complete Xcode installation provides the normal test and signing runtime.
 

@@ -136,13 +136,17 @@ enum JobOptionValidator {
     let values = value.split(separator: ",").compactMap {
       Double($0.trimmingCharacters(in: .whitespaces))
     }
-    guard values.count == 4, values.allSatisfy({ $0.isFinite }), values[2] > values[0],
-      values[3] > values[1]
+    guard values.count == 4 else {
+      throw NativeDocumentError.invalidOption("裁剪区域必须是 x0,y0,x1,y1，且右下坐标大于左上坐标。")
+    }
+    let width = values[2] - values[0]
+    let height = values[3] - values[1]
+    guard values.allSatisfy({ $0.isFinite }), values[2] > values[0],
+      values[3] > values[1], width.isFinite, height.isFinite, width > 0, height > 0
     else {
       throw NativeDocumentError.invalidOption("裁剪区域必须是 x0,y0,x1,y1，且右下坐标大于左上坐标。")
     }
-    return CGRect(
-      x: values[0], y: values[1], width: values[2] - values[0], height: values[3] - values[1])
+    return CGRect(x: values[0], y: values[1], width: width, height: height)
   }
 
   private static func pdfEditIssues(_ options: JobOptions) -> [JobOptionValidationIssue] {

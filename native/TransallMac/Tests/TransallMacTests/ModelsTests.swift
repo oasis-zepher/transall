@@ -593,6 +593,34 @@ struct ModelsTests {
     }
   }
 
+  @Test @MainActor
+  func cropBoxValidationRejectsDerivedCoordinateOverflow() async throws {
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let file = SelectedDocument(url: URL(fileURLWithPath: "/tmp/source.pdf"), size: 4)
+
+    for value in ["-1e308,0,1e308,100", "0,-1e308,100,1e308"] {
+      do {
+        _ = try JobOptionValidator.parseCropBox(value)
+        Issue.record("Crop boxes with overflowing derived dimensions must be rejected")
+      } catch let error as NativeDocumentError {
+        #expect(error.code == "invalid_option")
+      }
+
+      var options = JobOptions()
+      options.cropPages = "1"
+      options.cropBox = value
+      let preflight = await NativeDocumentEngine().preflight(
+        route: route, files: [file], options: options)
+      #expect(preflight.blockingIssues.contains { $0.code == "invalid_crop_box" })
+    }
+
+    let valid = try JobOptionValidator.parseCropBox("-1e150,-1e150,1e150,1e150")
+    #expect(valid.width.isFinite)
+    #expect(valid.height.isFinite)
+    #expect(valid.width > 0)
+    #expect(valid.height > 0)
+  }
+
   @Test
   func jobOptionsCanonicalizationKeepsOnlyRouteFields() throws {
     let textRoute = try #require(

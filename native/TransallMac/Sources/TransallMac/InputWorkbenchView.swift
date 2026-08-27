@@ -7,6 +7,16 @@ private final class InputViewState: ObservableObject {
   var isAppending = false
 }
 
+enum DocumentSelectionActivationPolicy {
+  static var keyboardKeys: Set<KeyEquivalent> { [.return, .space] }
+
+  static func canActivateEmptyFileWell(
+    documentsAreEmpty: Bool, canSelectDocuments: Bool
+  ) -> Bool {
+    documentsAreEmpty && canSelectDocuments
+  }
+}
+
 struct InputWorkbenchView: View {
   @EnvironmentObject private var model: AppModel
   @StateObject private var viewState = InputViewState()
@@ -136,7 +146,7 @@ struct InputWorkbenchView: View {
     }
     .contentShape(Rectangle())
     .onTapGesture {
-      if model.documents.isEmpty, model.canSelectDocuments {
+      if canActivateEmptyFileWell {
         viewState.isAppending = false
         viewState.showImporter = true
       }
@@ -154,14 +164,14 @@ struct InputWorkbenchView: View {
     .accessibilityHint(
       inputAccessibilityHint
     )
-    .accessibilityAddTraits(model.documents.isEmpty && model.canSelectDocuments ? .isButton : [])
+    .accessibilityAddTraits(canActivateEmptyFileWell ? .isButton : [])
     .documentSelectionAccessibilityAction(enabled: model.canSelectDocuments) {
       viewState.isAppending = !model.documents.isEmpty
       viewState.showImporter = true
     }
-    .focusable(model.documents.isEmpty && model.canSelectDocuments)
-    .onKeyPress(keys: [.return, .space]) { _ in
-      guard model.documents.isEmpty, model.canSelectDocuments else { return .ignored }
+    .focusable(canActivateEmptyFileWell)
+    .onKeyPress(keys: DocumentSelectionActivationPolicy.keyboardKeys) { _ in
+      guard canActivateEmptyFileWell else { return .ignored }
       viewState.isAppending = false
       viewState.showImporter = true
       return .handled
@@ -347,6 +357,13 @@ struct InputWorkbenchView: View {
 
   private var inputIsLocked: Bool {
     model.isImporting || model.isSubmitting
+  }
+
+  private var canActivateEmptyFileWell: Bool {
+    DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
+      documentsAreEmpty: model.documents.isEmpty,
+      canSelectDocuments: model.canSelectDocuments
+    )
   }
 
   private var inputAccessibilityHint: String {

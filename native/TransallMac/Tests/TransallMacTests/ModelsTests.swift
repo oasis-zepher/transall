@@ -11,6 +11,20 @@ import Testing
 
 struct ModelsTests {
   @Test
+  func fileWellKeyboardActivationMatchesItsAccessibilityHint() {
+    #expect(DocumentSelectionActivationPolicy.keyboardKeys == [.return, .space])
+    #expect(
+      DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
+        documentsAreEmpty: true, canSelectDocuments: true))
+    #expect(
+      !DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
+        documentsAreEmpty: true, canSelectDocuments: false))
+    #expect(
+      !DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
+        documentsAreEmpty: false, canSelectDocuments: true))
+  }
+
+  @Test
   func formatRouterMetricsAdaptToAccessibilityTextSizeWithoutClipping() {
     let standardDiameter = FormatRouterMetrics.nodeDiameter(for: .large)
     let accessibilityDiameter = FormatRouterMetrics.nodeDiameter(for: .accessibility1)

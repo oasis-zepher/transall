@@ -17,7 +17,6 @@ struct FormatRouterView: View {
 
       orbit
         .frame(height: 348)
-        .disabled(model.isImporting || model.isSubmitting || model.isSaving)
 
       routeDetails
     }
@@ -53,6 +52,7 @@ struct FormatRouterView: View {
             state: state(for: format),
             diameter: nodeDiameter,
             allowsMultilineLabel: dynamicTypeSize.isAccessibilitySize,
+            routeChangeLock: model.routeChangeLock,
             action: { model.chooseFormat(format, animated: !reduceMotion) }
           )
           .position(
@@ -181,8 +181,7 @@ struct FormatRouterView: View {
   }
 
   private var selectionHint: String {
-    if model.isImporting { return "正在读取文件" }
-    if model.isSubmitting { return "正在创建任务" }
+    if let routeChangeLock = model.routeChangeLock { return routeChangeLock.statusLabel }
     if model.selection.source == nil { return "① 源格式" }
     if model.selection.target == nil { return "② 目标格式" }
     return "路径已选"
@@ -304,6 +303,7 @@ private struct FormatNode: View {
   let state: FormatNodeState
   let diameter: CGFloat
   let allowsMultilineLabel: Bool
+  let routeChangeLock: RouteChangeLock?
   let action: () -> Void
 
   var body: some View {
@@ -324,7 +324,7 @@ private struct FormatNode: View {
         .shadow(color: TransallTheme.ink.opacity(state == .unavailable ? 0 : 0.1), radius: 7, y: 3)
     }
     .buttonStyle(.plain)
-    .disabled(state == .unavailable)
+    .disabled(state == .unavailable || routeChangeLock != nil)
     .opacity(state == .unavailable ? 0.34 : 1)
     .accessibilityLabel("\(label)格式")
     .accessibilityValue(accessibilityValue)
@@ -357,6 +357,7 @@ private struct FormatNode: View {
   }
 
   private var accessibilityValue: String {
-    state.accessibilityValue
+    guard let routeChangeLock else { return state.accessibilityValue }
+    return "\(state.accessibilityValue)，路径已锁定：\(routeChangeLock.statusLabel)"
   }
 }

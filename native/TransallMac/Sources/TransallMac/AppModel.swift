@@ -16,6 +16,41 @@ private struct DocumentImportError: LocalizedError, Sendable {
   }
 }
 
+enum RouteChangeLock: Equatable {
+  case importing
+  case submitting
+  case saving
+  case running
+
+  var statusLabel: String {
+    switch self {
+    case .importing: "正在读取文件"
+    case .submitting: "正在创建任务"
+    case .saving: "正在保存结果"
+    case .running: "任务运行中"
+    }
+  }
+
+  var helpText: String {
+    switch self {
+    case .importing: "正在读取文件，完成后可以更换路径"
+    case .submitting: "正在创建任务，完成后可以更换路径"
+    case .saving: "先取消正在进行的结果保存"
+    case .running: "先取消正在运行的任务"
+    }
+  }
+
+  func errorMessage(reset: Bool) -> String {
+    let action = reset ? "重选" : "更换"
+    return switch self {
+    case .importing: "正在读取文件，请稍后再\(action)路径。"
+    case .submitting: "正在创建任务，请稍后再\(action)路径。"
+    case .saving: "正在保存结果，请先取消保存再\(action)路径。"
+    case .running: "任务运行中，请先取消任务再\(action)路径。"
+    }
+  }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
   typealias JobCreator =
@@ -119,6 +154,18 @@ final class AppModel: ObservableObject {
       && currentJob?.isRunning != true
   }
 
+  var routeChangeLock: RouteChangeLock? {
+    if isImporting { return .importing }
+    if isSubmitting { return .submitting }
+    if isSaving { return .saving }
+    if currentJob?.isRunning == true { return .running }
+    return nil
+  }
+
+  var canChangeRoute: Bool {
+    routeChangeLock == nil
+  }
+
   var canSelectDocuments: Bool {
     route?.enabled == true && !isImporting && !isSubmitting
       && documents.count < NativeCapabilities.maximumInputFileCount
@@ -189,20 +236,8 @@ final class AppModel: ObservableObject {
   }
 
   func chooseFormat(_ format: String, animated: Bool = true) {
-    guard !isImporting else {
-      errorMessage = "正在读取文件，请稍后再更换路径。"
-      return
-    }
-    guard !isSubmitting else {
-      errorMessage = "正在创建任务，请稍后再更换路径。"
-      return
-    }
-    guard !isSaving else {
-      errorMessage = "正在保存结果，请先取消保存再更换路径。"
-      return
-    }
-    guard currentJob?.isRunning != true else {
-      errorMessage = "任务运行中，请先取消任务再更换路径。"
+    if let routeChangeLock {
+      errorMessage = routeChangeLock.errorMessage(reset: false)
       return
     }
     let changes = { [self] in
@@ -219,20 +254,8 @@ final class AppModel: ObservableObject {
   }
 
   func resetRoute(animated: Bool = true) {
-    guard !isImporting else {
-      errorMessage = "正在读取文件，请稍后再重选路径。"
-      return
-    }
-    guard !isSubmitting else {
-      errorMessage = "正在创建任务，请稍后再重选路径。"
-      return
-    }
-    guard !isSaving else {
-      errorMessage = "正在保存结果，请先取消保存再重选路径。"
-      return
-    }
-    guard currentJob?.isRunning != true else {
-      errorMessage = "任务运行中，请先取消任务再重选路径。"
+    if let routeChangeLock {
+      errorMessage = routeChangeLock.errorMessage(reset: true)
       return
     }
     pollingTask?.cancel()

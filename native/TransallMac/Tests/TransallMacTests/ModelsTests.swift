@@ -3367,6 +3367,30 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func runningJobLocksRouteControlsAndRejectsMutations() {
+    let model = AppModel(backend: NativeDocumentEngine())
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "pdf"
+    model.selection.target = "pdf"
+    model.currentJob = testJob(status: "running")
+
+    #expect(model.routeChangeLock == .running)
+    #expect(model.routeChangeLock?.statusLabel == "任务运行中")
+    #expect(!model.canChangeRoute)
+
+    model.chooseFormat("image", animated: false)
+    #expect(model.selection.source == "pdf")
+    #expect(model.selection.target == "pdf")
+    #expect(model.errorMessage == "任务运行中，请先取消任务再更换路径。")
+
+    model.resetRoute(animated: false)
+    #expect(model.selection.source == "pdf")
+    #expect(model.selection.target == "pdf")
+    #expect(model.currentJob?.status == "running")
+    #expect(model.errorMessage == "任务运行中，请先取消任务再重选路径。")
+  }
+
+  @Test @MainActor
   func submittingJobLocksRouteAndInputChanges() async throws {
     let suiteName = "transall-submit-lock-test-\(UUID().uuidString)"
     let preferences = try #require(UserDefaults(suiteName: suiteName))

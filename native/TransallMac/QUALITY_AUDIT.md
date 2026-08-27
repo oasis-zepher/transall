@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, and file-inspection lifecycle are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, and file-inspection lifecycle are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. The current follow-up found one open P2: the Release bundle declares English as its development region and declares no localizations even though the product UI and store primary language are Simplified Chinese. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,24 +22,32 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no code-level P0–P3 finding remains in the current audit.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; one release-metadata P2 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-None in the current code audit.
+### [P2] Bundle language metadata contradicts the product language
+
+- **Location:** `Support/Info.plist`, `project.yml`, `Transall.xcodeproj/project.pbxproj`, and the built Release app.
+- **Category:** Usability / release quality.
+- **Impact:** The current Release bundle resolves `CFBundleDevelopmentRegion` to `en` and has no `CFBundleLocalizations`, while the interface and App Store primary language are Simplified Chinese. macOS and App Store metadata can therefore advertise English support that the product does not provide and omit its actual language.
+- **Standard:** Accurate App Store product metadata; no WCAG criterion applies.
+- **Recommendation:** Set the Xcode project development language and bundle localization list to `zh-Hans`, regenerate the committed project from `project.yml`, assert both plist values in CI, and inspect the rebuilt product metadata.
+- **Suggested command:** `$polish`, then rerun the full native release checks.
 
 ## Patterns and systemic issues
 
 - File inspection, task creation, and result export have model-owned cancellation lifecycles, and Keychain access is isolated from the main actor.
 - Aggregate input bytes and the 256-file batch limit are enforced across selection, preflight, transfer, persistence, and recovery.
+- The App Store draft consistently identifies Simplified Chinese as the primary language, but the current built bundle still reports English and omits its localization list.
 - Native text uses semantic SwiftUI styles, including accessibility-size-aware geometry for the circular format router.
 - Website semantics, contrast, focus rings, target sizes, and repeated-navigation bypasses share one rendered-HTML contract across all routes.
 
@@ -52,7 +60,9 @@ None in the current code audit.
 
 ## Recommended actions
 
-No corrective code change remains for the current audit. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+1. **[P2] `$polish`** — align the Xcode project, source plist, built bundle, and CI assertions with the declared Simplified Chinese product language.
+
+After the fix, rerun metadata validation and the native test matrix. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 

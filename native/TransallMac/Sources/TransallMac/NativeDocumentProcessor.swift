@@ -1177,6 +1177,10 @@ struct TranslationService {
     return .provider("翻译服务响应内容超过 \(megabytes) MB，已停止当前任务。")
   }
 
+  static func redirectResponseError() -> NativeDocumentError {
+    .provider("翻译服务试图将请求转到其他地址。为保护 API Key 和文档文字，已停止当前任务。")
+  }
+
   private static func retryDelay(after attempt: Int, response: HTTPURLResponse?) -> TimeInterval {
     if let value = response?.value(forHTTPHeaderField: "Retry-After"),
       let delay = retryAfterDelay(value)
@@ -1309,6 +1313,15 @@ private final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @un
     if !finished { self.response = response }
     lock.unlock()
     completionHandler(.allow)
+  }
+
+  func urlSession(
+    _ session: URLSession, task _: URLSessionTask,
+    willPerformHTTPRedirection _: HTTPURLResponse, newRequest _: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
+    finish(.failure(TranslationService.redirectResponseError()))
   }
 
   func urlSession(

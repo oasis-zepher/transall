@@ -4093,6 +4093,33 @@ struct ModelsTests {
   }
 
   @Test
+  func translationDefaultTransportRejectsRedirectsBeforeFollowingThem() async throws {
+    let configuration = TranslationService.sessionConfiguration()
+    configuration.protocolClasses = [RedirectingResponseURLProtocol.self]
+    RedirectingResponseURLProtocol.probe.reset()
+
+    var request = URLRequest(
+      url: try #require(URL(string: "https://translation.test/redirect")))
+    request.httpMethod = "POST"
+    request.setValue("Bearer test-secret", forHTTPHeaderField: "Authorization")
+    request.httpBody = Data("private document text".utf8)
+
+    do {
+      _ = try await TranslationService.boundedData(
+        for: request, configuration: configuration, maximumBytes: 700)
+      Issue.record("Translation redirects must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.errorDescription?.contains("保护 API Key 和文档文字") == true)
+    }
+
+    try await Task.sleep(for: .milliseconds(40))
+    let snapshot = RedirectingResponseURLProtocol.probe.snapshot()
+    #expect(snapshot.originalRequestCount == 1)
+    #expect(snapshot.redirectedRequestCount == 0)
+    #expect(snapshot.wasStopped)
+  }
+
+  @Test
   func translationRejectsPathologicallyExpandedContent() async throws {
     let source = "short source"
     let maximum = TranslationService.maximumTranslatedCharacters(for: source)
@@ -4530,6 +4557,96 @@ private actor TranslationResponseSequence {
 
   func snapshot() -> (requestCount: Int, delays: [TimeInterval]) {
     (requestCount, delays)
+  }
+}
+
+private final class RedirectingResponseProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var originalRequestCount = 0
+  private var redirectedRequestCount = 0
+  private var wasStopped = false
+
+  func reset() {
+    lock.lock()
+    originalRequestCount = 0
+    redirectedRequestCount = 0
+    wasStopped = false
+    lock.unlock()
+  }
+
+  func recordRequest(host: String?) {
+    lock.lock()
+    if host == "translation.test" {
+      originalRequestCount += 1
+    } else if host == "redirected.test" {
+      redirectedRequestCount += 1
+    }
+    lock.unlock()
+  }
+
+  func recordStop() {
+    lock.lock()
+    wasStopped = true
+    lock.unlock()
+  }
+
+  func snapshot() -> (
+    originalRequestCount: Int, redirectedRequestCount: Int, wasStopped: Bool
+  ) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (originalRequestCount, redirectedRequestCount, wasStopped)
+  }
+}
+
+private final class RedirectingResponseURLProtocol: URLProtocol, @unchecked Sendable {
+  static let probe = RedirectingResponseProbe()
+
+  override class func canInit(with request: URLRequest) -> Bool {
+    ["translation.test", "redirected.test"].contains(request.url?.host)
+  }
+
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    request
+  }
+
+  override func startLoading() {
+    Self.probe.recordRequest(host: request.url?.host)
+    guard let url = request.url else {
+      client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+      return
+    }
+    if url.host == "redirected.test" {
+      guard
+        let response = HTTPURLResponse(
+          url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+          headerFields: ["Content-Type": "application/json"])
+      else {
+        client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+        return
+      }
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocol(self, didLoad: Data(#"{"unexpected":true}"#.utf8))
+      client?.urlProtocolDidFinishLoading(self)
+      return
+    }
+
+    guard let redirectedURL = URL(string: "https://redirected.test/leak"),
+      let response = HTTPURLResponse(
+        url: url, statusCode: 307, httpVersion: "HTTP/1.1",
+        headerFields: ["Location": redirectedURL.absoluteString])
+    else {
+      client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+      return
+    }
+    var redirectedRequest = request
+    redirectedRequest.url = redirectedURL
+    client?.urlProtocol(
+      self, wasRedirectedTo: redirectedRequest, redirectResponse: response)
+  }
+
+  override func stopLoading() {
+    Self.probe.recordStop()
   }
 }
 

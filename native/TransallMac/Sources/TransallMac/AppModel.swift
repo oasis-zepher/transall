@@ -574,7 +574,9 @@ final class AppModel: ObservableObject {
   }
 
   func refreshPreview() async {
-    guard !isDeletingJob, let job = currentJob, hasPreviewableResult else { return }
+    guard !isLoadingPreview, !isDeletingJob, let job = currentJob, hasPreviewableResult else {
+      return
+    }
     await loadPreview(jobID: job.id)
   }
 
@@ -666,7 +668,7 @@ final class AppModel: ObservableObject {
   }
 
   private func loadPreview(jobID: String) async {
-    guard currentJob?.id == jobID else { return }
+    guard currentJob?.id == jobID, !isLoadingPreview else { return }
     isLoadingPreview = true
     previewError = nil
     defer {

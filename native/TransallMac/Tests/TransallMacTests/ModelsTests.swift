@@ -4335,6 +4335,65 @@ struct ModelsTests {
     #expect(model.previewPages.count == 1)
   }
 
+  @Test @MainActor
+  func duplicatePreviewRefreshKeepsActiveRequestState() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-preview-deduplication-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let gate = DeletionRaceGate()
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: dataDirectory,
+      previewGenerator: { _, directory in
+        await gate.markStarted()
+        await gate.waitForRelease()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let page = directory.appendingPathComponent("page-1.png")
+        try Data("preview".utf8).write(to: page, options: .atomic)
+        return [page]
+      })
+    defer { engine.prepareForTermination() }
+    await engine.start()
+
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let source = temporary.appendingPathComponent("source.txt")
+    try Data("preview source".utf8).write(to: source, options: .atomic)
+    let output = jobDirectory.appendingPathComponent("result.pdf")
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    _ = try await NativeDocumentProcessor.process(
+      route: route, inputs: [source], options: JobOptions(), outputURL: output, apiKey: nil)
+    try persistTestCompletionReceipt(output: output, in: jobDirectory)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let job = JobResponse(
+      id: jobID, kind: "text_to_pdf", status: "done", inputs: ["source.txt"],
+      createdAt: now, updatedAt: now, output: "result.pdf", error: nil,
+      stage: "complete", message: "任务完成。", errorCode: nil, errorHint: nil,
+      retryable: false, progress: 100, cancelRequested: false, logs: [])
+    try persistTestJob(job, in: jobDirectory)
+    let model = AppModel(backend: engine)
+    model.currentJob = job
+
+    let firstRefresh = Task { await model.refreshPreview() }
+    await gate.waitUntilStarted()
+    await model.refreshPreview()
+
+    #expect(model.isLoadingPreview)
+    #expect(model.previewError == nil)
+    #expect(model.previewPages.isEmpty)
+
+    await gate.release()
+    await firstRefresh.value
+
+    #expect(!model.isLoadingPreview)
+    #expect(model.previewError == nil)
+    #expect(model.previewPages.count == 1)
+  }
+
   @Test
   func invalidTranslationProviderIsRejectedBeforeProcessing() async throws {
     let route = try #require(

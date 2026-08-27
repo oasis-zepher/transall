@@ -2,6 +2,17 @@ import AppKit
 import Combine
 import SwiftUI
 
+enum SettingsAnnouncementPriority: Equatable {
+  case medium
+  case high
+}
+
+struct SettingsAnnouncement: Equatable, Identifiable {
+  let id: UUID
+  let message: String
+  let priority: SettingsAnnouncementPriority
+}
+
 @MainActor
 final class ProviderSettingsModel: ObservableObject {
   @Published var deepseekKey = ""
@@ -12,6 +23,7 @@ final class ProviderSettingsModel: ObservableObject {
   @Published private(set) var isLoading = false
   @Published private(set) var isLoaded = false
   @Published private(set) var messageIsError = false
+  @Published private(set) var announcement: SettingsAnnouncement?
 
   private let worker: ProviderCredentialWorker
   private var storedValues: [ProviderCredential: String] = [:]
@@ -35,20 +47,19 @@ final class ProviderSettingsModel: ObservableObject {
     defer { isLoading = false }
     do {
       applyLoadedValues(try await worker.readStoredValues())
-      messageIsError = false
-      message = showSuccess ? "已重新读取钥匙串。" : ""
+      publish(showSuccess ? "已重新读取钥匙串。" : "", isError: false)
     } catch {
       clearLoadedValues()
-      messageIsError = true
-      message = "无法读取钥匙串，现有 API Key 未被更改：\(error.localizedDescription)"
+      publish(
+        "无法读取钥匙串，现有 API Key 未被更改：\(error.localizedDescription)",
+        isError: true)
     }
   }
 
   func save(appModel: AppModel) async {
     guard !isSaving else { return }
     guard isLoaded, !isLoading else {
-      messageIsError = true
-      message = "请先重新读取钥匙串，再保存 API Key。"
+      publish("请先重新读取钥匙串，再保存 API Key。", isError: true)
       return
     }
     isSaving = true
@@ -61,23 +72,22 @@ final class ProviderSettingsModel: ObservableObject {
     let previousValues = storedValues
     let changed = ProviderCredential.allCases.filter { values[$0] != previousValues[$0] }
     guard !changed.isEmpty else {
-      messageIsError = false
-      message = "没有需要保存的更改。"
+      publish("没有需要保存的更改。", isError: false)
       return
     }
 
     do {
       applyLoadedValues(try await worker.save(values, replacing: previousValues))
-      messageIsError = false
-      message = await appModel.applyCredentialChanges()
+      publish(await appModel.applyCredentialChanges(), isError: false)
     } catch ProviderCredentialTransactionError.save(
       let saveError, _, let actualValues, let reconciliationError, let rollbackErrors)
     {
-      messageIsError = true
       if let actualValues {
         applyLoadedValues(actualValues)
         if actualValues == previousValues {
-          message = "API Key 保存失败，但已验证钥匙串已恢复到保存前状态：\(saveError)"
+          publish(
+            "API Key 保存失败，但已验证钥匙串已恢复到保存前状态：\(saveError)",
+            isError: true)
         } else {
           _ = await appModel.applyCredentialChanges()
           let changedProviders =
@@ -88,21 +98,24 @@ final class ProviderSettingsModel: ObservableObject {
           let rollbackDetail =
             rollbackErrors.isEmpty
             ? "" : "；回滚错误：\(rollbackErrors.joined(separator: "；"))"
-          message =
-            "API Key 保存失败，\(changedProviders) 未恢复到保存前状态；已重新读取钥匙串当前值，请检查后重试：\(saveError)\(rollbackDetail)"
+          publish(
+            "API Key 保存失败，\(changedProviders) 未恢复到保存前状态；已重新读取钥匙串当前值，请检查后重试：\(saveError)\(rollbackDetail)",
+            isError: true)
         }
       } else {
         clearLoadedValues()
         let rollbackDetail =
           rollbackErrors.isEmpty
           ? "" : "；回滚错误：\(rollbackErrors.joined(separator: "；"))"
-        message =
-          "API Key 保存失败，且无法确认钥匙串当前状态：\(saveError)；重新读取失败：\(reconciliationError ?? "未知错误")\(rollbackDetail)"
+        publish(
+          "API Key 保存失败，且无法确认钥匙串当前状态：\(saveError)；重新读取失败：\(reconciliationError ?? "未知错误")\(rollbackDetail)",
+          isError: true)
       }
     } catch {
       clearLoadedValues()
-      messageIsError = true
-      message = "API Key 保存失败，且无法确认钥匙串当前状态：\(error.localizedDescription)"
+      publish(
+        "API Key 保存失败，且无法确认钥匙串当前状态：\(error.localizedDescription)",
+        isError: true)
     }
   }
 
@@ -111,8 +124,7 @@ final class ProviderSettingsModel: ObservableObject {
   ) async {
     guard !isSaving else { return }
     guard isLoaded, !isLoading else {
-      messageIsError = true
-      message = "请先重新读取钥匙串，再删除 API Key。"
+      publish("请先重新读取钥匙串，再删除 API Key。", isError: true)
       return
     }
     isSaving = true
@@ -121,33 +133,44 @@ final class ProviderSettingsModel: ObservableObject {
     do {
       applyLoadedValues(try await worker.remove(credential, from: storedValues))
       _ = await appModel.applyCredentialChanges()
-      messageIsError = false
-      message = "\(credential.displayName) API Key 已从钥匙串删除。"
+      publish("\(credential.displayName) API Key 已从钥匙串删除。", isError: false)
     } catch ProviderCredentialTransactionError.removal(
       _, let removalError, let actualValues, let reconciliationError)
     {
-      messageIsError = true
       if let actualValues {
         applyLoadedValues(actualValues)
         _ = await appModel.applyCredentialChanges()
         if actualValues[credential]?.isEmpty != false {
-          message =
-            "\(credential.displayName) API Key 实际已删除，但钥匙串清理返回错误；已重新读取当前状态：\(removalError)"
+          publish(
+            "\(credential.displayName) API Key 实际已删除，但钥匙串清理返回错误；已重新读取当前状态：\(removalError)",
+            isError: true)
         } else {
-          message =
-            "\(credential.displayName) API Key 删除失败；已重新读取钥匙串当前状态：\(removalError)"
+          publish(
+            "\(credential.displayName) API Key 删除失败；已重新读取钥匙串当前状态：\(removalError)",
+            isError: true)
         }
       } else {
         clearLoadedValues()
-        message =
-          "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(removalError)；重新读取失败：\(reconciliationError ?? "未知错误")"
+        publish(
+          "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(removalError)；重新读取失败：\(reconciliationError ?? "未知错误")",
+          isError: true)
       }
     } catch {
       clearLoadedValues()
-      messageIsError = true
-      message =
-        "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(error.localizedDescription)"
+      publish(
+        "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(error.localizedDescription)",
+        isError: true)
     }
+  }
+
+  private func publish(_ message: String, isError: Bool) {
+    messageIsError = isError
+    self.message = message
+    announcement =
+      message.isEmpty
+      ? nil
+      : SettingsAnnouncement(
+        id: UUID(), message: message, priority: isError ? .high : .medium)
   }
 
   private func applyLoadedValues(_ values: [ProviderCredential: String]) {
@@ -247,16 +270,14 @@ struct SettingsView: View {
         await settings.reload(showSuccess: false)
       }
     }
-    .onChange(of: settings.message) { _, message in
-      guard !message.isEmpty else { return }
+    .onChange(of: settings.announcement) { _, announcement in
+      guard let announcement else { return }
       NSAccessibility.post(
         element: NSApplication.shared,
         notification: .announcementRequested,
         userInfo: [
-          .announcement: message,
-          .priority: settings.messageIsError
-            ? NSAccessibilityPriorityLevel.high.rawValue
-            : NSAccessibilityPriorityLevel.medium.rawValue,
+          .announcement: announcement.message,
+          .priority: accessibilityPriority(for: announcement.priority).rawValue,
         ])
     }
     .confirmationDialog(
@@ -328,5 +349,14 @@ struct SettingsView: View {
   private var removalTitle: String {
     guard let credential = settings.pendingRemoval else { return "删除 API Key？" }
     return "删除 \(credential.displayName) API Key？"
+  }
+
+  private func accessibilityPriority(
+    for priority: SettingsAnnouncementPriority
+  ) -> NSAccessibilityPriorityLevel {
+    switch priority {
+    case .medium: .medium
+    case .high: .high
+    }
   }
 }

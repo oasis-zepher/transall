@@ -895,6 +895,28 @@ struct ModelsTests {
     #expect(store.values[.openAI] == "existing-openai")
     #expect(store.writes.isEmpty)
     #expect(settings.message.contains("先重新读取钥匙串"))
+    #expect(settings.announcement?.message == settings.message)
+    #expect(settings.announcement?.priority == .high)
+  }
+
+  @Test @MainActor
+  func credentialSettingsPublishDistinctRepeatedAnnouncements() async throws {
+    let store = TestCredentialStore(
+      values: [.deepseek: "existing-deepseek", .openAI: "existing-openai"])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
+
+    await settings.save(appModel: appModel)
+    let first = try #require(settings.announcement)
+    await settings.save(appModel: appModel)
+    let second = try #require(settings.announcement)
+
+    #expect(first.id != second.id)
+    #expect(first.message == "没有需要保存的更改。")
+    #expect(second.message == first.message)
+    #expect(first.priority == .medium)
+    #expect(second.priority == first.priority)
   }
 
   @Test @MainActor

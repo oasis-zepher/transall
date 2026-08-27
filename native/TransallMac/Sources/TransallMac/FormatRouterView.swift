@@ -204,9 +204,14 @@ struct FormatRouterView: View {
     return model.route?.enabled == true ? TransallTheme.source : TransallTheme.danger
   }
 
-  private func state(for format: String) -> FormatNode.State {
-    if model.selection.target == format { return .target }
-    if model.selection.source == format { return .source }
+  private func state(for format: String) -> FormatNodeState {
+    if let selectedState = FormatNodeState.selectedState(
+      for: format,
+      source: model.selection.source,
+      target: model.selection.target
+    ) {
+      return selectedState
+    }
     guard let source = model.selection.source else {
       let isSource =
         model.capabilities?.routes.contains { $0.source == format && $0.enabled } == true
@@ -256,12 +261,47 @@ enum FormatRouterMetrics {
   }
 }
 
-private struct FormatNode: View {
-  enum State: Equatable { case available, unavailable, source, target }
+enum FormatNodeState: Equatable {
+  case available
+  case unavailable
+  case source
+  case target
+  case sourceAndTarget
 
+  static func selectedState(
+    for format: String, source: String?, target: String?
+  ) -> Self? {
+    let isSource = source == format
+    let isTarget = target == format
+    if isSource && isTarget { return .sourceAndTarget }
+    if isTarget { return .target }
+    if isSource { return .source }
+    return nil
+  }
+
+  var accessibilityValue: String {
+    switch self {
+    case .source: "已选为源格式"
+    case .target: "已选为目标格式"
+    case .sourceAndTarget: "已选为源格式和目标格式"
+    case .available: "可选择"
+    case .unavailable: "当前源格式不支持此目标"
+    }
+  }
+
+  var borderWidth: CGFloat {
+    switch self {
+    case .sourceAndTarget: 3
+    case .source, .target: 2
+    case .available, .unavailable: 1
+    }
+  }
+}
+
+private struct FormatNode: View {
   let format: String
   let label: String
-  let state: State
+  let state: FormatNodeState
   let diameter: CGFloat
   let allowsMultilineLabel: Bool
   let action: () -> Void
@@ -278,7 +318,7 @@ private struct FormatNode: View {
         .frame(width: diameter, height: diameter)
         .background(background)
         .overlay {
-          Circle().stroke(border, lineWidth: state == .source || state == .target ? 2 : 1)
+          Circle().stroke(border, lineWidth: state.borderWidth)
         }
         .clipShape(Circle())
         .shadow(color: TransallTheme.ink.opacity(state == .unavailable ? 0 : 0.1), radius: 7, y: 3)
@@ -292,7 +332,7 @@ private struct FormatNode: View {
 
   private var foreground: Color {
     switch state {
-    case .source, .target: .white
+    case .source, .target, .sourceAndTarget: .white
     case .available: TransallTheme.formatColors[format] ?? TransallTheme.ink
     case .unavailable: TransallTheme.muted
     }
@@ -301,7 +341,7 @@ private struct FormatNode: View {
   private var background: Color {
     switch state {
     case .source: TransallTheme.source
-    case .target: TransallTheme.target
+    case .target, .sourceAndTarget: TransallTheme.target
     case .available: TransallTheme.panel
     case .unavailable: TransallTheme.panelMuted
     }
@@ -309,7 +349,7 @@ private struct FormatNode: View {
 
   private var border: Color {
     switch state {
-    case .source: TransallTheme.source
+    case .source, .sourceAndTarget: TransallTheme.source
     case .target: TransallTheme.target
     case .available: TransallTheme.formatColors[format] ?? TransallTheme.lineStrong
     case .unavailable: TransallTheme.line
@@ -317,11 +357,6 @@ private struct FormatNode: View {
   }
 
   private var accessibilityValue: String {
-    switch state {
-    case .source: "已选为源格式"
-    case .target: "已选为目标格式"
-    case .available: "可选择"
-    case .unavailable: "当前源格式不支持此目标"
-    }
+    state.accessibilityValue
   }
 }

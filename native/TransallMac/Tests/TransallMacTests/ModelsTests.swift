@@ -11,6 +11,22 @@ import Testing
 
 struct ModelsTests {
   @Test
+  func sameFormatRouteReportsBothSelectionRoles() {
+    let combined = FormatNodeState.selectedState(
+      for: "pdf", source: "pdf", target: "pdf")
+
+    #expect(combined == .sourceAndTarget)
+    #expect(combined?.accessibilityValue == "已选为源格式和目标格式")
+    #expect(combined?.borderWidth == 3)
+    #expect(
+      FormatNodeState.selectedState(for: "pdf", source: "pdf", target: nil) == .source)
+    #expect(
+      FormatNodeState.selectedState(for: "pdf", source: "image", target: "pdf") == .target)
+    #expect(
+      FormatNodeState.selectedState(for: "pdf", source: "image", target: "md") == nil)
+  }
+
+  @Test
   func fileWellKeyboardActivationMatchesItsAccessibilityHint() {
     #expect(DocumentSelectionActivationPolicy.keyboardKeys == [.return, .space])
     #expect(

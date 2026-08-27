@@ -13,6 +13,65 @@ struct SettingsAnnouncement: Equatable, Identifiable {
   let priority: SettingsAnnouncementPriority
 }
 
+enum ProviderCredentialStorageState: Equatable {
+  case unavailable
+  case notConfigured
+  case configured
+  case invalid
+}
+
+enum ProviderCredentialStatusStyle: Equatable {
+  case muted
+  case configured
+  case pending
+  case invalid
+}
+
+struct ProviderCredentialRowState: Equatable {
+  let storage: ProviderCredentialStorageState
+  let hasStoredValue: Bool
+  let hasUnsavedChanges: Bool
+  let draftValidationError: ProviderCredentialValidationError?
+
+  var statusLabel: String {
+    let storedLabel =
+      switch storage {
+      case .unavailable: "读取失败"
+      case .notConfigured: "未配置"
+      case .configured: "已配置"
+      case .invalid: "密钥无效"
+      }
+    if hasUnsavedChanges, draftValidationError != nil {
+      return "\(storedLabel) · 输入无效，未保存"
+    }
+    return hasUnsavedChanges ? "\(storedLabel) · 待保存" : storedLabel
+  }
+
+  var statusIcon: String {
+    if hasUnsavedChanges, draftValidationError != nil {
+      return "exclamationmark.triangle.fill"
+    }
+    if hasUnsavedChanges { return "pencil.circle.fill" }
+    return switch storage {
+    case .unavailable, .invalid: "exclamationmark.triangle.fill"
+    case .notConfigured: "circle"
+    case .configured: "checkmark.circle.fill"
+    }
+  }
+
+  var statusStyle: ProviderCredentialStatusStyle {
+    if hasUnsavedChanges, draftValidationError != nil { return .invalid }
+    if hasUnsavedChanges { return .pending }
+    return switch storage {
+    case .unavailable, .invalid: .invalid
+    case .notConfigured: .muted
+    case .configured: .configured
+    }
+  }
+
+  var canRemoveStoredValue: Bool { hasStoredValue }
+}
+
 @MainActor
 final class ProviderSettingsModel: ObservableObject {
   @Published var deepseekKey = ""
@@ -83,6 +142,7 @@ final class ProviderSettingsModel: ObservableObject {
     let previousValues = storedValues
     let changed = ProviderCredential.allCases.filter { values[$0] != previousValues[$0] }
     guard !changed.isEmpty else {
+      applyLoadedValues(previousValues)
       publish("没有需要保存的更改。", isError: false)
       return
     }
@@ -184,6 +244,42 @@ final class ProviderSettingsModel: ObservableObject {
       ? nil
       : SettingsAnnouncement(
         id: UUID(), message: message, priority: isError ? .high : .medium)
+  }
+
+  func rowState(for credential: ProviderCredential) -> ProviderCredentialRowState {
+    guard isLoaded else {
+      return ProviderCredentialRowState(
+        storage: .unavailable, hasStoredValue: false, hasUnsavedChanges: false,
+        draftValidationError: nil)
+    }
+
+    let storedValue = storedValues[credential] ?? ""
+    let draftValue =
+      switch credential {
+      case .deepseek: deepseekKey
+      case .openAI: openAIKey
+      }
+    let storage: ProviderCredentialStorageState
+    do {
+      let normalized = try ProviderCredentialPolicy.normalizedValue(
+        storedValue, allowingEmpty: true)
+      storage = normalized.isEmpty ? .notConfigured : .configured
+    } catch {
+      storage = .invalid
+    }
+    let draftValidationError: ProviderCredentialValidationError?
+    do {
+      _ = try ProviderCredentialPolicy.normalizedValue(draftValue, allowingEmpty: true)
+      draftValidationError = nil
+    } catch let error as ProviderCredentialValidationError {
+      draftValidationError = error
+    } catch {
+      draftValidationError = .invalidCharacters
+    }
+    return ProviderCredentialRowState(
+      storage: storage, hasStoredValue: !storedValue.isEmpty,
+      hasUnsavedChanges: draftValue != storedValue,
+      draftValidationError: draftValidationError)
   }
 
   private func applyLoadedValues(_ values: [ProviderCredential: String]) {
@@ -314,17 +410,9 @@ struct SettingsView: View {
   private func providerRow(
     credential: ProviderCredential, key: Binding<String>, privacyURL: String
   ) -> some View {
-    let configured =
-      settings.isLoaded
-      && !key.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let status =
-      settings.isLoading ? "正在读取" : (settings.isLoaded ? (configured ? "已配置" : "未配置") : "读取失败")
-    let statusIcon =
-      settings.isLoading
-      ? "clock"
-      : (settings.isLoaded
-        ? (configured ? "checkmark.circle.fill" : "circle")
-        : "exclamationmark.triangle.fill")
+    let state = settings.rowState(for: credential)
+    let status = settings.isLoading ? "正在读取" : state.statusLabel
+    let statusIcon = settings.isLoading ? "clock" : state.statusIcon
     return VStack(alignment: .leading, spacing: 9) {
       HStack {
         Text(credential.displayName)
@@ -333,23 +421,23 @@ struct SettingsView: View {
         Label(status, systemImage: statusIcon)
           .font(.caption)
           .foregroundStyle(
-            settings.isLoading
-              ? TransallTheme.muted
-              : settings.isLoaded
-                ? (configured ? TransallTheme.source : TransallTheme.muted) : TransallTheme.danger)
+            settings.isLoading ? TransallTheme.muted : statusColor(state.statusStyle))
       }
 
       HStack {
         SecureField("\(credential.displayName) API Key", text: key)
           .textFieldStyle(.roundedBorder)
           .accessibilityLabel("\(credential.displayName) API Key")
+          .accessibilityValue(status)
           .disabled(!settings.isLoaded || settings.isSaving || settings.isLoading)
 
         Button("删除密钥", role: .destructive) {
           settings.pendingRemoval = credential
         }
         .buttonStyle(QuietButtonStyle())
-        .disabled(!configured || settings.isSaving || settings.isLoading || !settings.isLoaded)
+        .disabled(
+          !state.canRemoveStoredValue || settings.isSaving || settings.isLoading
+            || !settings.isLoaded)
       }
 
       if let url = URL(string: privacyURL) {
@@ -362,6 +450,15 @@ struct SettingsView: View {
   private var removalTitle: String {
     guard let credential = settings.pendingRemoval else { return "删除 API Key？" }
     return "删除 \(credential.displayName) API Key？"
+  }
+
+  private func statusColor(_ style: ProviderCredentialStatusStyle) -> Color {
+    switch style {
+    case .muted: TransallTheme.muted
+    case .configured: TransallTheme.source
+    case .pending: TransallTheme.warning
+    case .invalid: TransallTheme.danger
+    }
   }
 
   private func accessibilityPriority(

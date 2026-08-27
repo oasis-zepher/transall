@@ -943,6 +943,86 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func credentialSettingsSeparateStoredStateFromUnsavedDrafts() async {
+    let store = TestCredentialStore(
+      values: [.deepseek: "stored-deepseek", .openAI: ""])
+    let settings = ProviderSettingsModel(store: store)
+    await settings.reload(showSuccess: false)
+
+    var state = settings.rowState(for: .deepseek)
+    #expect(state.storage == .configured)
+    #expect(state.statusLabel == "已配置")
+    #expect(state.statusStyle == .configured)
+    #expect(state.canRemoveStoredValue)
+    #expect(!state.hasUnsavedChanges)
+
+    settings.deepseekKey = ""
+    state = settings.rowState(for: .deepseek)
+    #expect(state.storage == .configured)
+    #expect(state.statusLabel == "已配置 · 待保存")
+    #expect(state.statusStyle == .pending)
+    #expect(state.canRemoveStoredValue)
+    #expect(state.hasUnsavedChanges)
+
+    settings.openAIKey = "new-openai"
+    state = settings.rowState(for: .openAI)
+    #expect(state.storage == .notConfigured)
+    #expect(state.statusLabel == "未配置 · 待保存")
+    #expect(state.statusStyle == .pending)
+    #expect(!state.canRemoveStoredValue)
+
+    settings.openAIKey = "first\nsecond"
+    state = settings.rowState(for: .openAI)
+    #expect(state.storage == .notConfigured)
+    #expect(state.statusLabel == "未配置 · 输入无效，未保存")
+    #expect(state.statusStyle == .invalid)
+    #expect(state.draftValidationError == .invalidCharacters)
+    #expect(!state.canRemoveStoredValue)
+  }
+
+  @Test @MainActor
+  func credentialSettingsExposeMalformedStoredValueAsInvalidAndDeletable() async {
+    let store = TestCredentialStore(values: [.deepseek: "first\r\nsecond"])
+    let settings = ProviderSettingsModel(store: store)
+    await settings.reload(showSuccess: false)
+
+    var state = settings.rowState(for: .deepseek)
+    #expect(state.storage == .invalid)
+    #expect(state.statusLabel == "密钥无效")
+    #expect(state.statusStyle == .invalid)
+    #expect(state.canRemoveStoredValue)
+    #expect(!state.hasUnsavedChanges)
+
+    settings.deepseekKey = "replacement-key"
+    state = settings.rowState(for: .deepseek)
+    #expect(state.storage == .invalid)
+    #expect(state.statusLabel == "密钥无效 · 待保存")
+    #expect(state.statusStyle == .pending)
+    #expect(state.canRemoveStoredValue)
+    #expect(state.hasUnsavedChanges)
+  }
+
+  @Test @MainActor
+  func credentialNoOpSaveRestoresConfirmedDraftState() async {
+    let store = TestCredentialStore(values: [.deepseek: "stored-key", .openAI: ""])
+    let settings = ProviderSettingsModel(store: store)
+    let appModel = AppModel(backend: NativeDocumentEngine(credentialStore: store))
+    await settings.reload(showSuccess: false)
+    settings.deepseekKey = "  stored-key  "
+    #expect(settings.rowState(for: .deepseek).hasUnsavedChanges)
+
+    await settings.save(appModel: appModel)
+
+    #expect(store.writes.isEmpty)
+    #expect(settings.message == "没有需要保存的更改。")
+    #expect(settings.deepseekKey == "stored-key")
+    let state = settings.rowState(for: .deepseek)
+    #expect(state.storage == .configured)
+    #expect(state.statusLabel == "已配置")
+    #expect(!state.hasUnsavedChanges)
+  }
+
+  @Test @MainActor
   func credentialSettingsRollBackPartialSaveFailure() async {
     let store = TestCredentialStore(
       values: [.deepseek: "old-deepseek", .openAI: "old-openai"],
@@ -984,6 +1064,10 @@ struct ModelsTests {
     #expect(store.values[.deepseek] == "old-deepseek")
     #expect(store.values[.openAI] == "old-openai")
     #expect(store.writes.map(\.credential) == [.deepseek, .openAI, .openAI, .deepseek])
+    #expect(settings.rowState(for: .deepseek).statusLabel == "已配置")
+    #expect(!settings.rowState(for: .deepseek).hasUnsavedChanges)
+    #expect(settings.rowState(for: .openAI).statusLabel == "已配置")
+    #expect(!settings.rowState(for: .openAI).hasUnsavedChanges)
   }
 
   @Test @MainActor
@@ -1054,6 +1138,8 @@ struct ModelsTests {
     #expect(!settings.isSaving)
     #expect(settings.deepseekKey == "new-key")
     #expect(store.valuesSnapshot[.deepseek] == "new-key")
+    #expect(settings.rowState(for: .deepseek).statusLabel == "已配置")
+    #expect(!settings.rowState(for: .deepseek).hasUnsavedChanges)
   }
 
   @Test @MainActor

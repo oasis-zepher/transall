@@ -85,6 +85,7 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 5. Keychain reload, save, deletion, and failure messages now request VoiceOver announcements; errors use high priority and successful status changes use medium priority.
 6. Translation provider labels preserve the official `DeepSeek` and `OpenAI` capitalization in the workbench instead of deriving user-facing brands from lowercase API identifiers.
 7. File selection is available only after a complete route is chosen. The file well, drag-and-drop, keyboard and accessibility actions, model guard, and **File → 选择文件…** (`⌘O`) command share the same state; the misleading shared-model `New Window` command is removed. A regression policy now verifies that the empty file well accepts Return and Space only while document selection is available.
+8. The input heading now uses **FILE** for exactly one selected document and **FILES** for zero or multiple documents. Model regressions cover 0, 1, and 2 files, and an unsigned universal Release smoke test verified **INPUT 1 FILE** after importing `research-notes.pdf` through `⌘O`.
 
 ## Additional reliability hardening
 
@@ -124,8 +125,8 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 127/127 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 127/127 passed |
+| Swift package tests with Xcode 26.6 | 128/128 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 128/128 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

@@ -83,7 +83,7 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 4. Added Open Graph assets, per-page social metadata, App Privacy Required Reason coverage for file timestamps, and synthetic review files.
 5. Keychain reload, save, deletion, and failure messages now request VoiceOver announcements; errors use high priority and successful status changes use medium priority.
 6. Translation provider labels preserve the official `DeepSeek` and `OpenAI` capitalization in the workbench instead of deriving user-facing brands from lowercase API identifiers.
-7. File selection is available only after a complete route is chosen. The file well, drag-and-drop, keyboard and accessibility actions, model guard, and **File → 选择文件…** (`⌘O`) command share the same state; the misleading shared-model `New Window` command is removed.
+7. File selection is available only after a complete route is chosen. The file well, drag-and-drop, keyboard and accessibility actions, model guard, and **File → 选择文件…** (`⌘O`) command share the same state; the misleading shared-model `New Window` command is removed. A regression policy now verifies that the empty file well accepts Return and Space only while document selection is available.
 
 ## Additional reliability hardening
 
@@ -123,8 +123,8 @@ No corrective command remains for the current code audit. Repeat the signed-buil
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 125/125 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 125/125 passed |
+| Swift package tests with Xcode 26.6 | 126/126 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 126/126 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |

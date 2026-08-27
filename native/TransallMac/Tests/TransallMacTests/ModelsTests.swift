@@ -4357,6 +4357,57 @@ struct ModelsTests {
   }
 
   @Test
+  func nativePDFEditValidatesCropAgainstPageBounds() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-crop-test-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    let editRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let text = temporary.appendingPathComponent("source.txt")
+    let source = temporary.appendingPathComponent("source.pdf")
+    try Data("crop test".utf8).write(to: text, options: .atomic)
+    _ = try await NativeDocumentProcessor.process(
+      route: textRoute, inputs: [text], options: JobOptions(), outputURL: source, apiKey: nil)
+
+    var validOptions = JobOptions()
+    validOptions.cropPages = "1"
+    validOptions.cropBox = "10,20,500,700"
+    let validOutput = temporary.appendingPathComponent("valid-crop.pdf")
+    _ = try await NativeDocumentProcessor.process(
+      route: editRoute, inputs: [source], options: validOptions, outputURL: validOutput,
+      apiKey: nil)
+    let validDocument = try #require(PDFDocument(url: validOutput))
+    let applied = try #require(validDocument.page(at: 0)?.bounds(for: .cropBox))
+    #expect(abs(applied.minX - 10) <= 0.001)
+    #expect(abs(applied.minY - 20) <= 0.001)
+    #expect(abs(applied.width - 490) <= 0.001)
+    #expect(abs(applied.height - 680) <= 0.001)
+
+    for (index, cropBox) in [
+      "700,900,800,1000", "-1,0,100,100", "0,0,1e150,1e150",
+    ].enumerated() {
+      var invalidOptions = JobOptions()
+      invalidOptions.cropPages = "1"
+      invalidOptions.cropBox = cropBox
+      let invalidOutput = temporary.appendingPathComponent("invalid-crop-\(index).pdf")
+      do {
+        _ = try await NativeDocumentProcessor.process(
+          route: editRoute, inputs: [source], options: invalidOptions, outputURL: invalidOutput,
+          apiKey: nil)
+        Issue.record("Out-of-page crop boxes must be rejected")
+      } catch let error as NativeDocumentError {
+        #expect(error.code == "invalid_option")
+        #expect(error.errorDescription?.contains("第 1 页当前页面范围") == true)
+      }
+      #expect(!FileManager.default.fileExists(atPath: invalidOutput.path))
+    }
+  }
+
+  @Test
   func pdfEditProcessorRejectsInvalidInputCounts() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-edit-count-test-\(UUID().uuidString)", isDirectory: true)

@@ -532,12 +532,23 @@ enum NativeDocumentProcessor {
       let crop = try PageSelectionParser.indexes(options.cropPages, pageCount: document.pageCount)
       if !crop.isEmpty {
         let box = try JobOptionValidator.parseCropBox(options.cropBox)
-        for index in Set(crop) {
+        var pagesToCrop: [(index: Int, page: PDFPage)] = []
+        for index in Set(crop).sorted() {
           try Task.checkCancellation()
           guard let page = document.page(at: index) else {
             throw NativeDocumentError.processing("无法读取第 \(index + 1) 页以裁剪。")
           }
+          guard page.bounds(for: .cropBox).contains(box) else {
+            throw NativeDocumentError.invalidOption("裁剪区域超出第 \(index + 1) 页当前页面范围。")
+          }
+          pagesToCrop.append((index, page))
+        }
+        for (index, page) in pagesToCrop {
+          try Task.checkCancellation()
           page.setBounds(box, for: .cropBox)
+          guard cropBoxesMatch(page.bounds(for: .cropBox), box) else {
+            throw NativeDocumentError.processing("无法按指定区域裁剪第 \(index + 1) 页。")
+          }
         }
       }
 
@@ -947,6 +958,14 @@ enum NativeDocumentProcessor {
   private static func normalizedRotation(_ value: Int) -> Int {
     let normalized = value % 360
     return normalized < 0 ? normalized + 360 : normalized
+  }
+
+  private static func cropBoxesMatch(_ actual: CGRect, _ requested: CGRect) -> Bool {
+    let tolerance: CGFloat = 0.001
+    return abs(actual.minX - requested.minX) <= tolerance
+      && abs(actual.minY - requested.minY) <= tolerance
+      && abs(actual.width - requested.width) <= tolerance
+      && abs(actual.height - requested.height) <= tolerance
   }
 
   private static func recognitionLanguages(_ value: String) -> [String] {

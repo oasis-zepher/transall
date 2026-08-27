@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, and provider credential validation are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 findings in native formatting enforcement and running-task route controls are resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header now share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, and provider credential validation are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 findings in native formatting enforcement and running-task route controls are resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header now share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. The current follow-up found one open P2: each provider row reports and controls stored Keychain state from the editable draft instead of the last confirmed Keychain snapshot. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,15 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; one Settings-state P2 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
+
+## Open follow-up finding
+
+### [P2] Settings reports stored credential state from unsaved draft text
+
+- **Location:** `SettingsView.providerRow(credential:key:privacyURL:)` defines `configured` from `key.wrappedValue`, then uses that draft-derived value for the “已配置/未配置” label, icon, color, and “删除密钥” disabled state. `ProviderSettingsModel` already keeps the authoritative last-read Keychain values privately in `storedValues`, but the view cannot query them.
+- **Category:** Usability / accessibility state consistency / credential management.
+- **Impact:** Editing a field changes the visible stored-state claim before any Keychain transaction occurs. Clearing a valid key immediately shows “未配置” and disables direct deletion even though the key remains stored and usable until “保存并应用” succeeds. Conversely, an old malformed but non-empty Keychain value that preflight now rejects still appears “已配置”. Users therefore cannot reliably tell what is stored, what is only a draft, or whether the delete action applies to an existing secret.
+- **Standard:** Truthful credential and privacy controls, consistent state semantics, and WCAG 2.2 Success Criterion 4.1.2 (Name, Role, Value).
+- **Recommendation:** Derive stored status and delete availability from `storedValues`, validate the editable draft separately, and expose an explicit pending-change state. Use distinct labels for confirmed configuration, missing storage, invalid stored data, unsaved valid edits, and unsaved invalid input. Normalize the fields back to the confirmed snapshot after a no-op save so a false pending state cannot remain.
+- **Suggested verification:** Load valid, empty, and malformed stored values; then edit each field without saving and verify the confirmed state remains truthful, a pending or invalid-draft indicator appears, and deletion stays available whenever a Keychain item exists. After successful, failed, and no-op saves, verify the status and draft return to the reconciled snapshot.
 
 ## Resolved follow-up findings
 
@@ -148,7 +159,10 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 - The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
-## Remaining release actions
+## Recommended actions
+
+1. **[P2] `$clarify`** — separate confirmed Keychain state, invalid stored data, and unsaved draft state in each provider row.
+2. **[P3] `$polish`** — rerun strict formatting, SwiftPM and Xcode tests, and Release analysis, then synchronize release evidence.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 

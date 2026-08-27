@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting and unbounded multi-file batches are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The current follow-up found one open P2: file metadata inspection runs in the background but has no model-owned lifecycle or cancel control. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, and file-inspection lifecycle are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -18,34 +18,27 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | # | Dimension | Baseline | Current | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Contrast, semantic scalable type, labels, state announcements, focus, reduced-motion behavior, keyboard targets, and repeated-navigation bypasses are covered across both surfaces. |
-| 2 | Performance | 2/4 | 3/4 | Byte-heavy work is bounded, but file metadata inspection cannot be cancelled from the workbench or app lifecycle. |
+| 2 | Performance | 2/4 | 4/4 | Byte-heavy work and file metadata inspection are bounded, model-owned, and cancellable from the workbench and app lifecycle. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **19/20** | **Excellent; one input-lifecycle P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no code-level P0–P3 finding remains in the current audit.** |
 
 ## Executive summary
 
-- Audit health score: **19/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Audit health score: **20/20 — Excellent**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-### [P2] File metadata inspection cannot be cancelled
-
-- **Location:** `InputWorkbenchView` file-importer and drop handlers, `AppModel.importDocuments`, and `AppModel.prepareForTermination`.
-- **Category:** Performance / reliability.
-- **Impact:** File metadata inspection runs outside the main actor, but both UI entry points launch unreferenced tasks. A slow, disconnected, or unresponsive volume can leave the workbench locked in “正在读取文件” with no cancel action; termination also cannot propagate cancellation through the model. Users can wait or quit the app.
-- **Standard:** App Store release robustness; no WCAG criterion applies.
-- **Recommendation:** Let `AppModel` own one import task, reject overlapping starts, expose an explicit cancel action while inspection runs, cancel it during termination, and keep cancellation silent without replacing the existing document selection.
-- **Suggested command:** `$harden`, then `$polish` after lifecycle regressions pass.
+None in the current code audit.
 
 ## Patterns and systemic issues
 
-- Task creation and result export have model-owned cancellation lifecycles, but file metadata inspection still depends on an unreferenced view task.
+- File inspection, task creation, and result export have model-owned cancellation lifecycles, and Keychain access is isolated from the main actor.
 - Aggregate input bytes and the 256-file batch limit are enforced across selection, preflight, transfer, persistence, and recovery.
 - Native text uses semantic SwiftUI styles, including accessibility-size-aware geometry for the circular format router.
 - Website semantics, contrast, focus rings, target sizes, and repeated-navigation bypasses share one rendered-HTML contract across all routes.
@@ -59,10 +52,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 
 ## Recommended actions
 
-1. **[P2] `$harden`** — move file metadata inspection into a model-owned task with explicit and termination cancellation while preserving atomic selection.
-2. **[P3] `$polish`** — add a compact “取消读取” action to the existing import state without changing the workbench hierarchy.
-
-After the fix, rerun this audit and the strict Swift/Xcode test matrix. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+No corrective code change remains for the current audit. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 
@@ -89,6 +79,7 @@ After the fix, rerun this audit and the strict Swift/Xcode test matrix. Push the
 12. **Website repeated-navigation bypass** — every support route begins with a focus-visible “跳到主要内容” link targeting the same focusable `main-content` landmark. Rendered HTML tests cover the link, target, source order, and focus-visible CSS on the support, privacy, and publisher pages.
 13. **Same-format route state** — a node selected as both source and target now keeps both roles instead of being overwritten by the target state. The node uses the target fill with a source-colored outer ring, and VoiceOver reports “已选为源格式和目标格式”. A state-policy regression test covers the combined and single-role cases.
 14. **Unbounded multi-file batches** — every task now accepts at most 256 files. Exact duplicate URLs are removed before metadata inspection, the file picker/menu/drop paths stop accepting additions at capacity, preflight and copy boundaries reject oversized non-UI calls, and restart recovery rejects oversized persisted input lists. The workbench shows the limit next to its byte limit.
+15. **Uncancellable file metadata inspection** — `AppModel` now owns one import task, both picker and drop entry points use it, overlapping starts are ignored, and the workbench shows “取消读取”. Explicit and termination cancellation stop inspection silently without publishing a partial selection or replacing the existing file list.
 
 ## Resolved P3 findings
 
@@ -128,6 +119,7 @@ After the fix, rerun this audit and the strict Swift/Xcode test matrix. Push the
 - Provider keys request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; existing legacy entries migrate without losing the credential, while unsigned development builds retain a tested legacy fallback when the application identity entitlement is unavailable.
 - Input copying opens source and destination descriptors without following symbolic links, confirms regular-file status on the opened descriptors, and prechecks the actual source size. It then copies in bounded 1 MiB chunks, enforces the cumulative route limit before every write, detects size changes during transfer, and checks cancellation between chunks. Oversize, changed, failed, or cancelled imports remove the partial destination and every completed copy from the same batch. Text-to-PDF input is capped at 20 MB, while other native routes retain the 250 MB limit; the UI, preflight, streaming copy, and text processor all apply the matching limit before text is loaded.
 - Multi-file batches are capped at 256 entries before metadata inspection. Exact repeated URLs do not consume the limit twice; selection actions stop at capacity, and preflight, transfer, persisted metadata, and recovery independently enforce the same bound. Boundary regressions verify that 256 files pass while 257 fail before source files are opened.
+- File metadata inspection is retained by `AppModel`, rejects overlapping starts, and is cancelled explicitly or during termination. Cancellation remains a normal outcome: it shows no alert and leaves the prior atomic file selection unchanged.
 - Task submission is retained by `AppModel` instead of an unowned view task. Duplicate starts are ignored, the UI keeps a visible cancel action while the immutable submission snapshot is validated and copied, and termination propagates cancellation. If creation returns after cancellation was requested, cleanup runs in a fresh task so the cancelled context cannot prevent the new backend job from being stopped and deleted.
 - Task submission locks route selection, route reset, option controls, file picking, drag-and-drop, and input removal until input validation and copying finish. Matching model guards prevent non-UI calls from changing the route or input list during the same interval.
 - Task creation runs structural preflight before writing task data. Empty inputs, mismatched extensions, invalid file sizes, overflowing or oversized totals, invalid merge counts, unregistered routes, and malformed PDF edit, translation, or OCR options cannot create a task directory; persisted metadata stores only the matching canonical capability route. Preflight, the processor, and restart recovery share the same route-option validation rules.
@@ -140,13 +132,13 @@ After the fix, rerun this audit and the strict Swift/Xcode test matrix. Push the
 
 | Check | Result |
 | --- | --- |
-| Swift package tests with Xcode 26.6 | 132/132 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 132/132 passed |
+| Swift package tests with Xcode 26.6 | 134/134 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 134/134 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
 | Archive dependency inspection | Apple system frameworks only; no Python, Homebrew, Chromium, Tesseract, OCRmyPDF, PyMuPDF, or BabelDOC payload |
 | Archive resources | AppIcon and `PrivacyInfo.xcprivacy` present; privacy manifest passes `plutil` |
-| Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure/retry, and the visible 256-file limit verified |
+| Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure/retry, the visible 256-file limit, and the unchanged base workbench after the import-lifecycle change verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
 | Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. `npm audit --audit-level=high` reports 0 vulnerabilities after the build-dependency update. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |

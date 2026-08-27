@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, and file-inspection lifecycle are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, and file-inspection lifecycle are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The current follow-up found one open P3: three native Swift files fail Xcode's strict formatter and the native CI job has no formatting gate. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,19 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; no code-level P0–P3 finding remains in the current audit.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; one release-hygiene P3 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 1 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-None in the current code audit.
+### [P3] Native formatting is neither clean nor enforced
+
+- **Location:** `AppModel.swift`, `InputWorkbenchView.swift`, `ModelsTests.swift`, and `.github/workflows/tests.yml`.
+- **Category:** Release quality / maintainability.
+- **Impact:** Xcode 26.6 reports eight strict formatting errors in the native target and tests. They do not change runtime behavior, but formatting drift remains invisible to pull requests and adds avoidable review noise.
+- **Standard:** Reproducible release engineering; no WCAG criterion applies.
+- **Recommendation:** Apply the Xcode 26.6 formatter's targeted changes, then add `xcrun swift-format lint --strict Sources Tests` to the native GitHub Actions job before compilation.
+- **Suggested command:** `$polish`, then rerun the full native release checks.
 
 ## Patterns and systemic issues
 
@@ -52,7 +59,9 @@ None in the current code audit.
 
 ## Recommended actions
 
-No corrective code change remains for the current audit. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
+1. **[P3] `$polish`** — make the native source and tests pass Xcode 26.6 strict formatting and enforce the same command in CI.
+
+After the fix, rerun the strict formatter and native test matrix. Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
 ## Resolved P1 findings
 

@@ -274,6 +274,30 @@ struct ModelsTests {
   }
 
   @Test @MainActor
+  func importingDocumentsRejectsOversizedBatchBeforeInspectingFiles() async throws {
+    let model = AppModel()
+    model.capabilities = NativeCapabilities.response
+    model.selection.source = "image"
+    model.selection.target = "pdf"
+    let urls = (0...NativeCapabilities.maximumInputFileCount).map {
+      URL(fileURLWithPath: "/missing/input-\($0).png")
+    }
+
+    await model.importDocuments(urls)
+
+    #expect(model.documents.isEmpty)
+    #expect(
+      model.errorMessage?.contains("每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件")
+        == true)
+    #expect(!model.isImporting)
+
+    model.documents = urls.prefix(NativeCapabilities.maximumInputFileCount).map {
+      SelectedDocument(url: $0, size: 1)
+    }
+    #expect(!model.canSelectDocuments)
+  }
+
+  @Test @MainActor
   func importingDocumentsRejectsEntireBatchContainingSymbolicLink() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-import-link-test-\(UUID().uuidString)", isDirectory: true)
@@ -357,6 +381,29 @@ struct ModelsTests {
 
     #expect(!result.ok)
     #expect(result.blockingIssues.contains { $0.code == "empty_file" })
+  }
+
+  @Test @MainActor
+  func preflightRejectsOversizedInputCountBeforePerFileValidation() async throws {
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let files = (0...NativeCapabilities.maximumInputFileCount).map {
+      SelectedDocument(url: URL(fileURLWithPath: "/missing/input-\($0).png"), size: 1)
+    }
+
+    let result = await NativeDocumentEngine().preflight(
+      route: route, files: files, options: JobOptions())
+
+    #expect(!result.ok)
+    #expect(result.blockingIssues.map(\.code) == ["too_many_files"])
+    #expect(
+      result.blockingIssues.first?.message.contains(
+        "每批最多处理 \(NativeCapabilities.maximumInputFileCount) 个文件") == true)
+
+    let boundary = await NativeDocumentEngine().preflight(
+      route: route, files: Array(files.prefix(NativeCapabilities.maximumInputFileCount)),
+      options: JobOptions())
+    #expect(boundary.ok)
   }
 
   @Test @MainActor
@@ -1622,6 +1669,32 @@ struct ModelsTests {
   }
 
   @Test
+  func inputCopyRejectsOversizedFileCountBeforeOpeningSources() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-input-count-copy-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let inputDirectory = temporary.appendingPathComponent("Input", isDirectory: true)
+    try FileManager.default.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+    let files = (0...NativeCapabilities.maximumInputFileCount).map {
+      SelectedDocument(url: temporary.appendingPathComponent("missing-\($0).png"), size: 1)
+    }
+
+    do {
+      _ = try await NativeDocumentEngine.copyInputs(
+        files, to: inputDirectory, maximumBytes: 1_024, maximumMB: 1)
+      Issue.record("An oversized input count should fail before opening source files")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "invalid_file")
+      #expect(
+        error.localizedDescription.contains(
+          "每批最多处理 \(NativeCapabilities.maximumInputFileCount) 个文件"))
+    }
+
+    #expect(try FileManager.default.contentsOfDirectory(atPath: inputDirectory.path).isEmpty)
+  }
+
+  @Test
   func inputCopyEnforcesCumulativeLimitAndRemovesCompletedCopies() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent("transall-cumulative-copy-test-\(UUID().uuidString)", isDirectory: true)
@@ -2588,6 +2661,46 @@ struct ModelsTests {
     #expect(invalidMerge.status == "failed")
     #expect(invalidMerge.errorCode == "job_state_corrupt")
     #expect(invalidMerge.error?.contains("缺少输入文件") == true)
+  }
+
+  @Test @MainActor
+  func oversizedPersistedInputCountDoesNotResumeLocalWork() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-input-count-recovery-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let route = try #require(
+      NativeCapabilities.routes.first { $0.kind == "image_to_pdf" })
+    let jobID = UUID().uuidString.lowercased()
+    let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(jobID)", isDirectory: true)
+    try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: true)
+    let inputNames = (0...NativeCapabilities.maximumInputFileCount).map {
+      "\($0 + 1)-input-\($0).png"
+    }
+    let now = ISO8601DateFormatter().string(from: Date())
+    let running = JobResponse(
+      id: jobID, kind: route.kind, status: "running", inputs: inputNames,
+      createdAt: now, updatedAt: now, output: nil, error: nil, stage: "processing",
+      message: "原生引擎正在处理。", errorCode: nil, errorHint: nil, retryable: false,
+      progress: 12, cancelRequested: false, logs: [])
+    try persistTestJob(running, in: jobDirectory)
+    try JSONEncoder().encode(
+      PersistedJobMetadata(route: route, options: JobOptions(), inputNames: inputNames)
+    ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
+
+    let restored = try engine.job(id: jobID)
+
+    #expect(restored.status == "failed")
+    #expect(restored.errorCode == "job_state_corrupt")
+    #expect(
+      restored.error?.contains(
+        "每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件") == true)
+    #expect(restored.logs.contains { $0.contains("本地状态校验失败") })
   }
 
   @Test @MainActor

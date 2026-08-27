@@ -107,6 +107,7 @@ final class AppModel: ObservableObject {
 
   var canSelectDocuments: Bool {
     route?.enabled == true && !isImporting && !isSubmitting
+      && documents.count < NativeCapabilities.maximumInputFileCount
   }
 
   var routeTitle: String {
@@ -255,12 +256,23 @@ final class AppModel: ObservableObject {
       return
     }
 
+    var seenURLs = Set(
+      (appending ? documents : []).map { $0.url.standardizedFileURL })
+    let uniqueURLs = urls.filter {
+      seenURLs.insert($0.standardizedFileURL).inserted
+    }
+    guard seenURLs.count <= NativeCapabilities.maximumInputFileCount else {
+      errorMessage =
+        "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件，请分批处理。"
+      return
+    }
+
     isImporting = true
     errorMessage = nil
     defer { isImporting = false }
 
     let inspection = Task.detached(priority: .userInitiated) {
-      try Self.inspectDocuments(urls)
+      try Self.inspectDocuments(uniqueURLs)
     }
     let imported: [SelectedDocument]
     do {
@@ -280,6 +292,11 @@ final class AppModel: ObservableObject {
       contentsOf: imported.filter {
         existing.insert($0.url.standardizedFileURL.resolvingSymlinksInPath()).inserted
       })
+    guard combined.count <= NativeCapabilities.maximumInputFileCount else {
+      errorMessage =
+        "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件，请分批处理。"
+      return
+    }
 
     let total = combined.reduce(Int64.zero) { partial, document in
       let (sum, overflow) = partial.addingReportingOverflow(document.size)

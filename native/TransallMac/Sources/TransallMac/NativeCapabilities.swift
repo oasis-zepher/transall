@@ -4,6 +4,7 @@ enum NativeCapabilities {
   static let uploadLimitBytes = 250 * 1024 * 1024
   static let textToPDFLimitBytes = 20 * 1024 * 1024
   static let textToPDFLimitMB = 20
+  static let maximumInputFileCount = 256
 
   static let response = CapabilitiesResponse(
     formats: [

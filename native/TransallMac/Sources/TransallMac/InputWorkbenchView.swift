@@ -134,7 +134,12 @@ struct InputWorkbenchView: View {
           viewState.showImporter = true
         }
         .buttonStyle(QuietButtonStyle())
-        .disabled(inputIsLocked)
+        .disabled(!model.canSelectDocuments)
+        .help(
+          model.documents.count >= NativeCapabilities.maximumInputFileCount
+            ? "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件"
+            : "向当前任务继续添加文件"
+        )
       }
     }
     .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty || model.isImporting ? 116 : 76)
@@ -342,9 +347,11 @@ struct InputWorkbenchView: View {
 
       Spacer()
 
-      Text("上限 \(model.inputLimitMB) MB")
-        .font(.caption2)
-        .foregroundStyle(TransallTheme.muted)
+      Text(
+        "上限 \(model.inputLimitMB) MB · 最多 \(NativeCapabilities.maximumInputFileCount) 个文件"
+      )
+      .font(.caption2)
+      .foregroundStyle(TransallTheme.muted)
     }
   }
 
@@ -376,6 +383,9 @@ struct InputWorkbenchView: View {
     if model.route?.enabled != true { return "先选择源格式和目标格式" }
     if model.isImporting { return "全部文件通过校验后才会加入列表" }
     if model.isSubmitting { return "正在创建任务，完成后可修改文件" }
+    if model.documents.count >= NativeCapabilities.maximumInputFileCount {
+      return "已达到每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件的限制，可先移除文件"
+    }
     return model.documents.isEmpty
       ? "按回车键选择文件，也可以将文件拖到这里"
       : "可继续添加或移除文件"

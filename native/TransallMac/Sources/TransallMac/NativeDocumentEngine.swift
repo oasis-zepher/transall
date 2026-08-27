@@ -185,6 +185,15 @@ final class NativeDocumentEngine: ObservableObject {
       return PreflightResponse(
         ok: false, blockingIssues: blocking, warnings: [], requirements: [])
     }
+    if files.count > NativeCapabilities.maximumInputFileCount {
+      blocking.append(
+        issue(
+          "too_many_files",
+          "每批最多处理 \(NativeCapabilities.maximumInputFileCount) 个文件。",
+          hint: "请拆分为多个任务。"))
+      return PreflightResponse(
+        ok: false, blockingIssues: blocking, warnings: [], requirements: route.requirements)
+    }
     var total = Int64.zero
     var totalOverflowed = false
     for file in files where file.size > 0 {
@@ -732,6 +741,10 @@ final class NativeDocumentEngine: ObservableObject {
     guard maximumBytes >= 0, chunkSize > 0 else {
       throw NativeDocumentError.invalidFile("输入文件复制限制无效。")
     }
+    guard files.count <= NativeCapabilities.maximumInputFileCount else {
+      throw NativeDocumentError.invalidFile(
+        "每批最多处理 \(NativeCapabilities.maximumInputFileCount) 个文件，请拆分为多个任务。")
+    }
     let transfer = Task.detached(priority: .userInitiated) {
       var copiedInputs: [URL] = []
       var removeCopiedInputs = true
@@ -1103,6 +1116,10 @@ final class NativeDocumentEngine: ObservableObject {
     guard !names.isEmpty else {
       throw NativeDocumentError.invalidFile("任务没有可恢复的输入文件。")
     }
+    guard names.count <= NativeCapabilities.maximumInputFileCount else {
+      throw NativeDocumentError.invalidFile(
+        "任务输入超过每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件的限制。")
+    }
     guard Set(names).count == names.count else {
       throw NativeDocumentError.invalidFile("任务输入列表包含重复文件，数据可能已经损坏。")
     }
@@ -1148,7 +1165,7 @@ final class NativeDocumentEngine: ObservableObject {
   private nonisolated static func preflightError(_ issue: PreflightIssue) -> NativeDocumentError {
     let message = [issue.message, issue.hint].compactMap { $0 }.joined(separator: "：")
     switch issue.code {
-    case "missing_files", "upload_too_large", "empty_file", "invalid_file_type":
+    case "missing_files", "too_many_files", "upload_too_large", "empty_file", "invalid_file_type":
       return .invalidFile(message)
     case "provider_not_configured", "provider_keychain_unavailable":
       return .provider(message)

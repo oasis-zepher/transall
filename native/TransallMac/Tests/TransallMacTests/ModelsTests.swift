@@ -114,6 +114,35 @@ struct ModelsTests {
     #expect(providers.first { $0.name == "openai" }?.displayName == "OpenAI")
   }
 
+  @Test
+  func terminalJobStatusesProduceBoundedAccessibilityAnnouncements() throws {
+    #expect(JobStatusAnnouncementPolicy.announcement(for: testJob(status: "queued")) == nil)
+    #expect(JobStatusAnnouncementPolicy.announcement(for: testJob(status: "running")) == nil)
+
+    let completed = try #require(
+      JobStatusAnnouncementPolicy.announcement(for: testJob(status: "done")))
+    #expect(completed.message == "任务已完成，结果可以保存。")
+    #expect(completed.priority == .medium)
+
+    let cancelled = try #require(
+      JobStatusAnnouncementPolicy.announcement(for: testJob(status: "cancelled")))
+    #expect(cancelled.message == "任务已取消。")
+    #expect(cancelled.priority == .medium)
+
+    let failed = try #require(
+      JobStatusAnnouncementPolicy.announcement(
+        for: testJob(
+          status: "failed", error: "PDF 无法读取。", errorHint: "请重新选择原文件。")))
+    #expect(failed.message == "任务失败。 PDF 无法读取。 请重新选择原文件。")
+    #expect(failed.priority == .high)
+
+    let oversized = try #require(
+      JobStatusAnnouncementPolicy.announcement(
+        for: testJob(status: "failed", error: String(repeating: "错", count: 2_000))))
+    #expect(oversized.message.count == JobStatusAnnouncementPolicy.maximumAnnouncementCharacters)
+    #expect(oversized.message.hasSuffix("…"))
+  }
+
   @Test @MainActor
   func environmentReloadUsesOneCredentialSnapshot() async {
     let store = TestCredentialStore(values: [.deepseek: "test-key", .openAI: ""])
@@ -4230,12 +4259,19 @@ struct ModelsTests {
   }
 
   private func completedTestJob() -> JobResponse {
+    testJob(status: "done", output: "result.pdf")
+  }
+
+  private func testJob(
+    status: String, output: String? = nil, error: String? = nil, errorHint: String? = nil
+  ) -> JobResponse {
     let now = ISO8601DateFormatter().string(from: Date())
     return JobResponse(
-      id: UUID().uuidString.lowercased(), kind: "text_to_pdf", status: "done",
-      inputs: ["source.txt"], createdAt: now, updatedAt: now, output: "result.pdf",
-      error: nil, stage: "complete", message: "任务完成。", errorCode: nil,
-      errorHint: nil, retryable: false, progress: 100, cancelRequested: false, logs: [])
+      id: UUID().uuidString.lowercased(), kind: "text_to_pdf", status: status,
+      inputs: ["source.txt"], createdAt: now, updatedAt: now, output: output,
+      error: error, stage: status, message: "任务状态更新。", errorCode: nil,
+      errorHint: errorHint, retryable: false, progress: status == "done" ? 100 : 0,
+      cancelRequested: status == "cancelled", logs: [])
   }
 }
 

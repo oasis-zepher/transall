@@ -5,6 +5,47 @@ private final class ResultViewState: ObservableObject {
   @Published var showDeleteConfirmation = false
 }
 
+enum JobStatusAnnouncementPriority: Equatable {
+  case medium
+  case high
+}
+
+struct JobStatusAnnouncement: Equatable {
+  let message: String
+  let priority: JobStatusAnnouncementPriority
+}
+
+enum JobStatusAnnouncementPolicy {
+  static let maximumAnnouncementCharacters = 500
+
+  static func announcement(for job: JobResponse?) -> JobStatusAnnouncement? {
+    guard let job else { return nil }
+    switch job.status {
+    case "done":
+      return JobStatusAnnouncement(
+        message: "任务已完成，结果可以保存。", priority: .medium)
+    case "failed":
+      let details = [job.error, job.errorHint]
+        .compactMap { value -> String? in
+          guard let value else { return nil }
+          let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+          return trimmed.isEmpty ? nil : trimmed
+        }
+      let message = (["任务失败。"] + details).joined(separator: " ")
+      return JobStatusAnnouncement(message: bounded(message), priority: .high)
+    case "cancelled":
+      return JobStatusAnnouncement(message: "任务已取消。", priority: .medium)
+    default:
+      return nil
+    }
+  }
+
+  private static func bounded(_ message: String) -> String {
+    guard message.count > maximumAnnouncementCharacters else { return message }
+    return String(message.prefix(maximumAnnouncementCharacters - 1)) + "…"
+  }
+}
+
 struct ResultWorkbenchView: View {
   @EnvironmentObject private var model: AppModel
   @StateObject private var viewState = ResultViewState()
@@ -63,6 +104,17 @@ struct ResultWorkbenchView: View {
         userInfo: [
           .announcement: error,
           .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
+    }
+    .onChange(of: model.currentJob?.status) { _, _ in
+      guard let announcement = JobStatusAnnouncementPolicy.announcement(for: model.currentJob)
+      else { return }
+      NSAccessibility.post(
+        element: NSApplication.shared,
+        notification: .announcementRequested,
+        userInfo: [
+          .announcement: announcement.message,
+          .priority: accessibilityPriority(for: announcement.priority).rawValue,
         ])
     }
   }
@@ -252,6 +304,15 @@ struct ResultWorkbenchView: View {
     case "cancelled": TransallTheme.muted
     case "queued", "running": TransallTheme.accent
     default: TransallTheme.lineStrong
+    }
+  }
+
+  private func accessibilityPriority(
+    for priority: JobStatusAnnouncementPriority
+  ) -> NSAccessibilityPriorityLevel {
+    switch priority {
+    case .medium: .medium
+    case .high: .high
     }
   }
 }

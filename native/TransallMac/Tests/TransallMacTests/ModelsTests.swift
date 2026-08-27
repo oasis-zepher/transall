@@ -3660,7 +3660,7 @@ struct ModelsTests {
     StreamingResponseURLProtocol.probe.reset()
     let declaredOversizedRequest = URLRequest(
       url: try #require(
-        URL(string: "https://translation.test/stream?chunks=8&length=701")))
+        URL(string: "https://translation.test/stream?chunks=8&length=701&delay_ms=200")))
     do {
       _ = try await TranslationService.boundedData(
         for: declaredOversizedRequest, configuration: configuration, maximumBytes: 700)
@@ -4157,7 +4157,9 @@ private final class StreamingResponseURLProtocol: URLProtocol, @unchecked Sendab
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     let chunkCount = queryItems.first(where: { $0.name == "chunks" })
       .flatMap { Int($0.value ?? "") } ?? 1
-    sendChunk(index: 0, count: chunkCount)
+    let delayMilliseconds = queryItems.first(where: { $0.name == "delay_ms" })
+      .flatMap { Int($0.value ?? "") } ?? 5
+    sendChunk(index: 0, count: chunkCount, delayMilliseconds: max(0, delayMilliseconds))
   }
 
   override func stopLoading() {
@@ -4167,17 +4169,18 @@ private final class StreamingResponseURLProtocol: URLProtocol, @unchecked Sendab
     Self.probe.recordStop()
   }
 
-  private func sendChunk(index: Int, count: Int) {
+  private func sendChunk(index: Int, count: Int, delayMilliseconds: Int) {
     guard index < count else {
       client?.urlProtocolDidFinishLoading(self)
       return
     }
-    queue.asyncAfter(deadline: .now() + .milliseconds(5)) { [weak self] in
+    queue.asyncAfter(deadline: .now() + .milliseconds(delayMilliseconds)) { [weak self] in
       guard let self, self.isRunning else { return }
       Self.probe.recordChunk()
       self.client?.urlProtocol(
         self, didLoad: Data(repeating: 0x20, count: Self.chunkSize))
-      self.sendChunk(index: index + 1, count: count)
+      self.sendChunk(
+        index: index + 1, count: count, delayMilliseconds: delayMilliseconds)
     }
   }
 

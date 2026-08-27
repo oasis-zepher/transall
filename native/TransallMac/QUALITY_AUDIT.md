@@ -7,7 +7,7 @@ Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
-All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, and blank translation response handling are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. The current follow-up found one open P2: Settings announcements are keyed only to the visible message text, so repeating an action with the same outcome is not announced to VoiceOver a second time. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
+All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, and repeated Settings announcements are resolved as well. The 2026-08-27 release-automation follow-up found one additional P1: GitHub Actions tested only the browser edition and did not protect the native app or support site. The workflow now covers strict native formatting and tests, Xcode scheme tests, Release analysis, release metadata, support-site lint/build/render tests, and a high-severity dependency gate. Local reproduction passes, but the new workflow has not run on GitHub because these commits have not been pushed. The later P3 in native formatting enforcement is resolved as well. Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
 
 ## Anti-pattern verdict
 
@@ -22,28 +22,26 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent; one repeated-announcement P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent; no open P0-P3 findings.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - The release-automation P1 is resolved in the local workflow; remote GitHub Actions execution remains a release gate after push.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
-
-### [P2] Repeated Settings outcomes are not announced to VoiceOver
-
-- **Location:** `SettingsView.swift` watches `settings.message` with `.onChange`, while `ProviderSettingsModel` can assign the same non-empty message after consecutive reload or save actions.
-- **Category:** Accessibility.
-- **Impact:** When an action produces the same result twice, the second assignment does not change the observed string. SwiftUI therefore does not run the announcement handler again, so a VoiceOver user receives no confirmation that the second operation completed. For example, two consecutive saves with no credential changes both produce `没有需要保存的更改。`, but only the first result is announced.
-- **Standard:** WCAG 2.2 Success Criterion 4.1.3 (Status Messages).
-- **Recommendation:** Publish a distinct announcement event for every completed Settings action, even when its visible message is unchanged. Keep message text and error priority in the event so the view does not infer either from separately changing state.
-- **Suggested verification:** Add a model regression that performs the same no-change save twice and proves the two events have distinct identities but identical message and priority. Retain high priority for errors and medium priority for successful status messages.
-
 ## Resolved follow-up findings
+
+### [P2] Repeated Settings outcomes were not announced to VoiceOver
+
+- **Location before the fix:** `SettingsView.swift` watched `settings.message` with `.onChange`, while `ProviderSettingsModel` could assign the same non-empty message after consecutive reload or save actions.
+- **Category:** Accessibility.
+- **Impact before the fix:** When an action produced the same result twice, the second assignment did not change the observed string. SwiftUI therefore did not run the announcement handler again, so a VoiceOver user received no confirmation that the second operation completed. For example, two consecutive saves with no credential changes both produced `没有需要保存的更改。`, but only the first result was announced.
+- **Standard:** WCAG 2.2 Success Criterion 4.1.3 (Status Messages).
+- **Resolution:** `ProviderSettingsModel` now publishes an explicit announcement value with a fresh identity for every non-empty user-visible result. The event carries its own message and priority, and `SettingsView` observes the event instead of comparing visible strings.
+- **Verification:** A model regression performs the same no-change save twice and verifies two distinct event identities with identical messages and medium priority. The existing Keychain-read failure regression now also verifies high-priority error output. Strict SwiftPM and Xcode scheme tests passed 143/143, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Whitespace-only provider content was accepted as a translation
 
@@ -128,14 +126,11 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 ## Positive findings
 
 - Current foreground/background contrast checks pass: muted text is 4.95:1 on panels and 4.70:1 on paper; primary white text is 5.41:1 on the accent, 6.00:1 on source green, and 10.99:1 on target blue.
-- Native controls use explicit labels and values where iconography or status color alone would be ambiguous. Preview errors, Keychain status, and terminal task states request bounded VoiceOver announcements without moving focus.
+- Native controls use explicit labels and values where iconography or status color alone would be ambiguous. Preview errors, repeated Keychain status results, and terminal task states request VoiceOver announcements without moving focus.
 - The support site uses semantic navigation and main landmarks, a focus-visible skip link, visible focus outlines, 44 px navigation targets, responsive layouts, and reduced-motion handling.
 - No unsafe casts, blocking sleeps, TODO markers, or third-party UI dependencies were found in the native source.
 
-## Recommended actions
-
-1. **[P2] Fix repeated Settings announcements** — publish an explicit event for every user-visible Settings result and observe that event in the view.
-2. **[P3] Re-run release verification** — run strict formatting, SwiftPM and Xcode tests, and Release analysis, then synchronize readiness evidence.
+## Remaining release actions
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
@@ -173,6 +168,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 21. **Page-relative crop validation** — every requested crop must fit the current bounds of each selected page, and the applied PDFKit bounds must match within 0.001 point before the result can succeed.
 22. **Exact crop-field parsing** — crop input preserves empty comma fields and requires exactly four individually valid numbers, so malformed or extra components cannot shift the rectangle silently.
 23. **Blank translation response validation** — provider content must contain a non-whitespace character before it can enter page accumulation or PDF generation; whitespace-only HTTP 200 responses fail without retrying.
+24. **Repeated Settings status announcements** — every non-empty Settings result publishes a distinct VoiceOver event carrying its own message and priority, so consecutive identical outcomes are each announced.
 
 ## Resolved P3 findings
 
@@ -210,6 +206,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 - Persisted JSON is bounded before both writing and decoding: task state is limited to 1 MiB, route metadata to 128 KiB, and completion receipts to 16 KiB. Reads open the exact regular file without following symbolic links, stream at most 64 KiB per read, enforce the limit during transfer, and reject files whose size or timestamps change. Startup retention scanning uses the same bounded reader and falls back to the task directory timestamp for oversized or damaged state instead of loading it into memory.
 - Newly persisted options are canonicalized for the selected route. Local jobs no longer retain unrelated glossary, watermark, provider, or OCR values from another route, while translation and other option-bearing jobs keep exactly the values their processor and recovery path require.
 - Keychain reads and complete mutation transactions run on a serial background actor. One status snapshot supplies both launch diagnostics and provider availability, avoiding duplicate credential reads and inconsistent refresh state; translation processing reads only its selected credential once. Settings rejects overlapping save and delete requests before they can enqueue a transaction based on stale model state. Read failures disable credential editing until a successful reload. Failed multi-provider saves attempt to roll back every started write, including writes that mutate before throwing, then re-read Keychain and report the actual stored state. Failed deletions use the same reconciliation path, and malformed non-UTF-8 credential data is rejected. Local-only jobs do not read translation credentials; translation jobs report Keychain access errors before network work.
+- Settings publishes a new VoiceOver announcement event for every completed action instead of using message equality as the trigger. Consecutive identical results are announced separately, successful status messages use medium priority, and errors use high priority.
 - Repeated or overlapping app-start callbacks initialize shared engine, credential, restoration, and retention state only once after a successful start. An engine-start failure can still be retried. Cancellation between asynchronous startup stages stops before publishing later state or starting cleanup, and regression coverage verifies that duplicate or cancelled lifecycle callbacks can be followed by a successful retry.
 - Provider keys request Data Protection Keychain storage with `WhenUnlockedThisDeviceOnly`; existing legacy entries migrate without losing the credential, while unsigned development builds retain a tested legacy fallback when the application identity entitlement is unavailable.
 - Input copying opens source and destination descriptors without following symbolic links, confirms regular-file status on the opened descriptors, and prechecks the actual source size. It then copies in bounded 1 MiB chunks, enforces the cumulative route limit before every write, detects size changes during transfer, and checks cancellation between chunks. Oversize, changed, failed, or cancelled imports remove the partial destination and every completed copy from the same batch. Text-to-PDF input is capped at 20 MB, while other native routes retain the 250 MB limit; the UI, preflight, streaming copy, and text processor all apply the matching limit before text is loaded.
@@ -228,8 +225,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Check | Result |
 | --- | --- |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 142/142 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 142/142 passed |
+| Swift package tests with Xcode 26.6 | 143/143 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 143/143 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |

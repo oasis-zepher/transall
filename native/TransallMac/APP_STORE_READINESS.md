@@ -2,7 +2,7 @@
 
 ## Current status
 
-The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-28, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 142/142 Swift package tests with strict concurrency and warnings as errors, 142/142 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. The rebuilt product reports Simplified Chinese (`zh-Hans`) as its development region and only declared localization, matching the source plist, Xcode project, and planned App Store primary language. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
+The native SwiftUI app is self-contained and uses only Apple system frameworks for local document processing. It has App Sandbox entitlements, an App Privacy manifest, a complete macOS AppIcon set, Keychain-backed provider credentials, local task deletion, and 24-hour task-data cleanup at launch and while the app remains open. On 2026-08-28, Xcode 26.6 passed strict recursive Swift formatting with zero findings, 143/143 Swift package tests with strict concurrency and warnings as errors, 143/143 Xcode scheme tests, an unsigned universal Release build for arm64 and x86_64, and static analysis. The rebuilt product reports Simplified Chinese (`zh-Hans`) as its development region and only declared localization, matching the source plist, Xcode project, and planned App Store primary language. Earlier release-candidate checks also passed archive dependency inspection and a launch smoke test. GitHub Actions now adds strict native formatting, tests, and Release analysis plus support-site lint, build, rendered-page, and dependency gates. Those workflow commands pass locally, but the new jobs have not run remotely because the commits have not been pushed. The prepared marketing version is 1.0.0.
 
 ## Blocking items
 
@@ -45,7 +45,7 @@ The repository workflow validates three release surfaces:
 | Job | Required checks |
 | --- | --- |
 | Browser edition | Python tests, dependency lock verification, Ruff, Bandit, and `pip-audit` |
-| Native macOS app | Strict Swift formatting, release metadata, 142 strict SwiftPM tests, 142 Xcode scheme tests, and Xcode Release analysis |
+| Native macOS app | Strict Swift formatting, release metadata, 143 strict SwiftPM tests, 143 Xcode scheme tests, and Xcode Release analysis |
 | Support site | Locked install, high-severity npm audit, ESLint, production build, and 5 rendered-page tests |
 
 The new native and support-site commands were reproduced successfully on 2026-08-28. This is local evidence only; GitHub Actions has not executed the new jobs for the unpushed commits.
@@ -105,7 +105,7 @@ The new native and support-site commands were reproduced successfully on 2026-08
 - Cancelled processing tasks remain tracked until their background work exits. Deleting a cancelled task cancels and waits for that processor before removing the task directory, so a late processor write cannot recreate deleted local data.
 - PDF preview cache inspection and rendering run outside the main actor with cancellation propagation. Preview failures show the exact error and keep a retry action available; a real-window test verified recovery after replacing a damaged PDF with a valid result.
 - Unselected route-state text meets WCAG AA contrast at 4.95:1, and new preview failures request an immediate VoiceOver announcement without moving keyboard focus.
-- Keychain reload, save, deletion, and failure messages request VoiceOver announcements without moving keyboard focus; failures use high priority.
+- Keychain reload, save, deletion, and failure messages request VoiceOver announcements without moving keyboard focus; consecutive actions with the same result are announced separately, and failures use high priority.
 - Task completion and cancellation request medium-priority VoiceOver announcements; failure uses high priority and includes bounded error and recovery context. Queued and running updates remain silent.
 - Single-document PDF editing works on the processor-owned in-memory document instead of copying every source page before editing. Merge still copies each page into an independent result, and regression coverage verifies that editing never modifies the source PDF on disk.
 - Delete, rotate, reorder, crop, and watermark loops check cancellation between pages. Rotation and cropping now fail with a page-specific error if PDFKit cannot retrieve a requested page instead of silently skipping it.

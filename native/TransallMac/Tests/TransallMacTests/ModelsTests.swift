@@ -92,6 +92,33 @@ struct ModelsTests {
     #expect(model.diagnostics["openai"]?.available == false)
   }
 
+  @Test @MainActor
+  func appStartInitializesSharedStateOnlyOnce() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let suiteName = "TransallTests.Start.\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+    let store = TestCredentialStore(
+      values: [.deepseek: "deepseek-key", .openAI: "openai-key"])
+    let model = AppModel(
+      backend: NativeDocumentEngine(
+        dataDirectoryOverride: temporary, credentialStore: store),
+      preferences: preferences)
+    defer { model.prepareForTermination() }
+
+    async let firstStart: Void = model.start()
+    async let overlappingStart: Void = model.start()
+    _ = await (firstStart, overlappingStart)
+    await model.start()
+
+    #expect(store.reads == ProviderCredential.allCases)
+    #expect(model.providers.allSatisfy { $0.configured })
+    #expect(model.backend.serviceLog.count { $0.contains("已就绪") } == 1)
+  }
+
   @Test
   func pageSelectionParsesRangesAndRejectsOutOfBounds() throws {
     #expect(try PageSelectionParser.indexes("1, 3-5", pageCount: 5) == [0, 2, 3, 4])

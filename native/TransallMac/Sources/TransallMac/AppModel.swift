@@ -49,6 +49,8 @@ final class AppModel: ObservableObject {
   private var retentionCleanupTask: Task<Void, Never>?
   private var jobSubmissionTask: Task<Void, Never>?
   private var resultSaveTask: Task<Void, Never>?
+  private var isStarting = false
+  private var hasStarted = false
   private let preferences: UserDefaults
   private let jobCreator: JobCreator
   private let resultDestinationPicker: ResultDestinationPicker
@@ -139,11 +141,17 @@ final class AppModel: ObservableObject {
   }
 
   func start() async {
-    await backend.start()
+    guard !hasStarted, !isStarting else { return }
+    isStarting = true
+    defer { isStarting = false }
+    if backend.state != .running {
+      await backend.start()
+    }
     guard case .running = backend.state else { return }
     await reloadEnvironment()
     await restoreLastJob()
     beginRetentionCleanup()
+    hasStarted = true
   }
 
   func reloadEnvironment() async {

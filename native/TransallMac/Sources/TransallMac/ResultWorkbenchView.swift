@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 private final class ResultViewState: ObservableObject {
-  @Published var showDeleteConfirmation = false
+  @Published var pendingDeletionJobID: String?
 }
 
 enum JobStatusAnnouncementPriority: Equatable {
@@ -87,10 +87,15 @@ struct ResultWorkbenchView: View {
     }
     .confirmationDialog(
       "删除这个任务的本地文件？",
-      isPresented: $viewState.showDeleteConfirmation
+      isPresented: Binding(
+        get: { viewState.pendingDeletionJobID != nil },
+        set: { if !$0 { viewState.pendingDeletionJobID = nil } }
+      )
     ) {
-      Button("删除任务数据", role: .destructive) {
-        Task { await model.deleteCurrentJob() }
+      if let jobID = viewState.pendingDeletionJobID {
+        Button("删除任务数据", role: .destructive) {
+          Task { await model.deleteCurrentJob(id: jobID) }
+        }
       }
       Button("取消", role: .cancel) {}
     } message: {
@@ -116,6 +121,12 @@ struct ResultWorkbenchView: View {
           .announcement: announcement.message,
           .priority: accessibilityPriority(for: announcement.priority).rawValue,
         ])
+    }
+    .onChange(of: model.currentJob?.id) { _, jobID in
+      guard let pendingJobID = viewState.pendingDeletionJobID, pendingJobID != jobID else {
+        return
+      }
+      viewState.pendingDeletionJobID = nil
     }
   }
 
@@ -246,7 +257,7 @@ struct ResultWorkbenchView: View {
 
       if let job = model.currentJob, !job.isRunning {
         Button(model.isDeletingJob ? "正在删除" : "删除任务数据", role: .destructive) {
-          viewState.showDeleteConfirmation = true
+          viewState.pendingDeletionJobID = job.id
         }
         .font(.caption2.weight(.medium))
         .buttonStyle(.plain)

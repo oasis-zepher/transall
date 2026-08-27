@@ -2065,7 +2065,7 @@ struct ModelsTests {
     #expect(!model.canRun)
     model.startSavingResult()
     #expect(destinationPickerCalls == 1)
-    await model.deleteCurrentJob()
+    await model.deleteCurrentJob(id: job.id)
     #expect(model.currentJob == job)
     model.resetRoute(animated: false)
     #expect(model.currentJob == job)
@@ -3991,12 +3991,50 @@ struct ModelsTests {
     model.currentJob = job
     model.previewError = "旧预览错误"
 
-    await model.deleteCurrentJob()
+    await model.deleteCurrentJob(id: job.id)
 
     #expect(model.currentJob == nil)
     #expect(model.previewError == nil)
     #expect(!model.isDeletingJob)
     #expect(!FileManager.default.fileExists(atPath: jobDirectory.path))
+  }
+
+  @Test @MainActor
+  func staleDeletionRequestCannotDeleteReplacementTask() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "transall-delete-identity-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+
+    let oldJob = completedTestJob()
+    let replacementJob = completedTestJob()
+    let dataDirectory = temporary.appendingPathComponent("Data", isDirectory: true)
+    let replacementDirectory = dataDirectory.appendingPathComponent(
+      "Jobs/\(replacementJob.id)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: replacementDirectory, withIntermediateDirectories: true)
+    try persistTestJob(replacementJob, in: replacementDirectory)
+    let marker = replacementDirectory.appendingPathComponent("result.pdf")
+    try Data("replacement result".utf8).write(to: marker, options: .atomic)
+
+    let engine = NativeDocumentEngine(dataDirectoryOverride: dataDirectory)
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let model = AppModel(backend: engine)
+    model.currentJob = oldJob
+    model.isSubmitting = true
+
+    #expect(!model.canDeleteCurrentJob)
+    await model.deleteCurrentJob(id: oldJob.id)
+    #expect(model.currentJob == oldJob)
+
+    model.isSubmitting = false
+    model.currentJob = replacementJob
+    await model.deleteCurrentJob(id: oldJob.id)
+
+    #expect(model.currentJob == replacementJob)
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+    #expect(!model.isDeletingJob)
   }
 
   @Test @MainActor
@@ -4028,7 +4066,7 @@ struct ModelsTests {
       model.currentJob = job
 
       #expect(model.canDeleteCurrentJob)
-      await model.deleteCurrentJob()
+      await model.deleteCurrentJob(id: job.id)
 
       #expect(model.currentJob == nil)
       #expect(!model.isDeletingJob)

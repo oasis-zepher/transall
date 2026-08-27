@@ -186,7 +186,7 @@ final class AppModel: ObservableObject {
 
   var canDeleteCurrentJob: Bool {
     guard let currentJob else { return false }
-    return !currentJob.isRunning && !isSaving && !isDeletingJob
+    return !currentJob.isRunning && !isSubmitting && !isSaving && !isDeletingJob
   }
 
   var canStartSavingResult: Bool {
@@ -578,8 +578,8 @@ final class AppModel: ObservableObject {
     await loadPreview(jobID: job.id)
   }
 
-  func deleteCurrentJob() async {
-    guard canDeleteCurrentJob, let job = currentJob else { return }
+  func deleteCurrentJob(id expectedJobID: String) async {
+    guard canDeleteCurrentJob, let job = currentJob, job.id == expectedJobID else { return }
     let jobID = job.id
     isDeletingJob = true
     defer { isDeletingJob = false }

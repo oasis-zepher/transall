@@ -45,6 +45,8 @@ Every task is also limited to 256 input files. Exact duplicate URLs are removed 
 
 While preflight and input copying run, the workbench shows **取消创建**. `AppModel` owns this submission task, keeps the submitted route, files, and options immutable, and cancels it when requested or when the app terminates. Normal cancellation does not show an error or publish a task. Incomplete task data is removed, including the narrow case where backend creation finishes at the same time as cancellation.
 
+After task creation, queued and running jobs keep the visible task draft locked to the processor's immutable snapshot. File selection, removal, drag-and-drop, menu, keyboard, accessibility, OCR, translation, and PDF-edit controls remain unavailable until the job completes or is cancelled. Direct model imports and removals are rejected in the same state, and the file well reports the lock reason.
+
 Preview and export recheck the completed task's bounded, no-follow receipt before using its result. Preview verifies the name, size, structural validity, and SHA-256 sample fingerprint before and after generation, removing the cache if either check fails. Export uses the same receipt and hashes the bytes read from the opened source while copying, so a replacement or mid-copy change cannot reach the selected destination.
 
 When asynchronous creation replaces the current task, the model clears preview pages, errors, and loading state again at that exact task-identity boundary. An older task's preview therefore cannot remain visible under the new task even if it completed during preflight or input copying.

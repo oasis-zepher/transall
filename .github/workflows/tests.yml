@@ -43,6 +43,10 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Install pinned XcodeGen
+        run: scripts/install_pinned_xcodegen.sh "$RUNNER_TEMP/xcodegen" >> "$GITHUB_PATH"
+      - name: Verify generated Xcode project
+        run: scripts/verify_xcodegen_project.sh
       - name: Lint Swift formatting
         run: xcrun swift-format lint --strict --recursive --parallel Sources Tests
       - name: Validate release metadata

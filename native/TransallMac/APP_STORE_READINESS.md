@@ -65,7 +65,7 @@ The browser, XcodeGen, native, and release-metadata commands were reproduced suc
 - PDF editing produced a two-page result and PDF merge produced the expected three-page result.
 - Vision OCR converted the image-only review sample into a one-page searchable PDF with extractable text.
 - Translation clearly discloses that extracted text is sent to the selected provider while the PDF file remains local.
-- Settings exposes Transall's own privacy-policy link when its public HTTPS destination is configured; development builds display the missing release input, and Release archives refuse to proceed without a valid destination.
+- Settings exposes Transall's own privacy-policy link when its public HTTPS destination is configured; development builds display the missing release input, and Release archives refuse to proceed without a valid destination. A real 540×592 window keeps all three policy links, first-party data details, and the unchanged disabled save action visible without clipping or horizontal overflow, and accessibility identifies the Transall entry as a link.
 - Starting translation without a configured provider key stops with an actionable local error before any request is sent.
 - PDF translation first extracts and checks the entire document locally. A provider request begins only after the document is confirmed to contain no more than 200 pages and 200,000 source characters; exceeding either limit produces a specific split-document recovery instruction without paid network work.
 - The translation processor independently requires exactly one PDF, so non-UI callers cannot silently pass extra files that would otherwise be ignored. The workbench shows the page and character limits beside the provider disclosure.

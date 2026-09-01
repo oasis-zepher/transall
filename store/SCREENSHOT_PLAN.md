@@ -33,7 +33,7 @@ The generator is `scripts/generate_review_samples.py`. The PDFs have been render
 
 ## Current draft set
 
-The files in `screenshots/draft/` were captured from the unsigned Xcode 26.6 Release build for layout and privacy review. They contain only the synthetic files above. They are not submission assets: the main-window drafts are 1162×768 and the Settings draft is 540×592, so every scene must be recaptured from the signed release candidate at an accepted App Store size.
+The files in `screenshots/draft/` were captured from the unsigned Xcode 26.6 Release build for layout and privacy review. They contain only the synthetic files above. They are not submission assets: the main-window drafts are 1162×768 and the Settings draft is 540×592, so every scene must be recaptured from the signed release candidate at an accepted App Store size. The existing Settings image also predates the first-party Transall privacy-policy link and must not be uploaded.
 
 | File | Scene | Draft size |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The files in `screenshots/draft/` were captured from the unsigned Xcode 26.6 Rel
 | `02-pdf-editing.jpg` | Valid single-file PDF edit with advanced fields | 1162×768 |
 | `03-ocr-result.jpg` | Completed local OCR with result preview | 1162×768 |
 | `04-translation-disclosure.jpg` | Translation provider and remote-processing disclosure | 1162×768 |
-| `05-settings-privacy.jpg` | Blank provider fields and local-retention disclosure | 540×592 |
+| `05-settings-privacy.jpg` | Outdated: blank provider fields and local-retention disclosure, before the Transall policy link | 540×592 |
 
 Apple's accepted macOS screenshot dimensions can change. Confirm the current list immediately before upload:
 

@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 import tempfile
@@ -8,6 +9,37 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_third_party_actions_are_pinned_to_full_release_commits(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        action_refs = re.findall(r"^\s*- uses:\s+([^\s#]+)", workflow, re.MULTILINE)
+
+        self.assertEqual(len(action_refs), 5)
+        for action_ref in action_refs:
+            with self.subTest(action_ref=action_ref):
+                self.assertRegex(action_ref, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
+
+        self.assertEqual(
+            action_refs.count(
+                "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            ),
+            3,
+        )
+        self.assertIn(
+            "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+            action_refs,
+        )
+        self.assertIn(
+            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            action_refs,
+        )
+
+    def test_dependabot_tracks_pinned_github_actions(self):
+        config = (ROOT / ".github/dependabot.yml").read_text(encoding="utf-8")
+
+        self.assertIn("package-ecosystem: github-actions", config)
+        self.assertIn("directory: /", config)
+        self.assertIn("interval: weekly", config)
+
     def test_native_job_verifies_xcodegen_project_before_compilation(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
 

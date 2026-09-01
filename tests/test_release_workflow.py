@@ -40,6 +40,18 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("directory: /", config)
         self.assertIn("interval: weekly", config)
 
+    def test_checkout_does_not_persist_the_workflow_token(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        hardened_checkouts = re.findall(
+            r"^\s*- uses: actions/checkout@[0-9a-f]{40}[^\n]*\n"
+            r"\s+with:\n\s+persist-credentials: false$",
+            workflow,
+            re.MULTILINE,
+        )
+
+        self.assertEqual(workflow.count("actions/checkout@"), 3)
+        self.assertEqual(len(hardened_checkouts), 3)
+
     def test_native_job_verifies_xcodegen_project_before_compilation(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
 

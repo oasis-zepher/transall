@@ -1,0 +1,5 @@
+# CI-only tools. Runtime and optional dependencies come from the two source files.
+coverage==7.16.0
+ruff==0.16.5
+bandit==1.9.4
+pip-audit==2.10.1

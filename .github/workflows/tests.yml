@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install dependencies
-        run: python -m pip install -r requirements.lock coverage ruff bandit pip-audit
+        run: python -m pip install --require-hashes -r requirements-ci.lock
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
       - name: Run tests with coverage
@@ -27,7 +27,7 @@ jobs:
         run: |
           ruff check app tests
           bandit -q -r app
-          pip-audit -r requirements.lock
+          pip-audit --disable-pip --vulnerability-service osv --progress-spinner off --timeout 30 -r requirements.lock
 
   native-macos:
     runs-on: macos-26

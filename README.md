@@ -20,10 +20,16 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
-For a pinned, reproducible install use the lock file instead:
+For the reviewed runtime plus optional engines, use the fully transitive, hash-checked lock file:
 
 ```bash
-python -m pip install -r requirements.lock
+python -m pip install --require-hashes -r requirements.lock
+```
+
+`requirements.txt`, `requirements-optional.txt`, and `requirements-ci.txt` contain the exact direct dependencies. `requirements.lock` pins every runtime and optional transitive dependency; `requirements-ci.lock` also pins the CI tools. Regenerate both locks only with `uv 0.10.12`:
+
+```bash
+scripts/compile_python_locks.sh
 ```
 
 Open:

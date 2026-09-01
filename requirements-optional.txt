@@ -1,2 +1,5 @@
-markitdown[all]>=0.1.0
-BabelDOC>=0.6.3
+markitdown[all]==0.1.6
+BabelDOC==0.6.3
+# MarkItDown 0.1.6 requires this pre-release line; pin it explicitly so the
+# resolver does not enable unrelated pre-release dependencies.
+azure-ai-contentunderstanding==1.2.0b3

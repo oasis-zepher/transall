@@ -17,6 +17,8 @@ The installer follow-up found and resolved one new P2 in that gate: its `mktemp`
 
 The in-app privacy follow-up found and resolved one new P1: Settings linked only to the DeepSeek and OpenAI policies, while App Review Guideline 5.1.1(i) also requires an easily accessible link to Transall's own policy. Settings now reads a first-party policy destination from `TransallPrivacyPolicyURL`, accepts only a public HTTPS URL, and shows an explicit unconfigured state during development. The Release archive phase rejects a missing, unexpanded, local, reserved, credential-bearing, or malformed destination, so a submission archive cannot be produced with a fictitious or unusable link.
 
+The support-site publication follow-up found one open P1: its normal build intentionally accepts the pending legal-name and support-email placeholders, while the rendered-page tests require those placeholders to remain visible. That behavior is useful for local drafting, but there is no separate publication command or deployment gate that rejects the same incomplete identity fields. A production bundle can therefore be created and deployed even though its support, privacy, and publisher pages are not valid public release material.
+
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
 External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
@@ -34,12 +36,12 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product quality; no audit finding remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Product-surface quality remains excellent; one release-integrity finding is open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
@@ -48,7 +50,14 @@ External release work remains with the account holder: activate the individual A
 
 ## Open follow-up findings
 
-None.
+### [P1] Support site could be published with identity placeholders
+
+- **Location:** `store/support-site/app/publication-config.ts`, `store/support-site/package.json`, and `store/support-site/tests/rendered-html.test.mjs`.
+- **Category:** App Review compliance / publisher transparency / release automation.
+- **Impact:** The local support site correctly avoids inventing a legal name, mailbox, or domain, but its standard production build accepts those placeholders and the existing tests assert that they render. A maintainer can therefore produce and deploy a support URL and privacy-policy URL that still show unfinished publisher details. App Store Connect may receive unusable contact and privacy material, and users would have no real publisher identity or support address.
+- **Standard:** Public App Store support and privacy pages must identify the actual publisher and provide a working contact address. A release process must reject known placeholders even when local drafting intentionally permits them.
+- **Required resolution:** Keep ordinary development and CI builds usable without invented identity data, add a distinct publication validation command that requires the verified legal name and support email, reject bracketed or otherwise reserved placeholder values, and make every hosting/deployment path invoke that gate before publishing.
+- **Required verification:** Negative cases must reject the committed legal-name and email placeholders plus malformed or documentation-only values. A temporary, uncommitted fixture with a syntactically valid name and public-domain mailbox must pass the gate and still pass lint, production build, and rendered-page tests. No fabricated publisher identity, mailbox, or domain may be committed.
 
 ## Resolved follow-up findings
 

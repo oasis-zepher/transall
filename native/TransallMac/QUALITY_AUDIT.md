@@ -13,7 +13,7 @@ The 2026-08-27 release-automation follow-up added native-app and support-site CI
 
 The release-configuration follow-up found one new P2: `project.yml` was documented as the XcodeGen source of truth, but CI built the committed `Transall.xcodeproj` without regenerating or comparing it. The native job now downloads XcodeGen 2.46.0 from the official release URL, verifies its pinned SHA-256 before execution, generates into an isolated temporary project root, and compares the complete tracked project-file set, every generated file, and `Support/Info.plist` before compilation. Current generation matches, while an intentional temporary version drift from 1.0.0 to 1.0.1 fails with the exact differing build settings.
 
-The installer follow-up found one new P2 in that gate: its `mktemp` archive template appends `.zip` after the six `X` characters. The macOS implementation replaces placeholders only when they end the template, so the script obtains the literal path `transall-xcodegen.XXXXXX.zip` instead of a unique mode-0600 file. Sequential CI currently succeeds because the exit trap removes that path, but concurrent invocations collide and another local process can pre-create the predictable archive path before `curl` writes to it.
+The installer follow-up found and resolved one new P2 in that gate: its `mktemp` archive template appended `.zip` after the six `X` characters, so macOS returned the literal path `transall-xcodegen.XXXXXX.zip` instead of a unique file. The template now ends in `XXXXXX`, preserving atomic mode-0600 creation. Behavioral regressions require the trailing placeholder, reject the former `.XXXXXX.zip` form, verify distinct private files across repeated calls, and prove a pre-created legacy literal path is not reused. Two real XcodeGen 2.46.0 installations also completed concurrently in one temporary directory while leaving a pre-created legacy path untouched.
 
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
@@ -32,31 +32,32 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product quality; one release-installer P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent product quality; no audit finding remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
-- The pinned installer verifies the archive checksum, but its archive path is predictable until the `mktemp` template is corrected.
+- The pinned installer verifies the archive checksum and uses an atomically created, unpredictable mode-0600 archive path.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
+## Open follow-up findings
 
-### [P2] XcodeGen installer creates a predictable temporary archive path
-
-- **Location:** `native/TransallMac/scripts/install_pinned_xcodegen.sh`, archive-path initialization.
-- **Category:** Release automation / local security / concurrent reliability.
-- **Impact:** The fixed `transall-xcodegen.XXXXXX.zip` path makes concurrent installer runs race for one archive. On a shared local Mac, another process can create that predictable file first, causing denial of service or redirecting the download through a pre-created filesystem object before the SHA-256 check runs. The checksum prevents an altered archive from executing, but it does not make the write target private or unique.
-- **Standard:** Downloaded release tools must use atomically created, private, unpredictable temporary files; no WCAG criterion applies.
-- **Evidence:** On the current macOS host, `mktemp /tmp/transall-mktemp-audit.XXXXXX.zip` returns the literal mode-0600 path `/tmp/transall-mktemp-audit.XXXXXX.zip`, while a control template ending in `XXXXXX` returns a randomized path.
-- **Recommendation:** End the `mktemp` template with the placeholder, keep the archive extension out of the filesystem name, retain cleanup and SHA-256 verification, and add behavioral tests proving two invocations receive distinct paths and a pre-created legacy literal path is never used.
-- **Suggested command:** `$harden` for secure temporary-file creation and concurrency regression coverage, followed by `$polish` after the installer gate passes.
+None.
 
 ## Resolved follow-up findings
+
+### [P2] XcodeGen installer created a predictable temporary archive path
+
+- **Location before the fix:** `native/TransallMac/scripts/install_pinned_xcodegen.sh`, archive-path initialization.
+- **Category:** Release automation / local security / concurrent reliability.
+- **Impact before the fix:** The fixed `transall-xcodegen.XXXXXX.zip` path made concurrent installer runs race for one archive. On a shared local Mac, another process could create that predictable file first, causing denial of service or redirecting the download through a pre-created filesystem object before the SHA-256 check ran. The checksum prevented an altered archive from executing, but it did not make the write target private or unique.
+- **Standard:** Downloaded release tools must use atomically created, private, unpredictable temporary files; no WCAG criterion applies.
+- **Resolution:** The archive template now ends in `XXXXXX`; no suffix follows the placeholder. The installer retains its exit-trap cleanup, pinned checksum, and version verification. Source regressions require that safe shape, forbid `.XXXXXX.zip`, and exercise the real macOS `mktemp` behavior twice to verify distinct mode-0600 files while a pre-created legacy literal path remains untouched.
+- **Verification:** Two real XcodeGen 2.46.0 downloads ran concurrently with the same `TMPDIR`, produced matching verified binaries, and did not write to the pre-created legacy path. XcodeGen project reproduction passed afterward. The repository suite passes 111/111, Ruff and shell syntax checks pass, and the workflow YAML parses.
 
 ### [P2] CI did not verify the committed Xcode project against its XcodeGen source
 
@@ -65,7 +66,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** A change to the declared source files, resources, version, bundle settings, entitlements, or generated plist could be committed without regenerating `Transall.xcodeproj`. CI then built and analyzed the stale project rather than the documented source of truth, so local documentation and App Store metadata could disagree with the shipped target even while all jobs passed.
 - **Standard:** A committed generated build artifact must be reproducible from its declared source and verified before App Store release; no WCAG criterion applies.
 - **Resolution:** The workflow installs the official XcodeGen 2.46.0 archive only after matching the pinned SHA-256. `verify_xcodegen_project.sh` requires that exact version, copies only source inputs into a temporary root, regenerates without modifying the checkout, compares the generated and Git-tracked project file sets, diffs every generated project file, and separately diffs `Support/Info.plist`. Three source regressions require the installation and verification steps to precede compilation and retain the version, checksum, isolation, and comparison contract.
-- **Verification:** The real pinned download reports XcodeGen 2.46.0 and the current isolated generation passes. A temporary `MARKETING_VERSION` change to 1.0.1 fails with both differing `MARKETING_VERSION` lines and a file-specific recovery message. The repository suite passes 110/110, strict SwiftPM and Xcode Scheme tests pass 162/162, strict recursive formatting passes, release metadata passes, and Release analysis exits successfully.
+- **Verification:** The real pinned download reports XcodeGen 2.46.0 and the current isolated generation passes. A temporary `MARKETING_VERSION` change to 1.0.1 fails with both differing `MARKETING_VERSION` lines and a file-specific recovery message. The repository suite passes 111/111, strict SwiftPM and Xcode Scheme tests pass 162/162, strict recursive formatting passes, release metadata passes, and Release analysis exits successfully.
 
 ### [P1] Release metadata CI step could not execute its committed validation
 
@@ -74,7 +75,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** `plutil -lint` received no paths and exited with “No files specified.” under the workflow shell's fail-fast behavior. The following plist path lines would also have been interpreted as commands. Every native CI run therefore stopped before SwiftPM, Xcode tests, and Release analysis, while malformed entitlements, privacy metadata, or language metadata remained untested.
 - **Standard:** App Store release gates must be executable exactly as committed and must fail only on invalid release inputs, not on shell syntax.
 - **Resolution:** The workflow invokes executable `scripts/validate_release_metadata.sh`. That fail-fast script passes `Support/Info.plist`, both entitlements files, and `Resources/PrivacyInfo.xcprivacy` to one `plutil -lint` command, then verifies both Simplified Chinese bundle-language fields.
-- **Verification:** Both metadata workflow-source regressions pass, all four metadata files report `OK`, both language assertions pass, the YAML parses, the 110-test repository suite passes, strict SwiftPM and Xcode scheme tests pass 162/162, strict recursive formatting passes, and Release analysis passes.
+- **Verification:** Both metadata workflow-source regressions pass, all four metadata files report `OK`, both language assertions pass, the YAML parses, the 111-test repository suite passes, strict SwiftPM and Xcode scheme tests pass 162/162, strict recursive formatting passes, and Release analysis passes.
 
 ### [P2] Running tasks exposed editable inputs and options from a different snapshot
 
@@ -264,7 +265,7 @@ External release work remains with the account holder: activate the individual A
 
 ## Recommended actions
 
-1. **[P1] `$harden`** — repair the release-metadata shell block and protect its command shape with a regression.
+1. **[P1] Account holder** — complete Apple Developer membership, signing, commercial agreements, published URLs, and the App Store Connect record.
 2. **[P3] `$polish`** — repeat archive, package inspection, and launch checks on the final signed release candidate after signing becomes available.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
@@ -311,6 +312,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 26. **Preview task identity** — a newly created job clears preview pages, preview errors, and loading state again when it replaces the previous task, so an old preview that finishes during asynchronous task creation cannot remain attached to the new task.
 27. **Duplicate preview state** — model-level preview entry points reject a second start while generation is active, so a duplicate request cannot publish a false failure, clear pages, or end the first request's loading state early.
 28. **Running-task draft state** — task creation and queued or running jobs share one model-owned draft lock. File selection, removal, pointer, keyboard, drop, accessibility, menu, and route-option entry points stay disabled until the job completes or is cancelled, while the file well exposes the exact lock reason.
+29. **XcodeGen archive path** — the pinned installer ends its `mktemp` template in `XXXXXX`, yielding an atomically created unpredictable mode-0600 file. Regression coverage rejects the former suffix form, proves repeated paths differ, and verifies a pre-created legacy literal path remains untouched; two concurrent real installations also pass in one temporary directory.
 
 ## Resolved P3 findings
 
@@ -372,8 +374,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 
 | Check | Result |
 | --- | --- |
-| Repository Python tests | 110/110 passed |
-| XcodeGen project reproducibility | Official 2.46.0 archive matches the pinned SHA-256; isolated generation matches all tracked project files and `Support/Info.plist`; an intentional 1.0.1 version drift fails before compilation |
+| Repository Python tests | 111/111 passed |
+| XcodeGen installation and project reproducibility | Official 2.46.0 archive matches the pinned SHA-256; two concurrent installs use distinct private archive files and ignore a pre-created legacy path; isolated generation matches all tracked project files and `Support/Info.plist`; an intentional 1.0.1 version drift fails before compilation |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
 | Swift package tests with Xcode 26.6 | 162/162 passed, including strict concurrency with warnings as errors |
 | Xcode scheme tests with Xcode 26.6 | 162/162 passed |

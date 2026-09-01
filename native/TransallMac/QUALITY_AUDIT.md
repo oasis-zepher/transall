@@ -19,6 +19,8 @@ The in-app privacy follow-up found and resolved one new P1: Settings linked only
 
 The support-site publication follow-up found and resolved one new P1: its normal build intentionally accepted the pending legal-name and support-email placeholders and still emitted the Sites deployment manifest. Draft builds now omit that manifest and cannot pass Sites artifact validation. The dedicated publication build validates the individual legal name, support mailbox, public email domain, year, and policy date before Vite starts; Vite repeats the check before it adds the Sites packaging plugin, and the final step verifies the deployment manifest. Local development and CI remain usable without invented personal data.
 
+The release-metadata semantics follow-up found one open P1: `validate_release_metadata.sh` checks plist syntax and three language/privacy-URL source values, but does not verify the actual sandbox entitlements or privacy-manifest declarations. In temporary copies, removing the Release app-sandbox entitlement still passed the validator, and changing `NSPrivacyTracking` from `false` to `true` also passed. CI can therefore report valid release metadata while the app is no longer eligible for the Mac App Store or the committed privacy behavior has materially changed.
+
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
 External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
@@ -36,22 +38,31 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product and release-process quality; no audit finding remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Product-surface quality remains excellent; one release-integrity finding is open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
 - The pinned installer verifies the archive checksum and uses an atomically created, unpredictable mode-0600 archive path.
 - Draft support-site builds cannot become Sites deployment artifacts; publication builds require verified identity and contact fields and recheck the packaged manifest.
-- No open sandboxing, theme, responsive-layout, or AI-aesthetic issue remains. The support-site dependency audit reports zero known vulnerabilities.
+- The open release-metadata finding must add semantic sandbox, entitlement, and privacy-manifest assertions; visual theming, responsive layout, and AI-aesthetic checks remain clear.
+- The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-None.
+### [P1] Release metadata validation accepted unsafe entitlement and privacy drift
+
+- **Location:** `native/TransallMac/scripts/validate_release_metadata.sh`, `Support/Transall.entitlements`, `Support/Transall.Debug.entitlements`, and `Resources/PrivacyInfo.xcprivacy`.
+- **Category:** Release automation / App Sandbox security / privacy compliance.
+- **Impact:** The validator currently proves only that all four property lists are syntactically valid, that two language fields remain `zh-Hans`, and that the privacy-policy build substitution remains present. It does not prove that either entitlement file enables App Sandbox, that the selected-file and network capabilities remain intentional, or that the privacy manifest still declares no tracking with the required collected-data and accessed-API entries. CI can therefore pass metadata that makes the app ineligible for Mac App Store distribution or contradicts the prepared privacy answers.
+- **Standard:** Mac App Store apps must enable App Sandbox, distribution capabilities must match the app's actual behavior, and the submitted privacy manifest must truthfully preserve the reviewed tracking, collected-data, and Required Reason API declarations.
+- **Evidence:** In an isolated temporary metadata tree, deleting `com.apple.security.app-sandbox` from `Transall.entitlements` left every `plutil -lint` and existing source assertion green, so the validator exited successfully. A separate isolated copy with `NSPrivacyTracking = true` also exited successfully. Both temporary trees were moved to Trash after inspection; the checkout was not modified.
+- **Required resolution:** Add fail-fast semantic validation for the exact 1.0 entitlement keys and boolean values in both Debug and Release files; verify category, encryption, version-source, language, and privacy-policy fields in `Info.plist`; and validate the privacy manifest's tracking flag/domains, Other User Content declaration, App Functionality purpose, linked/tracking booleans, UserDefaults reason `CA92.1`, and File Timestamp reason `C617.1`.
+- **Required verification:** Behavioral regressions must copy the real release metadata, prove the unmodified files pass, then independently mutate or remove every required entitlement, Info.plist value, privacy flag, collected-data field, API category, and reason code and prove each mutation fails. The workflow-source regression must retain the executable validator invocation before native compilation.
 
 ## Resolved follow-up findings
 

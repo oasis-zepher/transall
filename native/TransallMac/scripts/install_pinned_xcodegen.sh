@@ -24,7 +24,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-archive_path=$(mktemp "${TMPDIR:-/tmp}/transall-xcodegen.XXXXXX.zip")
+archive_path=$(mktemp "${TMPDIR:-/tmp}/transall-xcodegen.XXXXXX")
 readonly download_url="https://github.com/yonaskolb/XcodeGen/releases/download/${xcodegen_version}/xcodegen.zip"
 
 curl \

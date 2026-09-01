@@ -1,3 +1,6 @@
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -32,6 +35,36 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("https://github.com/yonaskolb/XcodeGen/releases/download/", installer)
         self.assertIn("shasum -a 256", installer)
         self.assertIn('!= "Version: ${xcodegen_version}"', installer)
+        self.assertIn(
+            'mktemp "${TMPDIR:-/tmp}/transall-xcodegen.XXXXXX"', installer
+        )
+        self.assertNotIn("transall-xcodegen.XXXXXX.zip", installer)
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS mktemp behavior")
+    def test_xcodegen_archive_template_creates_distinct_private_paths_on_macos(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy_literal = root / "transall-xcodegen.XXXXXX.zip"
+            legacy_literal.touch(mode=0o600)
+            template = str(root / "transall-xcodegen.XXXXXX")
+
+            paths = [
+                Path(
+                    subprocess.run(
+                        ["mktemp", template],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    ).stdout.strip()
+                )
+                for _ in range(2)
+            ]
+
+            self.assertNotEqual(paths[0], paths[1])
+            self.assertTrue(all(path.exists() for path in paths))
+            self.assertTrue(all("XXXXXX" not in path.name for path in paths))
+            self.assertTrue(all(path.stat().st_mode & 0o777 == 0o600 for path in paths))
+            self.assertTrue(legacy_literal.exists())
 
     def test_xcodegen_verifier_uses_an_isolated_project_and_checks_every_output(self):
         verifier = (

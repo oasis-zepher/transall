@@ -28,5 +28,7 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>TransallPrivacyPolicyURL</key>
+	<string>$(TRANSALL_PRIVACY_POLICY_URL)</string>
 </dict>
 </plist>

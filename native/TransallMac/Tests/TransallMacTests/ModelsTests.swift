@@ -116,6 +116,39 @@ struct ModelsTests {
   }
 
   @Test
+  func privacyPolicyConfigurationAcceptsPublicHTTPSDestination() throws {
+    let url = try #require(
+      PrivacyPolicyConfiguration.url(from: "https://privacy.example.org/transall"))
+
+    #expect(url.absoluteString == "https://privacy.example.org/transall")
+  }
+
+  @Test
+  func privacyPolicyConfigurationRejectsMissingUnsafeAndNonPublicValues() {
+    let invalidValues: [Any?] = [
+      nil,
+      42,
+      "",
+      " https://privacy.example.org/transall",
+      "$(TRANSALL_PRIVACY_POLICY_URL)",
+      "http://privacy.example.org/transall",
+      "https://user:secret@privacy.example.org/transall",
+      "https://localhost/privacy",
+      "https://transall.local/privacy",
+      "https://transall.example/privacy",
+      "https://privacy.example.org:70000/transall",
+      "https://privacy..example.org/transall",
+      "https://-privacy.example.org/transall",
+      "https://127.0.0.1/privacy",
+      "https://privacy.example.org%2Fevil.invalid/transall",
+    ]
+
+    for value in invalidValues {
+      #expect(PrivacyPolicyConfiguration.url(from: value) == nil)
+    }
+  }
+
+  @Test
   func terminalJobStatusesProduceBoundedAccessibilityAnnouncements() throws {
     #expect(JobStatusAnnouncementPolicy.announcement(for: testJob(status: "queued")) == nil)
     #expect(JobStatusAnnouncementPolicy.announcement(for: testJob(status: "running")) == nil)

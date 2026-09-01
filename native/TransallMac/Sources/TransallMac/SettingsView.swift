@@ -345,13 +345,24 @@ struct SettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 5))
 
         VStack(alignment: .leading, spacing: 8) {
-          Text("本地任务数据")
+          Text("Transall 数据与隐私")
             .font(.callout.weight(.semibold))
           Label("文件副本、结果、预览和日志保存在 Transall 的 App 容器内。", systemImage: "internaldrive")
           Label(
             "任务数据超过 24 小时后，会在启动时及运行期间定期自动清理；也可以在结果区立即删除。",
             systemImage: "clock.arrow.circlepath")
           Label("处理过程不会删除或修改原始文件；保存结果时由你选择目标位置。", systemImage: "checkmark.shield")
+          if let privacyPolicyURL = PrivacyPolicyConfiguration.appURL {
+            Link(destination: privacyPolicyURL) {
+              Label("查看 Transall 隐私政策", systemImage: "hand.raised")
+            }
+            .foregroundStyle(TransallTheme.accent)
+            .accessibilityHint("在浏览器中打开 Transall 的公开隐私政策")
+          } else {
+            Label("发布版隐私政策网址尚未配置", systemImage: "exclamationmark.triangle")
+              .foregroundStyle(TransallTheme.warning)
+              .accessibilityHint("归档发布版前必须配置公开 HTTPS 地址")
+          }
         }
         .font(.caption)
         .foregroundStyle(TransallTheme.inkSoft)

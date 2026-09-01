@@ -118,3 +118,25 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("CFBundleDevelopmentRegion", validator)
         self.assertIn("CFBundleLocalizations.0", validator)
         self.assertEqual(validator.count('= "zh-Hans"'), 2)
+
+    def test_archive_requires_configured_public_transall_privacy_url(self):
+        project = (ROOT / "native/TransallMac/project.yml").read_text(encoding="utf-8")
+        metadata_validator = (
+            ROOT / "native/TransallMac/scripts/validate_release_metadata.sh"
+        ).read_text(encoding="utf-8")
+        archive_validator = (
+            ROOT / "native/TransallMac/scripts/validate_archive_privacy_policy.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "TransallPrivacyPolicyURL: $(TRANSALL_PRIVACY_POLICY_URL)", project
+        )
+        self.assertIn('if [ "${ACTION:-}" = "install" ]', project)
+        self.assertIn("validate_archive_privacy_policy.sh", project)
+        self.assertIn("TransallPrivacyPolicyURL", metadata_validator)
+        self.assertIn("plutil -extract TransallPrivacyPolicyURL raw", archive_validator)
+        self.assertIn('if [[ "$policy_url" != https://* ]]', archive_validator)
+        self.assertIn(
+            "*.example | *.invalid | *.local | *.localhost | *.test",
+            archive_validator,
+        )

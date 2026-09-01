@@ -30,6 +30,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.productivity
+        TransallPrivacyPolicyURL: $(TRANSALL_PRIVACY_POLICY_URL)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.transall.mac
@@ -46,6 +47,14 @@ targets:
         Release:
           CODE_SIGN_ENTITLEMENTS: Support/Transall.entitlements
           ENABLE_APP_SANDBOX: YES
+    postBuildScripts:
+      - name: Validate archive privacy policy URL
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${ACTION:-}" = "install" ]; then
+            "$SRCROOT/scripts/validate_archive_privacy_policy.sh" \
+              "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          fi
   TransallTests:
     type: bundle.unit-test
     platform: macOS

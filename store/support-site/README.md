@@ -10,7 +10,7 @@ Update `app/publication-config.json` with:
 - a monitored public support address (a dedicated custom-domain address is preferred but not required for individual enrollment);
 - the final policy effective date, if it changes.
 
-Ordinary development and CI builds intentionally retain the placeholders so the site can be reviewed without inventing personal information. They are not publishable artifacts. `npm run build:publication` is the only supported publication build: it validates the legal name, support mailbox, and public email domain before building. Direct `npm run build` output must never be deployed.
+Ordinary development and CI builds intentionally retain the placeholders so the site can be reviewed without inventing personal information. They are not publishable artifacts and omit the Sites deployment manifest. `npm run build:publication` is the only supported publication build: it validates the legal name, support mailbox, and public email domain before building, repeats the check inside Vite, and verifies the final deployment manifest. Direct `npm run build` output cannot be deployed through Sites.
 
 ## Commands
 

@@ -9,9 +9,10 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "publication:check": "node scripts/validate-publication-config.mjs",
-    "build:publication": "npm run publication:check && npm run build",
+    "publication:artifact-check": "node scripts/verify-publication-artifact.mjs",
+    "build:publication": "npm run publication:check && TRANSALL_PUBLICATION_BUILD=1 npm run build && npm run publication:artifact-check",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs && node tests/publication-build-smoke.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {

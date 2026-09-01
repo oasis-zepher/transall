@@ -87,10 +87,17 @@ test("routes publication builds through the dedicated validation gate", async ()
 
   assert.equal(
     packageConfig.scripts["build:publication"],
-    "npm run publication:check && npm run build",
+    "npm run publication:check && TRANSALL_PUBLICATION_BUILD=1 npm run build && npm run publication:artifact-check",
   );
   assert.equal(
     packageConfig.scripts["publication:check"],
     "node scripts/validate-publication-config.mjs",
+  );
+});
+
+test("keeps ordinary draft builds outside the Sites deployment format", async () => {
+  await assert.rejects(
+    readFile(new URL("../dist/.openai/hosting.json", import.meta.url), "utf8"),
+    { code: "ENOENT" },
   );
 });

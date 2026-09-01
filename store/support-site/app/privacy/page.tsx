@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { publicationConfig } from "../publication-config";
+import publicationConfig from "../publication-config.json";
 import { mainContentId, SiteFooter, SiteHeader } from "../site-chrome";
 
 export const metadata: Metadata = {

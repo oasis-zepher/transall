@@ -1,4 +1,4 @@
-import { publicationConfig } from "./publication-config";
+import publicationConfig from "./publication-config.json";
 
 type SiteSection = "support" | "privacy" | "about";
 

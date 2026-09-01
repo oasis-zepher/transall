@@ -1,7 +1,7 @@
 # Transall release quality audit
 
 Audit date: 2026-08-15
-Last verified: 2026-08-28
+Last verified: 2026-09-01
 Quality bar: App Store-ready version 1.0
 Surfaces: native SwiftUI app and local support/privacy website
 
@@ -11,7 +11,7 @@ All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2
 
 The 2026-08-27 release-automation follow-up added native-app and support-site CI coverage. A later audit found one new P1 in that workflow: the release-metadata step invoked `plutil -lint` without file arguments, then treated each plist path as a separate shell command. The workflow now calls an executable `scripts/validate_release_metadata.sh` validator that passes all four files to one `plutil` command and retains both `zh-Hans` assertions. Workflow-source regressions protect that command structure, and the validator passes locally. The workflow has not run on GitHub because these commits have not been pushed.
 
-The current release-configuration follow-up found one new P2: `project.yml` is documented as the XcodeGen source of truth, but CI builds the committed `Transall.xcodeproj` without regenerating or comparing it. A clean XcodeGen 2.46.0 generation currently matches all three committed project files and `Support/Info.plist` byte for byte, so no present configuration drift was found. The missing gate can nevertheless allow a later source, resource, version, entitlement, or build-setting change to leave the committed project stale while CI still passes.
+The release-configuration follow-up found one new P2: `project.yml` was documented as the XcodeGen source of truth, but CI built the committed `Transall.xcodeproj` without regenerating or comparing it. The native job now downloads XcodeGen 2.46.0 from the official release URL, verifies its pinned SHA-256 before execution, generates into an isolated temporary project root, and compares the complete tracked project-file set, every generated file, and `Support/Info.plist` before compilation. Current generation matches, while an intentional temporary version drift from 1.0.0 to 1.0.1 fails with the exact differing build settings.
 
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
@@ -30,30 +30,27 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product quality; one release-automation P2 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent product quality; all audit findings are resolved.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 1 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
-- The XcodeGen source and committed project currently match, but CI does not yet verify that invariant.
+- The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
 - No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
-## Open follow-up finding
-
-### [P2] CI does not verify the committed Xcode project against its XcodeGen source
-
-- **Location:** `native/TransallMac/project.yml`, `native/TransallMac/Transall.xcodeproj`, and the `native-macos` job in `.github/workflows/tests.yml`.
-- **Category:** Release automation / configuration integrity / regression protection.
-- **Impact:** A change to the declared source files, resources, version, bundle settings, entitlements, or generated plist can be committed without regenerating `Transall.xcodeproj`. CI then builds and analyzes the stale project rather than the documented source of truth, so local documentation and App Store metadata can disagree with the shipped target even while all current jobs pass.
-- **Standard:** A committed generated build artifact must be reproducible from its declared source and verified before App Store release; no WCAG criterion applies.
-- **Evidence:** Regenerating with local XcodeGen 2.46.0 in an isolated project root produces byte-identical `project.pbxproj`, workspace metadata, shared scheme, and `Support/Info.plist`. The workflow contains no XcodeGen installation, generation, or diff step, so current consistency is manual evidence only.
-- **Recommendation:** Pin the XcodeGen version used by CI, generate into an isolated temporary project root, compare every committed generated project file and plist, and add workflow-source regressions that require this gate before compilation.
-- **Suggested command:** `$harden` for deterministic generated-project verification, followed by `$polish` after the release gate passes.
-
 ## Resolved follow-up findings
+
+### [P2] CI did not verify the committed Xcode project against its XcodeGen source
+
+- **Location before the fix:** `native/TransallMac/project.yml`, `native/TransallMac/Transall.xcodeproj`, and the `native-macos` job in `.github/workflows/tests.yml`.
+- **Category:** Release automation / configuration integrity / regression protection.
+- **Impact before the fix:** A change to the declared source files, resources, version, bundle settings, entitlements, or generated plist could be committed without regenerating `Transall.xcodeproj`. CI then built and analyzed the stale project rather than the documented source of truth, so local documentation and App Store metadata could disagree with the shipped target even while all jobs passed.
+- **Standard:** A committed generated build artifact must be reproducible from its declared source and verified before App Store release; no WCAG criterion applies.
+- **Resolution:** The workflow installs the official XcodeGen 2.46.0 archive only after matching the pinned SHA-256. `verify_xcodegen_project.sh` requires that exact version, copies only source inputs into a temporary root, regenerates without modifying the checkout, compares the generated and Git-tracked project file sets, diffs every generated project file, and separately diffs `Support/Info.plist`. Three source regressions require the installation and verification steps to precede compilation and retain the version, checksum, isolation, and comparison contract.
+- **Verification:** The real pinned download reports XcodeGen 2.46.0 and the current isolated generation passes. A temporary `MARKETING_VERSION` change to 1.0.1 fails with both differing `MARKETING_VERSION` lines and a file-specific recovery message. The repository suite passes 110/110, strict SwiftPM and Xcode Scheme tests pass 162/162, strict recursive formatting passes, release metadata passes, and Release analysis exits successfully.
 
 ### [P1] Release metadata CI step could not execute its committed validation
 
@@ -62,7 +59,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** `plutil -lint` received no paths and exited with “No files specified.” under the workflow shell's fail-fast behavior. The following plist path lines would also have been interpreted as commands. Every native CI run therefore stopped before SwiftPM, Xcode tests, and Release analysis, while malformed entitlements, privacy metadata, or language metadata remained untested.
 - **Standard:** App Store release gates must be executable exactly as committed and must fail only on invalid release inputs, not on shell syntax.
 - **Resolution:** The workflow invokes executable `scripts/validate_release_metadata.sh`. That fail-fast script passes `Support/Info.plist`, both entitlements files, and `Resources/PrivacyInfo.xcprivacy` to one `plutil -lint` command, then verifies both Simplified Chinese bundle-language fields.
-- **Verification:** Both workflow-source regressions pass, all four metadata files report `OK`, both language assertions pass, the YAML parses, the 107-test repository suite passes, strict SwiftPM and Xcode scheme tests pass 162/162, strict recursive formatting passes, and Release analysis passes.
+- **Verification:** Both metadata workflow-source regressions pass, all four metadata files report `OK`, both language assertions pass, the YAML parses, the 110-test repository suite passes, strict SwiftPM and Xcode scheme tests pass 162/162, strict recursive formatting passes, and Release analysis passes.
 
 ### [P2] Running tasks exposed editable inputs and options from a different snapshot
 
@@ -360,7 +357,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 
 | Check | Result |
 | --- | --- |
-| Repository Python tests | 107/107 passed |
+| Repository Python tests | 110/110 passed |
+| XcodeGen project reproducibility | Official 2.46.0 archive matches the pinned SHA-256; isolated generation matches all tracked project files and `Support/Info.plist`; an intentional 1.0.1 version drift fails before compilation |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
 | Swift package tests with Xcode 26.6 | 162/162 passed, including strict concurrency with warnings as errors |
 | Xcode scheme tests with Xcode 26.6 | 162/162 passed |

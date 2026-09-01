@@ -18,6 +18,7 @@ Requirements:
 
 - macOS 14 or newer
 - Xcode 26.6 or a compatible newer release toolchain
+- XcodeGen 2.46.0 when regenerating or verifying the committed Xcode project; CI installs the pinned official archive automatically
 
 Run from this directory:
 
@@ -74,6 +75,8 @@ PDF crop input is validated before task creation and again before processing. It
 ## Tests
 
 ```bash
+scripts/verify_xcodegen_project.sh
+
 scripts/validate_release_metadata.sh
 
 xcrun swift-format lint \
@@ -97,11 +100,11 @@ xcodebuild \
   test
 ```
 
-Last verified on 2026-08-28: the standalone metadata validator passed all four release files and both `zh-Hans` assertions, the repository suite passed 107/107 tests, strict recursive Swift formatting passed with zero findings, 162/162 Swift package tests passed with strict concurrency and warnings as errors, 162/162 Xcode scheme tests passed, Release analysis passed, and the built app reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent. Settings publishes a distinct announcement event for every non-empty result, so repeated actions with the same outcome are announced separately. Format nodes and the header share one model-level route lock, including visible and accessible reasons during import, task creation, result saving, and processing. Malformed or oversized provider keys fail locally before any document request starts. Credential rows keep confirmed storage state separate from unsaved draft text, and the save action remains disabled until a draft changes. Restored results cannot replace existing files, duplicate preview requests cannot change the active request's state, and preview, result-save policy, and confirmed deletion cannot cross from an older task into its replacement.
+Last verified on 2026-09-01: the pinned XcodeGen 2.46.0 installer passed its SHA-256 and version checks, isolated project generation matched every tracked Xcode project file and `Info.plist`, the standalone metadata validator passed all four release files and both `zh-Hans` assertions, the repository suite passed 110/110 tests, strict recursive Swift formatting passed with zero findings, 162/162 Swift package tests passed with strict concurrency and warnings as errors, 162/162 Xcode scheme tests passed, and Release analysis passed. An intentional temporary version drift was rejected before compilation. The latest universal Release build from 2026-08-28 reported `CFBundleDevelopmentRegion = zh-Hans` with `CFBundleLocalizations = ["zh-Hans"]`. Completion, failure, and cancellation request bounded VoiceOver announcements without moving keyboard focus; queued and running updates remain silent. Settings publishes a distinct announcement event for every non-empty result, so repeated actions with the same outcome are announced separately. Format nodes and the header share one model-level route lock, including visible and accessible reasons during import, task creation, result saving, and processing. Malformed or oversized provider keys fail locally before any document request starts. Credential rows keep confirmed storage state separate from unsaved draft text, and the save action remains disabled until a draft changes. Restored results cannot replace existing files, duplicate preview requests cannot change the active request's state, and preview, result-save policy, and confirmed deletion cannot cross from an older task into its replacement.
 
 A real native interaction pass verified route selection, PDF import, a two-page PDF edit result, preview generation, and the updated accessibility tree. Decorative document symbols no longer add generic or incorrect VoiceOver announcements before the task-specific text.
 
-The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) invokes the same executable metadata validator and native formatting command before compilation. It also runs the 107-test repository suite, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. These commands pass locally. Two source regressions require the workflow to call the validator and keep all four metadata files attached to one `plutil -lint` command. The new jobs have not run on GitHub yet because the commits have not been pushed.
+The repository workflow in [`../../.github/workflows/tests.yml`](../../.github/workflows/tests.yml) installs the SHA-256-pinned XcodeGen release, rejects generated-project drift, and invokes the same executable metadata validator and native formatting command before compilation. It also runs the 110-test repository suite, Xcode Release analysis, and the support site's dependency audit, lint, production build, and rendered pages. The current browser and native commands pass locally. Five workflow-source regressions protect the XcodeGen installation, project comparison, and metadata validation contracts. The new jobs have not run on GitHub yet because the commits have not been pushed.
 
 Some Command Line Tools installations do not ship the XCTest module or Swift Testing runtime in the paths expected by SwiftPM. The package itself still builds with `swift build`; a complete Xcode installation provides the normal test and signing runtime.
 

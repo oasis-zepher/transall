@@ -15,6 +15,8 @@ The release-configuration follow-up found one new P2: `project.yml` was document
 
 The installer follow-up found and resolved one new P2 in that gate: its `mktemp` archive template appended `.zip` after the six `X` characters, so macOS returned the literal path `transall-xcodegen.XXXXXX.zip` instead of a unique file. The template now ends in `XXXXXX`, preserving atomic mode-0600 creation. Behavioral regressions require the trailing placeholder, reject the former `.XXXXXX.zip` form, verify distinct private files across repeated calls, and prove a pre-created legacy literal path is not reused. Two real XcodeGen 2.46.0 installations also completed concurrently in one temporary directory while leaving a pre-created legacy path untouched.
 
+The in-app privacy follow-up found one new P1: Settings links to the DeepSeek and OpenAI policies but does not provide an easily accessible link to Transall's own privacy policy. App Review Guideline 5.1.1(i) requires the privacy-policy link in both App Store Connect metadata and the app. The public Transall policy is prepared locally, but its final domain is not yet available and must not be invented in the binary.
+
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
 External release work remains with the account holder: activate the individual Apple Developer membership, choose and register the final bundle identifier, create signing assets, publish the support site, and complete App Store Connect commercial information.
@@ -32,21 +34,28 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product quality; no audit finding remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent product quality; one App Review privacy P1 remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
 - The pinned installer verifies the archive checksum and uses an atomically created, unpredictable mode-0600 archive path.
-- No new privacy, sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
+- No new sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-None.
+### [P1] App does not link to Transall's privacy policy
+
+- **Location:** `native/TransallMac/Sources/TransallMac/SettingsView.swift`, Settings privacy content and provider links.
+- **Category:** App Review compliance / privacy transparency / release configuration.
+- **Impact:** A reviewer or user can open the DeepSeek and OpenAI policies but cannot reach Transall's own privacy policy from the app. Supplying only the App Store Connect metadata URL would still leave the binary outside Guideline 5.1.1(i).
+- **Standard:** [App Review Guideline 5.1.1(i)](https://developer.apple.com/app-store/review/guidelines/#privacy): every app must include a privacy-policy link in its App Store Connect metadata field and within the app in an easily accessible manner.
+- **Evidence:** Settings contains two provider `Link` controls and no Transall policy URL, link, button, or bundled policy view. The prepared website's `/privacy` route cannot be referenced until the account holder supplies and publishes a stable HTTPS domain.
+- **Recommendation:** Add a first-party privacy-policy entry in Settings, read its destination from release metadata, reject missing or non-HTTPS publication values during final-archive validation, and keep an explicit unconfigured state in development builds rather than committing a fictitious URL.
 
 ## Resolved follow-up findings
 
@@ -265,8 +274,9 @@ None.
 
 ## Recommended actions
 
-1. **[P1] Account holder** — complete Apple Developer membership, signing, commercial agreements, published URLs, and the App Store Connect record.
-2. **[P3] `$polish`** — repeat archive, package inspection, and launch checks on the final signed release candidate after signing becomes available.
+1. **[P1] Privacy entry** — add Transall's own Settings link with configurable HTTPS release metadata and a final-archive validation gate.
+2. **[P1] Account holder** — complete Apple Developer membership, signing, commercial agreements, published URLs, and the App Store Connect record.
+3. **[P3] `$polish`** — repeat archive, package inspection, and launch checks on the final signed release candidate after signing becomes available.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 

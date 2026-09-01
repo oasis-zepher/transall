@@ -51,6 +51,8 @@ jobs:
         run: xcrun swift-format lint --strict --recursive --parallel Sources Tests
       - name: Validate release metadata
         run: scripts/validate_release_metadata.sh
+      - name: Test release metadata validator
+        run: scripts/test_release_metadata_validator.sh
       - name: Run strict Swift package tests
         run: >-
           swift test

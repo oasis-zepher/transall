@@ -94,6 +94,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
 
         self.assertIn("run: scripts/validate_release_metadata.sh", workflow)
+        self.assertIn("run: scripts/test_release_metadata_validator.sh", workflow)
 
     def test_release_metadata_validator_lints_every_release_file_in_one_command(self):
         validator = (
@@ -117,7 +118,47 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn("CFBundleDevelopmentRegion", validator)
         self.assertIn("CFBundleLocalizations.0", validator)
-        self.assertEqual(validator.count('= "zh-Hans"'), 2)
+        self.assertIn(
+            "expect_raw_value Support/Info.plist CFBundleDevelopmentRegion zh-Hans",
+            validator,
+        )
+        self.assertIn(
+            "expect_raw_value Support/Info.plist CFBundleLocalizations.0 zh-Hans",
+            validator,
+        )
+
+    def test_release_metadata_validator_checks_reviewed_semantics(self):
+        validator = (
+            ROOT / "native/TransallMac/scripts/validate_release_metadata.sh"
+        ).read_text(encoding="utf-8")
+        regression = (
+            ROOT / "native/TransallMac/scripts/test_release_metadata_validator.sh"
+        ).read_text(encoding="utf-8")
+
+        for expected_value in (
+            "com.apple.security.app-sandbox",
+            "com.apple.security.files.user-selected.read-write",
+            "com.apple.security.network.client",
+            "ITSAppUsesNonExemptEncryption",
+            "public.app-category.productivity",
+            "NSPrivacyTrackingDomains",
+            "NSPrivacyCollectedDataTypeOtherUserContent",
+            "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+            "NSPrivacyAccessedAPICategoryUserDefaults",
+            "CA92.1",
+            "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "C617.1",
+        ):
+            self.assertIn(expected_value, validator)
+
+        self.assertIn("unmodified release metadata", regression)
+        self.assertIn("missing $entitlement_key", regression)
+        self.assertIn("disables $entitlement_key", regression)
+        self.assertIn("enables tracking", regression)
+        self.assertIn("adds a tracking domain", regression)
+        self.assertIn("changes collected-data purpose", regression)
+        self.assertIn("changes UserDefaults reason", regression)
+        self.assertIn("changes file-timestamp reason", regression)
 
     def test_archive_requires_configured_public_transall_privacy_url(self):
         project = (ROOT / "native/TransallMac/project.yml").read_text(encoding="utf-8")

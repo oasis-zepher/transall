@@ -27,7 +27,7 @@ The Apple Account may use a personal email address. A dedicated custom-domain su
 4. Choose and register a stable, unique bundle identifier.
 5. Select the individual's Apple Developer team in Xcode and let Xcode create or manage the required signing assets.
 6. Complete the Paid Apps Agreement, tax questionnaire, and banking details in App Store Connect.
-7. Replace the support-site placeholders and publish the support and privacy pages over HTTPS.
+7. Replace the support-site placeholders, pass `npm run build:publication`, and publish the resulting support and privacy pages over HTTPS.
 8. Create the App Store Connect app record and prepare the signed release candidate.
 
 ## Bundle identifier rule

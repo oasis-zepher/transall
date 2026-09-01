@@ -30,7 +30,8 @@
 ## 3. Privacy and compliance
 
 - [ ] Publish the support site and privacy policy over stable HTTPS.
-- [ ] Replace the legal publisher and email placeholders in `support-site/app/publication-config.ts`.
+- [ ] Replace the legal publisher and email placeholders in `support-site/app/publication-config.json`.
+- [ ] Run `npm run build:publication` in `support-site`; publish only the resulting gated artifact, never ordinary `npm run build` output.
 - [x] Add an easily accessible first-party privacy-policy entry in Settings and block Release archives whose configured destination is missing or unsafe.
 - [ ] Set `TRANSALL_PRIVACY_POLICY_URL` to the exact published `/privacy` URL, archive, and confirm the Settings link opens that same page.
 - [ ] App Privacy: disclose `User Content → Other User Content` for `App Functionality` because translation text is transmitted to DeepSeek or OpenAI and may be retained by those providers.

@@ -17,7 +17,7 @@ The installer follow-up found and resolved one new P2 in that gate: its `mktemp`
 
 The in-app privacy follow-up found and resolved one new P1: Settings linked only to the DeepSeek and OpenAI policies, while App Review Guideline 5.1.1(i) also requires an easily accessible link to Transall's own policy. Settings now reads a first-party policy destination from `TransallPrivacyPolicyURL`, accepts only a public HTTPS URL, and shows an explicit unconfigured state during development. The Release archive phase rejects a missing, unexpanded, local, reserved, credential-bearing, or malformed destination, so a submission archive cannot be produced with a fictitious or unusable link.
 
-The support-site publication follow-up found one open P1: its normal build intentionally accepts the pending legal-name and support-email placeholders, while the rendered-page tests require those placeholders to remain visible. That behavior is useful for local drafting, but there is no separate publication command or deployment gate that rejects the same incomplete identity fields. A production bundle can therefore be created and deployed even though its support, privacy, and publisher pages are not valid public release material.
+The support-site publication follow-up found and resolved one new P1: its normal build intentionally accepted the pending legal-name and support-email placeholders and still emitted the Sites deployment manifest. Draft builds now omit that manifest and cannot pass Sites artifact validation. The dedicated publication build validates the individual legal name, support mailbox, public email domain, year, and policy date before Vite starts; Vite repeats the check before it adds the Sites packaging plugin, and the final step verifies the deployment manifest. Local development and CI remain usable without invented personal data.
 
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
@@ -36,30 +36,33 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Product-surface quality remains excellent; one release-integrity finding is open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent product and release-process quality; no audit finding remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
 - The pinned installer verifies the archive checksum and uses an atomically created, unpredictable mode-0600 archive path.
-- No new sandboxing, theme, responsive-layout, or AI-aesthetic issue was found. The support-site dependency audit reports zero known vulnerabilities.
+- Draft support-site builds cannot become Sites deployment artifacts; publication builds require verified identity and contact fields and recheck the packaged manifest.
+- No open sandboxing, theme, responsive-layout, or AI-aesthetic issue remains. The support-site dependency audit reports zero known vulnerabilities.
 
 ## Open follow-up findings
 
-### [P1] Support site could be published with identity placeholders
-
-- **Location:** `store/support-site/app/publication-config.ts`, `store/support-site/package.json`, and `store/support-site/tests/rendered-html.test.mjs`.
-- **Category:** App Review compliance / publisher transparency / release automation.
-- **Impact:** The local support site correctly avoids inventing a legal name, mailbox, or domain, but its standard production build accepts those placeholders and the existing tests assert that they render. A maintainer can therefore produce and deploy a support URL and privacy-policy URL that still show unfinished publisher details. App Store Connect may receive unusable contact and privacy material, and users would have no real publisher identity or support address.
-- **Standard:** Public App Store support and privacy pages must identify the actual publisher and provide a working contact address. A release process must reject known placeholders even when local drafting intentionally permits them.
-- **Required resolution:** Keep ordinary development and CI builds usable without invented identity data, add a distinct publication validation command that requires the verified legal name and support email, reject bracketed or otherwise reserved placeholder values, and make every hosting/deployment path invoke that gate before publishing.
-- **Required verification:** Negative cases must reject the committed legal-name and email placeholders plus malformed or documentation-only values. A temporary, uncommitted fixture with a syntactically valid name and public-domain mailbox must pass the gate and still pass lint, production build, and rendered-page tests. No fabricated publisher identity, mailbox, or domain may be committed.
+None.
 
 ## Resolved follow-up findings
+
+### [P1] Support site could be published with identity placeholders
+
+- **Location before the fix:** `store/support-site/app/publication-config.ts`, `store/support-site/package.json`, `store/support-site/vite.config.ts`, and `store/support-site/tests/rendered-html.test.mjs`.
+- **Category:** App Review compliance / publisher transparency / release automation.
+- **Impact before the fix:** The local support site correctly avoided inventing a legal name, mailbox, or domain, but its standard production build accepted those placeholders and the existing tests asserted that they rendered. The same build included the Sites deployment manifest, so a maintainer could package support and privacy pages with no real publisher identity or working support address.
+- **Standard:** Public App Store support and privacy pages must identify the actual publisher and provide a working contact address. A release process must reject known placeholders even when local drafting intentionally permits them.
+- **Resolution:** Publisher data now lives in JSON so the app and release validator read the same values. `publication:check` rejects blank, bracketed, placeholder, control-character, overlong, brand-only, malformed-email, local, numeric, reserved, documentation-only, and invalid-domain inputs. Ordinary development and CI builds deliberately omit the Sites plugin and deployment manifest. `build:publication` runs the source check, enables publication mode, triggers the same check inside Vite before Sites packaging, builds the site, and verifies the resulting deployment manifest. Directly enabling publication mode cannot bypass the Vite check.
+- **Verification:** The committed placeholders fail both `publication:check` and `build:publication`; directly setting publication mode also fails before Vite builds. Six release-validation regressions cover the committed placeholders, brand-only name, malformed/local/numeric/reserved domains, command wiring, and absence of a deployment manifest from the ordinary build. A smoke test copies the site into a private temporary directory, generates unique runtime-only valid identity and domain values, completes `build:publication`, verifies `dist/.openai/hosting.json`, and deletes the temporary checkout. ESLint, the ordinary production build, 11 Node tests, and the temporary publication build pass without committing fabricated publisher data.
 
 ### [P1] App did not link to Transall's privacy policy
 
@@ -408,7 +411,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Real native UI smoke test | PDF editing, two-file merge, local Vision OCR, translation disclosure, missing-key error, Keychain settings, visible preview failure/retry, the visible 256-file limit, and the unchanged base workbench after the import-lifecycle change verified |
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
-| Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. `npm audit --audit-level=high` reports 0 vulnerabilities after the build-dependency update. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
+| Support website | Current ESLint, ordinary production build, 11/11 Node tests, and a temporary full publication build passed. The draft artifact omits the Sites manifest, while the temporary valid publication artifact contains it. `npm audit --audit-level=high` reports 0 vulnerabilities after the build-dependency update. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
 | Release metadata validator | Executable script passes all four files to one `plutil -lint` command; all report `OK`, both `zh-Hans` assertions pass, and the source plist retains the privacy-URL substitution |
 | Archive privacy-policy gate | Missing and unsafe destinations fail; a public HTTPS test fixture archives successfully and appears in the built `Info.plist`; the final real URL remains an account-holder input |
 | Release workflow | YAML parses locally, the `macos-26` runner documents Xcode 26.6 at the configured path, and seven source regressions protect XcodeGen, metadata, and archive privacy configuration. |

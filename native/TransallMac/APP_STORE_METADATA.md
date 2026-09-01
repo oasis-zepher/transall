@@ -15,7 +15,7 @@
 | Seller | Individual developer's verified legal name; `Zephyr` remains the brand |
 | Copyright | Replace with the verified individual rights-holder name before submission |
 | Support URL | Publish `store/support-site/` and use its root HTTPS URL |
-| Privacy policy URL | Use the published `/privacy` URL |
+| Privacy policy URL | Use the published `/privacy` URL in App Store Connect and as the Release archive's `TRANSALL_PRIVACY_POLICY_URL` |
 
 ## Promotional text
 
@@ -64,7 +64,7 @@ This draft deliberately does not claim “Data Not Collected”: Apple requires 
 2. PDF editing options with selected files.
 3. OCR result with page previews and logs.
 4. Translation disclosure and provider selector.
-5. Keychain-backed provider settings.
+5. Keychain-backed provider settings and the configured Transall privacy-policy link.
 
 Use the synthetic files in `output/pdf/review-samples/` and a currently accepted 16:10 macOS screenshot size. Do not show API keys, personal filenames, or third-party document content. Follow `store/SCREENSHOT_PLAN.md`.
 

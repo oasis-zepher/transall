@@ -15,7 +15,7 @@ The release-configuration follow-up found one new P2: `project.yml` was document
 
 The installer follow-up found and resolved one new P2 in that gate: its `mktemp` archive template appended `.zip` after the six `X` characters, so macOS returned the literal path `transall-xcodegen.XXXXXX.zip` instead of a unique file. The template now ends in `XXXXXX`, preserving atomic mode-0600 creation. Behavioral regressions require the trailing placeholder, reject the former `.XXXXXX.zip` form, verify distinct private files across repeated calls, and prove a pre-created legacy literal path is not reused. Two real XcodeGen 2.46.0 installations also completed concurrently in one temporary directory while leaving a pre-created legacy path untouched.
 
-The in-app privacy follow-up found one new P1: Settings links to the DeepSeek and OpenAI policies but does not provide an easily accessible link to Transall's own privacy policy. App Review Guideline 5.1.1(i) requires the privacy-policy link in both App Store Connect metadata and the app. The public Transall policy is prepared locally, but its final domain is not yet available and must not be invented in the binary.
+The in-app privacy follow-up found and resolved one new P1: Settings linked only to the DeepSeek and OpenAI policies, while App Review Guideline 5.1.1(i) also requires an easily accessible link to Transall's own policy. Settings now reads a first-party policy destination from `TransallPrivacyPolicyURL`, accepts only a public HTTPS URL, and shows an explicit unconfigured state during development. The Release archive phase rejects a missing, unexpanded, local, reserved, credential-bearing, or malformed destination, so a submission archive cannot be produced with a fictitious or unusable link.
 
 Translation requests reject every HTTP redirect before URLSession follows it, and whitespace-only provider content fails before page accumulation or PDF generation. Crop boxes must contain exactly four numeric fields, have finite derived dimensions, fit every selected page, and match the bounds PDFKit applies before a result can succeed. Settings publishes a distinct VoiceOver event for every completed user action, including consecutive actions with identical visible results. Format nodes and the header share the model's exact route-change lock and expose the current reason while a route cannot change. Provider API keys must be bounded, non-empty single-line values without control characters before they can reach Keychain or a provider request. Each provider row derives its confirmed status and deletion availability from the last reconciled Keychain snapshot, while unsaved and invalid drafts are reported separately. Settings enables its primary save action only when a credential draft differs from that confirmed snapshot. Restored results require a new destination because their original-file identities are intentionally not persisted; the exporter enforces this with an atomic exclusive rename, including when another process creates the destination during copying. When a new task becomes current, the model clears any preview state that an older task published during asynchronous task creation. Duplicate preview starts are rejected before the engine, so only the active request can publish loading, error, and page state. Result saving is disabled and rejected while a replacement task is being created, and an accepted save captures the displayed task's immutable original-document snapshot and replacement policy before asynchronous work begins. Task deletion is unavailable during replacement creation; its confirmation retains the displayed task identifier, closes if that identity changes, and the model rejects mismatched requests. Queued and running tasks lock the visible file list and route parameters until completion or cancellation, keeping the workbench aligned with the processor's immutable snapshot.
 
@@ -34,12 +34,12 @@ External release work remains with the account holder: activate the individual A
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product quality; one App Review privacy P1 remains open.** |
+| **Total** |  | **16/20** | **20/20** | **Excellent product quality; no audit finding remains open.** |
 
 ## Executive summary
 
 - Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 1 P1, 0 P2, 0 P3**.
+- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
 - Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
@@ -48,16 +48,18 @@ External release work remains with the account holder: activate the individual A
 
 ## Open follow-up findings
 
-### [P1] App does not link to Transall's privacy policy
-
-- **Location:** `native/TransallMac/Sources/TransallMac/SettingsView.swift`, Settings privacy content and provider links.
-- **Category:** App Review compliance / privacy transparency / release configuration.
-- **Impact:** A reviewer or user can open the DeepSeek and OpenAI policies but cannot reach Transall's own privacy policy from the app. Supplying only the App Store Connect metadata URL would still leave the binary outside Guideline 5.1.1(i).
-- **Standard:** [App Review Guideline 5.1.1(i)](https://developer.apple.com/app-store/review/guidelines/#privacy): every app must include a privacy-policy link in its App Store Connect metadata field and within the app in an easily accessible manner.
-- **Evidence:** Settings contains two provider `Link` controls and no Transall policy URL, link, button, or bundled policy view. The prepared website's `/privacy` route cannot be referenced until the account holder supplies and publishes a stable HTTPS domain.
-- **Recommendation:** Add a first-party privacy-policy entry in Settings, read its destination from release metadata, reject missing or non-HTTPS publication values during final-archive validation, and keep an explicit unconfigured state in development builds rather than committing a fictitious URL.
+None.
 
 ## Resolved follow-up findings
+
+### [P1] App did not link to Transall's privacy policy
+
+- **Location before the fix:** `native/TransallMac/Sources/TransallMac/SettingsView.swift`, Settings privacy content and provider links.
+- **Category:** App Review compliance / privacy transparency / release configuration.
+- **Impact before the fix:** A reviewer or user could open the DeepSeek and OpenAI policies but could not reach Transall's own privacy policy from the app. Supplying only the App Store Connect metadata URL would still have left the binary outside Guideline 5.1.1(i).
+- **Standard:** [App Review Guideline 5.1.1(i)](https://developer.apple.com/app-store/review/guidelines/#privacy): every app must include a privacy-policy link in its App Store Connect metadata field and within the app in an easily accessible manner.
+- **Resolution:** Settings now exposes “查看 Transall 隐私政策” under its first-party data description whenever `TransallPrivacyPolicyURL` resolves to a public HTTPS destination. The shared parser rejects blank, unexpanded, non-HTTPS, credential-bearing, local, reserved, numeric, malformed-host, and invalid-port values. Development builds show a truthful unconfigured label instead of a dead link. `project.yml` and `Support/Info.plist` carry the release substitution, while a generated Xcode archive phase calls `validate_archive_privacy_policy.sh` and blocks the archive unless the expanded URL passes the same publication constraints.
+- **Verification:** Swift regressions cover a valid HTTPS destination and the unsafe or non-public classes above. A workflow-source regression protects the Info.plist substitution, metadata assertion, archive build phase, and validator contract. Synthetic plist tests reject missing, HTTP, local, malformed-host, encoded-host, and invalid-port destinations. A real unsigned archive without the setting fails in the validator; the same archive command with a public HTTPS test fixture succeeds and contains the expanded URL. The repository suite passes 112/112, strict SwiftPM and Xcode Scheme tests pass 164/164, strict recursive formatting passes, release metadata and XcodeGen reproduction pass, and Release analysis succeeds.
 
 ### [P2] XcodeGen installer created a predictable temporary archive path
 
@@ -66,7 +68,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** The fixed `transall-xcodegen.XXXXXX.zip` path made concurrent installer runs race for one archive. On a shared local Mac, another process could create that predictable file first, causing denial of service or redirecting the download through a pre-created filesystem object before the SHA-256 check ran. The checksum prevented an altered archive from executing, but it did not make the write target private or unique.
 - **Standard:** Downloaded release tools must use atomically created, private, unpredictable temporary files; no WCAG criterion applies.
 - **Resolution:** The archive template now ends in `XXXXXX`; no suffix follows the placeholder. The installer retains its exit-trap cleanup, pinned checksum, and version verification. Source regressions require that safe shape, forbid `.XXXXXX.zip`, and exercise the real macOS `mktemp` behavior twice to verify distinct mode-0600 files while a pre-created legacy literal path remains untouched.
-- **Verification:** Two real XcodeGen 2.46.0 downloads ran concurrently with the same `TMPDIR`, produced matching verified binaries, and did not write to the pre-created legacy path. XcodeGen project reproduction passed afterward. The repository suite passes 111/111, Ruff and shell syntax checks pass, and the workflow YAML parses.
+- **Verification:** Two real XcodeGen 2.46.0 downloads ran concurrently with the same `TMPDIR`, produced matching verified binaries, and did not write to the pre-created legacy path. XcodeGen project reproduction passed afterward. The repository suite passes 112/112, Ruff and shell syntax checks pass, and the workflow YAML parses.
 
 ### [P2] CI did not verify the committed Xcode project against its XcodeGen source
 
@@ -75,7 +77,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** A change to the declared source files, resources, version, bundle settings, entitlements, or generated plist could be committed without regenerating `Transall.xcodeproj`. CI then built and analyzed the stale project rather than the documented source of truth, so local documentation and App Store metadata could disagree with the shipped target even while all jobs passed.
 - **Standard:** A committed generated build artifact must be reproducible from its declared source and verified before App Store release; no WCAG criterion applies.
 - **Resolution:** The workflow installs the official XcodeGen 2.46.0 archive only after matching the pinned SHA-256. `verify_xcodegen_project.sh` requires that exact version, copies only source inputs into a temporary root, regenerates without modifying the checkout, compares the generated and Git-tracked project file sets, diffs every generated project file, and separately diffs `Support/Info.plist`. Three source regressions require the installation and verification steps to precede compilation and retain the version, checksum, isolation, and comparison contract.
-- **Verification:** The real pinned download reports XcodeGen 2.46.0 and the current isolated generation passes. A temporary `MARKETING_VERSION` change to 1.0.1 fails with both differing `MARKETING_VERSION` lines and a file-specific recovery message. The repository suite passes 111/111, strict SwiftPM and Xcode Scheme tests pass 162/162, strict recursive formatting passes, release metadata passes, and Release analysis exits successfully.
+- **Verification:** The real pinned download reports XcodeGen 2.46.0 and the current isolated generation passes. A temporary `MARKETING_VERSION` change to 1.0.1 fails with both differing `MARKETING_VERSION` lines and a file-specific recovery message. The repository suite passes 112/112, strict SwiftPM and Xcode Scheme tests pass 164/164, strict recursive formatting passes, release metadata passes, and Release analysis exits successfully.
 
 ### [P1] Release metadata CI step could not execute its committed validation
 
@@ -84,7 +86,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** `plutil -lint` received no paths and exited with “No files specified.” under the workflow shell's fail-fast behavior. The following plist path lines would also have been interpreted as commands. Every native CI run therefore stopped before SwiftPM, Xcode tests, and Release analysis, while malformed entitlements, privacy metadata, or language metadata remained untested.
 - **Standard:** App Store release gates must be executable exactly as committed and must fail only on invalid release inputs, not on shell syntax.
 - **Resolution:** The workflow invokes executable `scripts/validate_release_metadata.sh`. That fail-fast script passes `Support/Info.plist`, both entitlements files, and `Resources/PrivacyInfo.xcprivacy` to one `plutil -lint` command, then verifies both Simplified Chinese bundle-language fields.
-- **Verification:** Both metadata workflow-source regressions pass, all four metadata files report `OK`, both language assertions pass, the YAML parses, the 111-test repository suite passes, strict SwiftPM and Xcode scheme tests pass 162/162, strict recursive formatting passes, and Release analysis passes.
+- **Verification:** Both metadata workflow-source regressions pass, all four metadata files report `OK`, both language assertions pass, the YAML parses, the 112-test repository suite passes, strict SwiftPM and Xcode scheme tests pass 164/164, strict recursive formatting passes, and Release analysis passes.
 
 ### [P2] Running tasks exposed editable inputs and options from a different snapshot
 
@@ -93,7 +95,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** `startJob()` correctly captured immutable files and options before task creation, but once submission completed and the task was queued or running, the workbench re-enabled file addition, file removal, and route parameters. These edits could not affect the active processor, so the input and output panels could describe different task snapshots.
 - **Standard:** Controls and task status must describe the same active object; WCAG 2.2 Success Criterion 4.1.2 (Name, Role, Value) and App Store release interaction-state accuracy.
 - **Resolution:** `AppModel.canEditTaskDraft` derives one lock for task creation and queued or running jobs. The menu command, file well, drop target, keyboard and accessibility actions, row removal, and route options share it. Direct model imports and removals are rejected while locked, and the file well exposes the exact reason. Completion or cancellation restores editing.
-- **Verification:** Regressions install submitting and running jobs with existing inputs, reject replacement imports and removals, verify the lock reason, and confirm editing resumes after completion. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Regressions install submitting and running jobs with existing inputs, reject replacement imports and removals, verify the lock reason, and confirm editing resumes after completion. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P3] Settings save action was enabled when no credential change existed
 
@@ -102,7 +104,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** Opening Settings presented the rust primary action as immediately available even though clicking it could not change state and only published “没有需要保存的更改。” This made the strongest action in the window misleading and added a no-op keyboard stop.
 - **Standard:** Controls should expose their actual availability and match macOS Settings conventions; WCAG 2.2 Success Criterion 4.1.2 (Name, Role, Value).
 - **Resolution:** `ProviderSettingsModel.hasUnsavedChanges` compares both editable drafts with the last confirmed Keychain snapshot. Settings now disables its primary save action while no draft differs, while loading, and during a mutation. The existing no-op guard remains available to non-UI callers and normalizes equivalent whitespace edits back to confirmed state.
-- **Verification:** A regression covers pre-load, unchanged, edited, reverted, and successfully saved states. A rebuilt app exposed “保存并应用” as disabled with unchanged credentials and enabled it immediately after a draft edit. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A regression covers pre-load, unchanged, edited, reverted, and successfully saved states. A rebuilt app exposed “保存并应用” as disabled with unchanged credentials and enabled it immediately after a draft edit. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Overlapping preview refreshes could publish a false failure
 
@@ -111,7 +113,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** Two rapid refresh actions or overlapping automatic and manual requests could start two model calls for the same result. The duplicate cleared existing pages, announced “无法生成 PDF 预览”, and set `isLoadingPreview` to false even though the first generation was still running. When the first call later succeeded, it restored the pages but did not clear the duplicate call's error, leaving valid thumbnails beside a false failure and an inaccurate loading state.
 - **Standard:** One user action must have one model-owned asynchronous operation and truthful loading/error state; WCAG 2.2 Success Criterion 4.1.3 (Status Messages).
 - **Resolution:** Both `refreshPreview()` and `loadPreview(jobID:)` now reject a start while `isLoadingPreview` is true. Duplicate user, automatic, or non-UI calls return before reaching the engine and cannot clear pages, publish an error, or change the active request's loading state. Existing task-identity and deletion cancellation checks remain unchanged.
-- **Verification:** A regression holds an injected preview generator after the first refresh starts, requests another refresh, and verifies loading remains true with no pages or error until release. The first request then publishes one page and clears loading without an error. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A regression holds an injected preview generator after the first refresh starts, requests another refresh, and verifies loading remains true with no pages or error until release. The first request then publishes one page and clears loading without an error. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P1] A stale deletion confirmation could delete a replacement task
 
@@ -120,7 +122,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** A user could open deletion confirmation for an old completed task during replacement-task creation. If the replacement became current and finished before the user confirmed, the action deleted the replacement task's local inputs, result, preview, and logs instead of the task named by the original interaction. Original external files remained unchanged, but newly generated output could be lost without a second identity-specific confirmation.
 - **Standard:** A destructive confirmation must remain bound to the object that was presented for confirmation; task-scoped asynchronous operations must not cross identity boundaries; App Store release reliability and data-loss prevention.
 - **Resolution:** `canDeleteCurrentJob` now rejects task submission. The result view captures the displayed task identifier when opening its confirmation and dismisses the dialog if `currentJob` changes. `AppModel.deleteCurrentJob(id:)` requires that captured identifier to still match before it invokes the backend, and no identity-free deletion entry point remains.
-- **Verification:** A regression verifies that deletion is unavailable while `isSubmitting` is true, then replaces `currentJob` and submits the old identifier. The replacement job, result marker, and model state remain intact. Existing completed, failed, cancelled, save-conflict, preview-cancellation, and processor-cancellation deletion regressions continue to pass. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A regression verifies that deletion is unavailable while `isSubmitting` is true, then replaces `currentJob` and submits the old identifier. The replacement job, result marker, and model state remain intact. Existing completed, failed, cancelled, save-conflict, preview-cancellation, and processor-cancellation deletion regressions continue to pass. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P1] Result saving could cross a task-replacement boundary
 
@@ -129,7 +131,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** The result panel could begin saving the old task while a new task became current, then finish and open Finder while the interface showed the replacement task. For a restored old task, validation initially required a new destination because `resultOriginalDocuments` was unavailable. If the replacement task installed its non-empty original-document snapshot before the save task derived the exporter flag, the old restored result could be exported with replacement enabled. A file created at the selected destination during copying could then be replaced instead of preserved.
 - **Standard:** Destructive-operation policy must be immutable for the lifetime of an export; task-scoped asynchronous work must not cross identity boundaries; App Store release reliability and data-loss prevention.
 - **Resolution:** The result panel disables saving while task submission is active, and `AppModel.startSavingResult()` independently rejects the same state. An accepted save synchronously captures the displayed task's original-document snapshot and derived replacement flag, then uses only those immutable values through destination validation and export.
-- **Verification:** A regression holds an injected `jobCreator` after `isSubmitting` becomes true and verifies that attempting to save the previous completed task invokes neither the destination picker nor the downloader. Existing save cancellation, restored-task no-replacement, current-session replacement, and Finder-reveal regressions continue to pass. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A regression holds an injected `jobCreator` after `isSubmitting` becomes true and verifies that attempting to save the previous completed task invokes neither the destination picker nor the downloader. Existing save cancellation, restored-task no-replacement, current-session replacement, and Finder-reveal regressions continue to pass. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] An old PDF preview could remain attached to a newly created task
 
@@ -138,7 +140,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** With a slow new-task import and a preview finishing at the same time, thumbnails from the previous PDF could appear under the queued or running replacement task. Preview and export APIs still used the new task identifier, so the wrong pages were not saved, but the interface could misrepresent which document the user was processing and make a correct new task look corrupted.
 - **Standard:** Task-scoped asynchronous results must not cross identity boundaries; consistent visible and accessible state; no specific WCAG criterion applies.
 - **Resolution:** `submitJob(route:documents:options:)` clears preview pages, preview errors, and preview loading state again immediately before a newly created job replaces `currentJob`. The eager clear at submission start remains, and the existing post-await job-ID guard still prevents an older preview from publishing after replacement.
-- **Verification:** A regression injects task creation, lets the old task publish preview pages, an error, and loading state after the eager clear, then returns a new job. The new job becomes current with all preview state empty. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A regression injects task creation, lets the old task publish preview pages, an error, and loading state after the eager clear, then returns a new job. The new job becomes current with all preview state empty. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P1] A restored task could overwrite its original input file
 
@@ -147,7 +149,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** After a completed task was restored on the next launch, selecting one of that task's original files in the save panel passed Transall's validation. The atomic exporter could then replace the original with the generated result. macOS still presented its generic replacement confirmation, but the app's explicit promise that the current task could not overwrite its source file was no longer enforced. A user following the same save flow before and after relaunch therefore received different protection, with possible permanent loss of the source document.
 - **Standard:** Consistent destructive-action safeguards, truthful product claims, and App Store release reliability; no WCAG criterion applies.
 - **Resolution:** `resultOriginalDocuments` is now optional, distinguishing a current-session snapshot from unavailable restored identities. Current-session tasks retain exact path, symbolic-link, and hard-link protection. Restored tasks show a visible restriction and reject every existing destination before download. The no-replacement flag also reaches the exporter, which installs the completed temporary copy with `renamex_np(..., RENAME_EXCL)` so a destination created during the transfer cannot be overwritten. No security-scoped bookmark or external file access is persisted.
-- **Verification:** A real text-to-PDF task is completed, the engine and model are reopened from persisted state, and an attempted save to the original source is rejected before the downloader runs while the source content remains unchanged. Policy tests allow a new restored-task destination and reject an existing one. Export tests verify exclusive creation succeeds and a destination created after copying starts remains untouched, with the temporary copy removed. Strict SwiftPM and Xcode scheme tests passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** A real text-to-PDF task is completed, the engine and model are reopened from persisted state, and an attempted save to the original source is rejected before the downloader runs while the source content remains unchanged. Policy tests allow a new restored-task destination and reject an existing one. Export tests verify exclusive creation succeeds and a destination created after copying starts remains untouched, with the temporary copy removed. Strict SwiftPM and Xcode scheme tests passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Settings reported stored credential state from unsaved draft text
 
@@ -156,7 +158,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** Editing a field changed the visible stored-state claim before any Keychain transaction occurred. Clearing a valid key immediately showed “未配置” and disabled direct deletion even though the key remained stored and usable until “保存并应用” succeeded. Conversely, an old malformed but non-empty Keychain value that preflight rejected still appeared “已配置”. Users therefore could not reliably tell what was stored, what was only a draft, or whether the delete action applied to an existing secret.
 - **Standard:** Truthful credential and privacy controls, consistent state semantics, and WCAG 2.2 Success Criterion 4.1.2 (Name, Role, Value).
 - **Resolution:** `ProviderCredentialRowState` derives confirmed configuration, invalid stored data, and deletion availability from `storedValues`. It validates the editable draft separately and reports explicit pending or invalid-unsaved states without overwriting the confirmed claim. VoiceOver receives the same truthful status value. A no-op save restores the normalized confirmed snapshot so whitespace-only draft differences do not remain pending.
-- **Verification:** Regressions cover valid, empty, and malformed stored values; valid and invalid unsaved drafts; deletion availability; and successful, failed, and no-op save reconciliation. The current strict SwiftPM and Xcode scheme runs passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Regressions cover valid, empty, and malformed stored values; valid and invalid unsaved drafts; deletion availability; and successful, failed, and no-op save reconciliation. The current strict SwiftPM and Xcode scheme runs passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P2] Provider API keys accepted invalid header characters and unbounded values
 
@@ -165,7 +167,7 @@ External release work remains with the account holder: activate the individual A
 - **Impact before the fix:** A pasted key containing CR, LF, or another control character could be saved and reported as configured. Foundation silently dropped the resulting `Authorization` header, but Transall could still send the extracted document text and JSON body to the selected provider. The task then failed with a remote authentication response instead of identifying the malformed key locally. There was also no byte limit preventing an abnormal Keychain value from flowing into preflight and request construction.
 - **Standard:** Secure credential handling, data minimization, bounded external input, and actionable local validation; no WCAG criterion applies.
 - **Resolution:** One shared policy now trims ordinary outer whitespace, requires a non-empty single-line value without control characters, and caps the normalized key at 4,096 UTF-8 bytes. Settings rejects invalid edits before starting a Keychain transaction and publishes a high-priority announcement. The production store enforces the same write boundary, while environment status, preflight, job startup, the processor, and the request service revalidate stored or non-UI values. Request construction also verifies that Foundation retained the authentication header before sending document text.
-- **Verification:** Policy regressions cover ordinary DeepSeek and OpenAI values, CR, LF, NUL, DEL, empty required input, and the exact 4,096/4,097-byte boundary. Settings and simulated-Keychain tests prove invalid values cause no write. Preflight and task-start regressions reject an old malformed value with a specific local error before the processor runs, and transport-independent tests verify zero request-sender calls. The current strict SwiftPM and Xcode scheme runs passed 162/162, strict recursive formatting passed, and Release analysis passed.
+- **Verification:** Policy regressions cover ordinary DeepSeek and OpenAI values, CR, LF, NUL, DEL, empty required input, and the exact 4,096/4,097-byte boundary. Settings and simulated-Keychain tests prove invalid values cause no write. Preflight and task-start regressions reject an old malformed value with a specific local error before the processor runs, and transport-independent tests verify zero request-sender calls. The current strict SwiftPM and Xcode scheme runs passed 164/164, strict recursive formatting passed, and Release analysis passed.
 
 ### [P3] Format nodes remained actionable while a running task locked the route
 
@@ -274,9 +276,8 @@ External release work remains with the account holder: activate the individual A
 
 ## Recommended actions
 
-1. **[P1] Privacy entry** — add Transall's own Settings link with configurable HTTPS release metadata and a final-archive validation gate.
-2. **[P1] Account holder** — complete Apple Developer membership, signing, commercial agreements, published URLs, and the App Store Connect record.
-3. **[P3] `$polish`** — repeat archive, package inspection, and launch checks on the final signed release candidate after signing becomes available.
+1. **[P1] Account holder** — complete Apple Developer membership, signing, commercial agreements, publish the real privacy URL, inject it into the Release archive, and complete the App Store Connect record.
+2. **[P3] `$polish`** — repeat archive, package inspection, Settings-link navigation, and launch checks on the final signed release candidate after signing becomes available.
 
 Push the commits and require the new GitHub Actions jobs to pass before treating CI as verified remotely. Repeat the signed-build, Organizer, and App Store Connect checks after the external account and signing items are available.
 
@@ -291,6 +292,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 7. **Restored-result overwrite protection** — current-session tasks reject their submitted originals and links, while restored tasks whose original identities are not persisted can write only a new destination. The final install uses an atomic exclusive rename, preventing a destination that appears during copying from being replaced.
 8. **Result-save task identity** — saving is unavailable while a replacement task is being created. The model also rejects non-UI starts in that state and captures the displayed task's original-document snapshot and replacement policy synchronously before scheduling asynchronous validation and export.
 9. **Task-deletion identity** — deletion is unavailable during replacement-task creation. The confirmation retains the displayed task identifier and closes if that identity changes; the model accepts only the matching identifier before removing local task data.
+10. **First-party privacy-policy access** — Settings exposes Transall's configured public policy link, while development builds show an explicit unconfigured state. Release archives reject missing, non-HTTPS, local, reserved, credential-bearing, and malformed destinations before packaging can complete.
 
 ## Resolved P2 findings
 
@@ -384,11 +386,11 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 
 | Check | Result |
 | --- | --- |
-| Repository Python tests | 111/111 passed |
+| Repository Python tests | 112/112 passed |
 | XcodeGen installation and project reproducibility | Official 2.46.0 archive matches the pinned SHA-256; two concurrent installs use distinct private archive files and ignore a pre-created legacy path; isolated generation matches all tracked project files and `Support/Info.plist`; an intentional 1.0.1 version drift fails before compilation |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 162/162 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 162/162 passed |
+| Swift package tests with Xcode 26.6 | 164/164 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 164/164 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |
@@ -398,8 +400,9 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | OCR output inspection | Generated one-page searchable PDF with an extractable text layer |
 | Quit/lifecycle check | App exits and leaves no process or listener on TCP port 8765 |
 | Support website | Current ESLint, production build, and 5/5 rendered HTML tests passed. `npm audit --audit-level=high` reports 0 vulnerabilities after the build-dependency update. Earlier desktop and 390 px browser checks had no horizontal overflow or console errors; the current Playwright CLI visual rerun was unavailable because its configured Chrome runtime is not installed. |
-| Release metadata validator | Executable script passes all four files to one `plutil -lint` command; all report `OK`, and both `zh-Hans` assertions pass |
-| Release workflow | YAML parses locally, the `macos-26` runner documents Xcode 26.6 at the configured path, and two source regressions protect the metadata-validator invocation and command structure. |
+| Release metadata validator | Executable script passes all four files to one `plutil -lint` command; all report `OK`, both `zh-Hans` assertions pass, and the source plist retains the privacy-URL substitution |
+| Archive privacy-policy gate | Missing and unsafe destinations fail; a public HTTPS test fixture archives successfully and appears in the built `Info.plist`; the final real URL remains an account-holder input |
+| Release workflow | YAML parses locally, the `macos-26` runner documents Xcode 26.6 at the configured path, and seven source regressions protect XcodeGen, metadata, and archive privacy configuration. |
 | Remote GitHub Actions | Not yet run for these commits; no remote CI success is claimed until they are pushed and the jobs complete. |
 | Xcode 26.6 production verification | License accepted; current tests, analysis, and universal Release build passed; earlier archive inspection and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |

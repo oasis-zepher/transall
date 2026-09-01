@@ -19,7 +19,7 @@ This directory contains the non-code material required to move the native macOS 
 
 1. Individual membership approved and the seller's legal name verified by Apple.
 2. Final bundle identifier registered to the individual's Apple Developer team.
-3. Public support email plus stable HTTPS support and privacy-policy URLs.
+3. Public support email plus stable HTTPS support and privacy-policy URLs; the exact policy URL must also be supplied as `TRANSALL_PRIVACY_POLICY_URL` when archiving the app.
 4. Paid Apps Agreement, tax forms, and bank account status in App Store Connect.
 5. Published pages with no bracketed placeholders.
 6. App Review test API key with a strict usage limit, entered only in App Store Connect.

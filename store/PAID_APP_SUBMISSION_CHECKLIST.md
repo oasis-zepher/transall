@@ -31,6 +31,8 @@
 
 - [ ] Publish the support site and privacy policy over stable HTTPS.
 - [ ] Replace the legal publisher and email placeholders in `support-site/app/publication-config.ts`.
+- [x] Add an easily accessible first-party privacy-policy entry in Settings and block Release archives whose configured destination is missing or unsafe.
+- [ ] Set `TRANSALL_PRIVACY_POLICY_URL` to the exact published `/privacy` URL, archive, and confirm the Settings link opens that same page.
 - [ ] App Privacy: disclose `User Content → Other User Content` for `App Functionality` because translation text is transmitted to DeepSeek or OpenAI and may be retained by those providers.
 - [ ] App Privacy: mark that user content may be linked to the user's provider account through the API key unless both providers' current terms and the configured account prove de-identification.
 - [ ] App Privacy: Tracking = No.
@@ -48,7 +50,7 @@ Why the privacy label is conservative: Apple defines collection as data transmit
 - [x] Install and accept the license for Apple-supported Xcode 26.6; tests, analysis, and the unsigned archive pass with this toolchain.
 - [ ] Set the individual's Apple Developer Team and final bundle identifier in Xcode.
 - [ ] Create or allow Xcode to manage the Mac App Distribution certificate and Mac Installer Distribution certificate/profile required by the current workflow.
-- [ ] Archive a distribution-signed Release with App Sandbox enabled; the unsigned universal preflight archive already passes.
+- [ ] Archive a distribution-signed Release with App Sandbox enabled and the published `TRANSALL_PRIVACY_POLICY_URL`; the earlier unsigned universal preflight passed, and the current archive gate correctly rejects a missing URL.
 - [ ] In the distribution-signed build, save, reload, and delete a disposable review API key to verify Data Protection Keychain access and legacy-key migration under the final application identifier.
 - [ ] Validate the archive in Organizer.
 - [x] Confirm the unsigned preflight archive has no Python, Homebrew paths, local server, prohibited private frameworks, or nested executables.

@@ -28,6 +28,11 @@ enum PrivacyPolicyConfiguration {
     guard labels.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("-") && !$0.hasSuffix("-") })
     else { return false }
     let reservedSuffixes = [".example", ".invalid", ".local", ".localhost", ".test"]
-    return host != "localhost" && !reservedSuffixes.contains { host.hasSuffix($0) }
+    let documentationHosts = ["example.com", "example.net", "example.org"]
+    let usesDocumentationHost = documentationHosts.contains {
+      host == $0 || host.hasSuffix(".\($0)")
+    }
+    return host != "localhost" && !usesDocumentationHost
+      && !reservedSuffixes.contains { host.hasSuffix($0) }
   }
 }

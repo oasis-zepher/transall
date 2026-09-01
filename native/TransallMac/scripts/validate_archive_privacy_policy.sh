@@ -58,7 +58,8 @@ for label in ${(s:.:)normalized_host}; do
   fi
 done
 case "$normalized_host" in
-  localhost | *.example | *.invalid | *.local | *.localhost | *.test)
+  localhost | *.example | *.invalid | *.local | *.localhost | *.test \
+    | example.com | *.example.com | example.net | *.example.net | example.org | *.example.org)
     print -u2 -- "TransallPrivacyPolicyURL must not use a reserved or local hostname."
     exit 1
     ;;

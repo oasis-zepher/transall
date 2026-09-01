@@ -118,9 +118,9 @@ struct ModelsTests {
   @Test
   func privacyPolicyConfigurationAcceptsPublicHTTPSDestination() throws {
     let url = try #require(
-      PrivacyPolicyConfiguration.url(from: "https://privacy.example.org/transall"))
+      PrivacyPolicyConfiguration.url(from: "https://www.apple.com/legal/privacy/"))
 
-    #expect(url.absoluteString == "https://privacy.example.org/transall")
+    #expect(url.absoluteString == "https://www.apple.com/legal/privacy/")
   }
 
   @Test
@@ -136,6 +136,7 @@ struct ModelsTests {
       "https://localhost/privacy",
       "https://transall.local/privacy",
       "https://transall.example/privacy",
+      "https://privacy.example.org/transall",
       "https://privacy.example.org:70000/transall",
       "https://privacy..example.org/transall",
       "https://-privacy.example.org/transall",

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import CryptoKit
 import Foundation
 import ImageIO
@@ -272,6 +273,83 @@ struct ModelsTests {
     #expect(chunks.count == 4)
     #expect(chunks.allSatisfy { $0.count <= 10 })
     #expect(chunks.joined().filter { !$0.isWhitespace } == source.filter { !$0.isWhitespace })
+  }
+
+  @Test
+  func translationRegionBatchesPreserveStableOrder() {
+    let regions = (1...4).map { number in
+      PDFTranslationRegion(
+        id: String(format: "p0001-t%04d", number), pageIndex: 0, kind: .nativeText,
+        bounds: CGRect(x: 10, y: number * 20, width: 100, height: 14),
+        sourceText: String(repeating: "x", count: 24), preferredFontSize: 10)
+    }
+
+    let batches = TranslationService.regionBatches(regions, maximumCharacters: 80)
+
+    #expect(batches.count == 4)
+    #expect(batches.flatMap { $0.map(\.id) } == regions.map(\.id))
+  }
+
+  @Test
+  func translationRegionMappingRecoversAnOmittedItem() async throws {
+    let regions = [
+      PDFTranslationRegion(
+        id: "p0001-t0001", pageIndex: 0, kind: .nativeText,
+        bounds: CGRect(x: 10, y: 40, width: 100, height: 14), sourceText: "First",
+        preferredFontSize: 10),
+      PDFTranslationRegion(
+        id: "p0001-i0001", pageIndex: 0, kind: .imageOCR,
+        bounds: CGRect(x: 150, y: 40, width: 100, height: 14), sourceText: "Second",
+        preferredFontSize: 10),
+    ]
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 200, headers: [:],
+        body: Data(
+          #"{"choices":[{"message":{"content":"{\"items\":[{\"id\":\"p0001-t0001\",\"text\":\"第一\"}]}"}}]}"#
+            .utf8)),
+      .http(
+        status: 200, headers: [:],
+        body: Data(
+          #"{"choices":[{"message":{"content":"```json\n{\"items\":[{\"id\":\"p0001-i0001\",\"text\":\"第二\"}]}\n```"}}]}"#
+            .utf8)),
+    ])
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { try await responses.send($0) }, sleeper: { _ in })
+
+    let translated = try await service.translateRegions(
+      regions, source: "en", target: "zh", glossary: "")
+
+    #expect(translated == ["p0001-t0001": "第一", "p0001-i0001": "第二"])
+    #expect(await responses.snapshot().requestCount == 2)
+  }
+
+  @Test
+  func translationRegionMappingRejectsAnUnexpectedIdentifier() async throws {
+    let region = PDFTranslationRegion(
+      id: "p0001-t0001", pageIndex: 0, kind: .nativeText,
+      bounds: CGRect(x: 10, y: 40, width: 100, height: 14), sourceText: "First",
+      preferredFontSize: 10)
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 200, headers: [:],
+        body: Data(
+          #"{"choices":[{"message":{"content":"{\"items\":[{\"id\":\"p0001-t9999\",\"text\":\"错误\"}]}"}}]}"#
+            .utf8))
+    ])
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { try await responses.send($0) }, sleeper: { _ in })
+
+    do {
+      _ = try await service.translateRegions(
+        [region], source: "en", target: "zh", glossary: "")
+      Issue.record("Unexpected translation region identifiers must be rejected")
+    } catch let error as NativeDocumentError {
+      #expect(error.code == "translation_provider_failed")
+      #expect(error.errorDescription?.contains("未请求的文字区域") == true)
+    }
   }
 
   @Test
@@ -4515,6 +4593,115 @@ struct ModelsTests {
   }
 
   @Test
+  func layoutTranslationKeepsPageGeometryAndAddsImageTextRegions() async throws {
+    let temporary = FileManager.default.temporaryDirectory
+      .appendingPathComponent("transall-layout-translation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let sourceText = temporary.appendingPathComponent("source.txt")
+    try Data("Native title\n\nNative paragraph".utf8).write(to: sourceText, options: .atomic)
+    let sourcePDF = temporary.appendingPathComponent("source.pdf")
+    let textRoute = try #require(
+      NativeCapabilities.routes.first { $0.kind == "text_to_pdf" })
+    _ = try await NativeDocumentProcessor.process(
+      route: textRoute, inputs: [sourceText], options: JobOptions(), outputURL: sourcePDF,
+      apiKey: nil)
+    let document = try #require(PDFDocument(url: sourcePDF))
+    let raster = try #require(CGPDFDocument(sourcePDF as CFURL))
+
+    let regions = try PDFLayoutTranslation.extractRegions(
+      document: document, rasterDocument: raster, languages: ["en-US"],
+      recognizer: { _, _ in
+        [
+          PDFLayoutTranslation.OCRObservation(
+            text: "Image label",
+            normalizedBounds: CGRect(x: 0.68, y: 0.12, width: 0.2, height: 0.05),
+            confidence: 0.99)
+        ]
+      })
+
+    #expect(regions.contains { $0.kind == .nativeText })
+    #expect(regions.filter { $0.kind == .imageOCR }.map(\.id) == ["p0001-i0001"])
+    #expect(regions.map(\.id).count == Set(regions.map(\.id)).count)
+    let output = temporary.appendingPathComponent("translated-layout.pdf")
+    let translations = Dictionary(uniqueKeysWithValues: regions.map { ($0.id, "译") })
+    let report = try PDFLayoutTranslation.writeTranslatedPDF(
+      inputURL: sourcePDF, regions: regions, translations: translations, outputURL: output)
+    let translated = try #require(PDFDocument(url: output))
+
+    #expect(report.pageCount == document.pageCount)
+    #expect(report.imageOCRRegionCount == 1)
+    #expect(report.overflowRegionIDs.isEmpty)
+    #expect(translated.pageCount == document.pageCount)
+    #expect(
+      translated.page(at: 0)?.bounds(for: .mediaBox) == document.page(at: 0)?.bounds(for: .mediaBox)
+    )
+    #expect(translated.string?.contains("译") == true)
+  }
+
+  @Test
+  func layoutTranslationUsesVisionForImageTextOnAMixedPage() throws {
+    let retainedDirectory = ProcessInfo.processInfo.environment["TRANSALL_LAYOUT_SMOKE_OUTPUT"]
+      .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let temporary =
+      retainedDirectory
+      ?? FileManager.default.temporaryDirectory.appendingPathComponent(
+        "transall-layout-vision-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    let shouldRemoveTemporary = retainedDirectory == nil
+    defer {
+      if shouldRemoveTemporary { try? FileManager.default.removeItem(at: temporary) }
+    }
+    let source = temporary.appendingPathComponent("mixed-source.pdf")
+    let output = temporary.appendingPathComponent("mixed-translated.pdf")
+    try writeMixedLayoutFixture(to: source)
+    let document = try #require(PDFDocument(url: source))
+    let raster = try #require(CGPDFDocument(source as CFURL))
+
+    let regions = try PDFLayoutTranslation.extractRegions(
+      document: document, rasterDocument: raster, languages: ["en-US"])
+    let nativeText = regions.filter { $0.kind == .nativeText }.map(\.sourceText).joined(
+      separator: " ")
+    let imageText = regions.filter { $0.kind == .imageOCR }.map(\.sourceText).joined(separator: " ")
+    if retainedDirectory != nil {
+      for region in regions {
+        print(
+          "LAYOUT_REGION=\(region.kind.rawValue) \(region.id) \(region.bounds) \(region.sourceText)"
+        )
+      }
+    }
+
+    #expect(nativeText.localizedCaseInsensitiveContains("native heading"))
+    #expect(imageText.localizedCaseInsensitiveContains("image label"))
+    #expect(!imageText.localizedCaseInsensitiveContains("native heading"))
+    let imageRegions = regions.filter { $0.kind == .imageOCR }
+    let firstImageRegion = try #require(imageRegions.first)
+    let imageBounds = imageRegions.dropFirst().reduce(firstImageRegion.bounds) {
+      $0.union($1.bounds)
+    }
+    #expect(imageBounds.width > 150)
+    #expect(imageBounds.height > 25)
+    #expect(
+      CGRect(x: 440, y: 160, width: 340, height: 170).contains(
+        CGPoint(x: imageBounds.midX, y: imageBounds.midY)))
+    let translations = Dictionary(
+      uniqueKeysWithValues: regions.map {
+        ($0.id, $0.kind == .nativeText ? "原生区域译文" : "图片区域译文")
+      })
+    let report = try PDFLayoutTranslation.writeTranslatedPDF(
+      inputURL: source, regions: regions, translations: translations, outputURL: output)
+
+    #expect(report.nativeRegionCount >= 1)
+    #expect(report.imageOCRRegionCount >= 1)
+    #expect(report.overflowRegionIDs.isEmpty)
+    #expect(PDFDocument(url: output)?.pageCount == 1)
+    if retainedDirectory != nil {
+      print("LAYOUT_SMOKE_SOURCE=\(source.path)")
+      print("LAYOUT_SMOKE_OUTPUT=\(output.path)")
+    }
+  }
+
+  @Test
   func oversizedGlossaryIsRejectedBeforeTranslation() async throws {
     let route = try #require(
       NativeCapabilities.routes.first { $0.kind == "pdf_translate" })
@@ -5225,6 +5412,58 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.errorDescription?.contains("至少需要两个文件") == true)
     }
+  }
+
+  private func writeMixedLayoutFixture(to url: URL) throws {
+    var mediaBox = CGRect(x: 0, y: 0, width: 842, height: 595)
+    guard let consumer = CGDataConsumer(url: url as CFURL),
+      let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil)
+    else {
+      throw TestPersistenceError.unavailable
+    }
+    context.beginPDFPage(nil)
+    context.setFillColor(CGColor(gray: 0.97, alpha: 1))
+    context.fill(mediaBox)
+    drawFixtureLine(
+      "Native heading", at: CGPoint(x: 56, y: 500), fontSize: 30,
+      color: CGColor(gray: 0.08, alpha: 1), context: context)
+    drawFixtureLine(
+      "This paragraph remains native PDF text.", at: CGPoint(x: 58, y: 450), fontSize: 15,
+      color: CGColor(gray: 0.18, alpha: 1), context: context)
+
+    guard
+      let imageContext = CGContext(
+        data: nil, width: 600, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else {
+      throw TestPersistenceError.unavailable
+    }
+    imageContext.setFillColor(
+      CGColor(red: 0.84, green: 0.91, blue: 0.99, alpha: 1))
+    imageContext.fill(CGRect(x: 0, y: 0, width: 600, height: 300))
+    drawFixtureLine(
+      "IMAGE LABEL", at: CGPoint(x: 45, y: 145), fontSize: 58,
+      color: CGColor(gray: 0.04, alpha: 1), context: imageContext)
+    guard let image = imageContext.makeImage() else { throw TestPersistenceError.unavailable }
+    context.draw(image, in: CGRect(x: 440, y: 160, width: 340, height: 170))
+    context.endPDFPage()
+    context.closePDF()
+  }
+
+  private func drawFixtureLine(
+    _ text: String, at point: CGPoint, fontSize: CGFloat, color: CGColor, context: CGContext
+  ) {
+    let attributed = NSAttributedString(
+      string: text,
+      attributes: [
+        NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(
+          "Helvetica" as CFString, fontSize, nil),
+        NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
+      ])
+    let line = CTLineCreateWithAttributedString(attributed)
+    context.textPosition = point
+    CTLineDraw(line, context)
   }
 
   private func writeTestImage(

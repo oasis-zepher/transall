@@ -225,6 +225,7 @@ struct InputWorkbenchView: View {
         .controlSize(.small)
 
         Picker("输出", selection: $model.options.outputMode) {
+          Text("保留原版式 PDF").tag("preserve_layout")
           Text("纯译文 PDF").tag("translated")
           Text("双语对照 PDF").tag("bilingual")
         }

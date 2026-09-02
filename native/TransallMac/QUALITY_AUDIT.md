@@ -1,13 +1,15 @@
 # Transall release quality audit
 
 Audit date: 2026-08-15
-Last verified: 2026-09-01
+Last verified: 2026-09-02
 Quality bar: App Store-ready version 1.0
 Surfaces: native SwiftUI app and local support/privacy website
 
 ## Result
 
 All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, provider credential validation, truthful credential-row state, preview task identity, duplicate preview state, result-save task identity, deletion-confirmation task identity, and running-task draft state are resolved as well.
+
+The layout-translation follow-up adopted the useful behavior of region-preserving PDF translation without importing a third-party runtime or source code. The native implementation combines PDFKit text extraction with local Vision OCR, assigns stable page-and-kind identifiers, retries omitted translations individually, rejects duplicate, unexpected, blank, or abnormally long mappings, and stops when translated text cannot fit at a readable size. A mixed-page fixture verifies corrected PDF-to-raster coordinate transforms, complete source-text coverage, matching sampled background color, preserved page geometry, and searchable output. Current strict SwiftPM and Xcode Scheme runs pass 169/169, and Release analysis reports no code findings.
 
 The 2026-08-27 release-automation follow-up added native-app and support-site CI coverage. A later audit found one new P1 in that workflow: the release-metadata step invoked `plutil -lint` without file arguments, then treated each plist path as a separate shell command. The workflow now calls an executable `scripts/validate_release_metadata.sh` validator that passes all four files to one `plutil` command and retains both `zh-Hans` assertions. Workflow-source regressions protect that command structure, and the validator passes locally. The workflow has not run on GitHub because these commits have not been pushed.
 
@@ -452,8 +454,8 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Python dependency locks | 137 runtime and 155 CI entries are transitively pinned with SHA-256; regeneration is byte-identical under `uv 0.10.12`; a fresh Python 3.13 strict-hash install and `pip check` pass; Linux x86_64 resolution covers 151 applicable entries; OSV reports no known vulnerabilities |
 | XcodeGen installation and project reproducibility | Official 2.46.0 archive matches the pinned SHA-256; two concurrent installs use distinct private archive files and ignore a pre-created legacy path; isolated generation matches all tracked project files and `Support/Info.plist`; an intentional 1.0.1 version drift fails before compilation |
 | Swift formatting with Xcode 26.6 | Strict recursive lint passed with zero findings across `Sources` and `Tests` |
-| Swift package tests with Xcode 26.6 | 164/164 passed, including strict concurrency with warnings as errors |
-| Xcode scheme tests with Xcode 26.6 | 164/164 passed |
+| Swift package tests with Xcode 26.6 | 169/169 passed, including strict concurrency with warnings as errors |
+| Xcode scheme tests with Xcode 26.6 | 169/169 passed |
 | Xcode static analyzer with Xcode 26.6 | Passed with no code findings |
 | Release bundle language metadata | `CFBundleDevelopmentRegion = zh-Hans`; `CFBundleLocalizations = ["zh-Hans"]` |
 | Unsigned Release build with Xcode 26.6 | Passed; universal `arm64` + `x86_64` app |

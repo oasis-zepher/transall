@@ -71,6 +71,7 @@ struct ResultWorkbenchView: View {
         }
 
         warnings
+        translationRecoveryPanel
 
         HStack(alignment: .top, spacing: 12) {
           logPane
@@ -185,6 +186,55 @@ struct ResultWorkbenchView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(TransallTheme.warning.opacity(0.07))
       .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+  }
+
+  @ViewBuilder
+  private var translationRecoveryPanel: some View {
+    if let recovery = model.translationRecovery, recovery.jobID == model.currentJob?.id {
+      VStack(alignment: .leading, spacing: 9) {
+        Label("译文已保存，可以继续生成 PDF", systemImage: "doc.text")
+          .font(.callout.weight(.semibold))
+        Text(
+          recovery.issueCount > 0
+            ? "\(recovery.issueCount) 处译文放不进原文区域。可以检查问题位置，或改为纯译文排版。"
+            : "文档尚未生成，已完成的译文可以直接用于纯译文排版。"
+        )
+        .font(.caption)
+        .foregroundStyle(TransallTheme.inkSoft)
+        .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 10) {
+          Button("生成纯译文 PDF") {
+            model.recoverTranslationAsPlainPDF(jobID: recovery.jobID)
+          }
+          .buttonStyle(PrimaryButtonStyle())
+          .disabled(!model.canRecoverTranslation)
+          if let firstPage = recovery.issuePages.first {
+            Button("查看问题区域…") {
+              viewState.inspection = DocumentInspectionRequest(
+                jobID: recovery.jobID, page: firstPage)
+            }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(model.isDeletingJob || model.isSubmitting)
+          }
+        }
+        Text("使用本机已有译文，不会再次请求翻译服务；页数和版式可能改变。")
+          .font(.caption2)
+          .foregroundStyle(TransallTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .padding(12)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(TransallTheme.source.opacity(0.06))
+      .overlay {
+        RoundedRectangle(cornerRadius: 4).stroke(TransallTheme.line, lineWidth: 1)
+      }
+    } else if model.isLoadingTranslationRecovery {
+      ProgressView("正在检查已保存的译文")
+        .controlSize(.small).font(.caption)
+    } else if let error = model.translationRecoveryError {
+      Label(error, systemImage: "exclamationmark.triangle")
+        .font(.caption).foregroundStyle(TransallTheme.warning)
     }
   }
 

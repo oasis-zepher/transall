@@ -13,6 +13,7 @@ swiftc -parse-as-library -swift-version 5 \
   "$processor_sources/ProviderCredentialStore.swift" \
   "$processor_sources/NativeDocumentProcessor.swift" \
   "$processor_sources/PDFLayoutTranslation.swift" \
+  "$processor_sources/TranslationRecovery.swift" \
   "$processor_sources/MarkdownPDFRenderer.swift" \
   "$review_directory/ReviewProbe.swift" \
   -o "$review_build_directory/probe"

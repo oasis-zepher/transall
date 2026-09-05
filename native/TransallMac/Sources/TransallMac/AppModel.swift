@@ -51,6 +51,13 @@ enum RouteChangeLock: Equatable {
   }
 }
 
+struct TranslationRecoverySummary: Equatable {
+  let jobID: String
+  let regionCount: Int
+  let issueCount: Int
+  let issuePages: [Int]
+}
+
 @MainActor
 final class AppModel: ObservableObject {
   typealias JobCreator =
@@ -71,7 +78,17 @@ final class AppModel: ObservableObject {
   @Published var selection = RouteSelection()
   @Published var documents: [SelectedDocument] = []
   @Published var options = JobOptions()
-  @Published var currentJob: JobResponse?
+  @Published var currentJob: JobResponse? {
+    didSet {
+      if currentJob?.id != oldValue?.id || currentJob?.status != oldValue?.status {
+        clearTranslationRecovery()
+      }
+    }
+  }
+  @Published private(set) var translationRecovery: TranslationRecoverySummary?
+  @Published private(set) var translationRecoveryError: String?
+  @Published private(set) var isLoadingTranslationRecovery = false
+  private var recoveryLoadID = UUID()
   @Published var previewPages: [PreviewPage] = []
   @Published var previewError: String?
   @Published var preflightWarnings: [PreflightIssue] = []
@@ -192,6 +209,12 @@ final class AppModel: ObservableObject {
 
   var hasPreviewableResult: Bool {
     currentJob?.status == "done" && currentJob?.output?.lowercased().hasSuffix(".pdf") == true
+  }
+
+  var canRecoverTranslation: Bool {
+    guard let job = currentJob, translationRecovery?.jobID == job.id else { return false }
+    return ["failed", "cancelled"].contains(job.status)
+      && !isImporting && !isSubmitting && !isSaving && !isDeletingJob
   }
 
   var canDeleteCurrentJob: Bool {
@@ -534,9 +557,69 @@ final class AppModel: ObservableObject {
     do {
       currentJob = try backend.cancelJob(id: job.id)
       pollingTask?.cancel()
+      await refreshTranslationRecovery(jobID: job.id)
     } catch {
       errorMessage = error.localizedDescription
     }
+  }
+
+  func refreshTranslationRecovery(jobID: String) async {
+    guard let job = currentJob, job.id == jobID, job.kind == "pdf_translate",
+      ["failed", "cancelled"].contains(job.status), !isDeletingJob, !isSubmitting
+    else { return }
+    let requestID = UUID()
+    recoveryLoadID = requestID
+    isLoadingTranslationRecovery = true
+    translationRecovery = nil
+    translationRecoveryError = nil
+    defer {
+      if recoveryLoadID == requestID { isLoadingTranslationRecovery = false }
+    }
+    do {
+      let recovery = try await backend.translationRecovery(jobID: jobID)
+      try Task.checkCancellation()
+      guard recoveryLoadID == requestID, currentJob?.id == jobID,
+        currentJob?.status == job.status, !isDeletingJob, !isSubmitting
+      else { return }
+      translationRecovery = TranslationRecoverySummary(
+        jobID: jobID, regionCount: recovery.regions.count,
+        issueCount: recovery.overflowRegionIDs.count,
+        issuePages: Array(Set(recovery.issues.map { $0.pageIndex + 1 })).sorted())
+    } catch is CancellationError {
+      return
+    } catch {
+      guard recoveryLoadID == requestID, currentJob?.id == jobID,
+        currentJob?.status == job.status
+      else { return }
+      if job.errorCode == "translation_layout_overflow" {
+        translationRecoveryError = "无法复用已保存的译文：\(error.localizedDescription)"
+      }
+    }
+  }
+
+  func recoverTranslationAsPlainPDF(jobID: String) {
+    guard canRecoverTranslation, currentJob?.id == jobID else { return }
+    do {
+      let queued = try backend.recoverTranslationAsPlainPDF(jobID: jobID)
+      pollingTask?.cancel()
+      currentJob = queued
+      previewPages = []
+      previewError = nil
+      isLoadingPreview = false
+      errorMessage = nil
+      options.outputMode = "translated"
+      preferences.set(jobID, forKey: lastJobKey)
+      beginPolling(jobID: jobID)
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func clearTranslationRecovery() {
+    recoveryLoadID = UUID()
+    translationRecovery = nil
+    translationRecoveryError = nil
+    isLoadingTranslationRecovery = false
   }
 
   func startSavingResult() {
@@ -638,6 +721,8 @@ final class AppModel: ObservableObject {
           if job.isFinished {
             if job.status == "done" {
               await loadPreview(jobID: jobID)
+            } else {
+              await refreshTranslationRecovery(jobID: jobID)
             }
             return
           }
@@ -707,6 +792,8 @@ final class AppModel: ObservableObject {
         beginPolling(jobID: job.id)
       } else if job.status == "done" {
         await loadPreview(jobID: job.id)
+      } else {
+        await refreshTranslationRecovery(jobID: job.id)
       }
     } catch {
       preferences.removeObject(forKey: lastJobKey)

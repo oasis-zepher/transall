@@ -40,28 +40,47 @@ struct DocumentInspectionView: View {
       HStack(spacing: 12) {
         Text(snapshot?.result == nil && snapshot != nil ? "检查排版问题" : "检查文档")
           .font(.headline)
-        if snapshot?.original != nil, snapshot?.result != nil {
-          Toggle("原文对照", isOn: $compare).toggleStyle(.checkbox)
-          if compare {
-            Toggle("同页联动", isOn: $session.synchronize).toggleStyle(.checkbox)
-              .disabled(!session.canSynchronize)
-              .help("按相同页码和页面位置联动；不判断两侧内容是否对应")
+        Spacer()
+        TransallControlGroup(spacing: 10) {
+          HStack(spacing: 10) {
+            if snapshot?.original != nil, snapshot?.result != nil {
+              TransallGlassBar {
+                HStack(spacing: 12) {
+                  Toggle("原文对照", isOn: $compare).toggleStyle(.checkbox)
+                  if compare {
+                    Toggle("同页联动", isOn: $session.synchronize).toggleStyle(.checkbox)
+                      .disabled(!session.canSynchronize)
+                      .help("按相同页码和页面位置联动；不判断两侧内容是否对应")
+                  }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+              }
+            }
+            TransallGlassBar {
+              HStack(spacing: 12) {
+                Button("缩小", systemImage: "minus.magnifyingglass") {
+                  scale = max(0.25, scale / 1.25)
+                }
+                .labelStyle(.iconOnly).help("缩小文档")
+                Button("放大", systemImage: "plus.magnifyingglass") {
+                  scale = min(4, scale * 1.25)
+                }
+                .labelStyle(.iconOnly).help("放大文档")
+                Button("适合页面") { scale = 1 }
+              }
+              .buttonStyle(.borderless)
+              .padding(.horizontal, 12).padding(.vertical, 10)
+            }
+            TransallGlassBar {
+              Button("完成") { dismiss() }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
           }
         }
-        Spacer()
-        Button("缩小", systemImage: "minus.magnifyingglass") {
-          scale = max(0.25, scale / 1.25)
-        }
-        .labelStyle(.iconOnly).help("缩小文档")
-        Button("放大", systemImage: "plus.magnifyingglass") {
-          scale = min(4, scale * 1.25)
-        }
-        .labelStyle(.iconOnly).help("放大文档")
-        Button("适合页面") { scale = 1 }
-        Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
       }
       .padding(14)
-      Divider()
       if let snapshot {
         if snapshot.result == nil {
           Label(
@@ -195,53 +214,30 @@ private struct InspectionPane: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
-        Text(title).font(.caption.weight(.semibold))
-        Spacer()
-        Button("上一页", systemImage: "chevron.left") {
-          controller.go(to: controller.currentPage - 1)
-        }
-        .labelStyle(.iconOnly).disabled(controller.currentPage <= 1)
-        TextField("页码", text: $pageInput).frame(width: 44).multilineTextAlignment(.center)
-          .onSubmit {
-            if let page = InspectionNavigation.pageNumber(pageInput, count: controller.pageCount) {
-              controller.go(to: page)
+      TransallControlGroup(spacing: 8) {
+        VStack(spacing: 8) {
+          HStack(spacing: 10) {
+            Text(title).font(.caption.weight(.semibold))
+              .foregroundStyle(TransallTheme.inkSoft)
+            Spacer(minLength: 0)
+            TransallGlassBar {
+              pageNavigation
+                .padding(.horizontal, 10).padding(.vertical, 8)
             }
-            pageInput = String(controller.currentPage)
           }
-          .accessibilityLabel("\(title)页码")
-          .help("输入页码后按回车跳转")
-          .disabled(controller.pageCount == 0)
-        Text("/ \(controller.pageCount)").font(.caption).monospacedDigit()
-        Button("下一页", systemImage: "chevron.right") {
-          controller.go(to: controller.currentPage + 1)
+          TransallGlassBar {
+            searchControls
+              .padding(.horizontal, 12).padding(.vertical, 9)
+          }
         }
-        .labelStyle(.iconOnly).disabled(controller.currentPage >= controller.pageCount)
       }
       .padding(10)
-      HStack(spacing: 8) {
-        TextField("搜索文档文字", text: $controller.query)
-          .textFieldStyle(.roundedBorder)
-          .onSubmit { controller.moveMatch(forward: true) }
-          .accessibilityLabel("搜索\(title)")
-        if controller.searching { ProgressView().controlSize(.small) }
-        Text(controller.searchSummary).font(.caption).monospacedDigit()
-        if !controller.query.isEmpty {
-          Button("上一个匹配", systemImage: "chevron.up") { controller.moveMatch(forward: false) }
-            .labelStyle(.iconOnly).disabled(controller.matchCount == 0)
-          Button("下一个匹配", systemImage: "chevron.down") { controller.moveMatch(forward: true) }
-            .labelStyle(.iconOnly).disabled(controller.matchCount == 0)
-          Button("清除搜索", systemImage: "xmark") { controller.query = "" }
-            .labelStyle(.iconOnly)
-        }
-      }
-      .padding(.horizontal, 10).padding(.bottom, 8)
       if let searchNotice = controller.searchNotice {
         Text(searchNotice).font(.caption).foregroundStyle(TransallTheme.inkSoft)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 10).padding(.bottom, 8)
+          .padding(.horizontal, 12).padding(.vertical, 8)
+          .background(TransallTheme.panel)
       }
-      Divider()
       InspectionPDFView(url: url, scale: scale, initialPage: initialPage, controller: controller)
         .accessibilityLabel(title)
         .overlay {
@@ -253,8 +249,57 @@ private struct InspectionPane: View {
           }
         }
     }
-    .background(TransallTheme.panel)
+    .background(Color(nsColor: .underPageBackgroundColor))
     .onChange(of: controller.currentPage) { _, page in pageInput = String(page) }
+  }
+
+  private var pageNavigation: some View {
+    HStack(spacing: 8) {
+      Button("上一页", systemImage: "chevron.left") {
+        controller.go(to: controller.currentPage - 1)
+      }
+      .labelStyle(.iconOnly).disabled(controller.currentPage <= 1)
+      TextField("页码", text: $pageInput).frame(width: 40).multilineTextAlignment(.center)
+        .textFieldStyle(.plain)
+        .onSubmit {
+          if let page = InspectionNavigation.pageNumber(pageInput, count: controller.pageCount) {
+            controller.go(to: page)
+          }
+          pageInput = String(controller.currentPage)
+        }
+        .accessibilityLabel("\(title)页码")
+        .help("输入页码后按回车跳转")
+        .disabled(controller.pageCount == 0)
+      Text("/ \(controller.pageCount)").font(.caption).monospacedDigit().fixedSize()
+      Button("下一页", systemImage: "chevron.right") {
+        controller.go(to: controller.currentPage + 1)
+      }
+      .labelStyle(.iconOnly).disabled(controller.currentPage >= controller.pageCount)
+    }
+    .buttonStyle(.borderless)
+  }
+
+  private var searchControls: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+      TextField("搜索文档文字", text: $controller.query)
+        .textFieldStyle(.plain)
+        .onSubmit { controller.moveMatch(forward: true) }
+        .accessibilityLabel("搜索\(title)")
+      if controller.searching { ProgressView().controlSize(.small) }
+      Text(controller.searchSummary).font(.caption).monospacedDigit().fixedSize()
+      if !controller.query.isEmpty {
+        Button("上一个匹配", systemImage: "chevron.up") { controller.moveMatch(forward: false) }
+          .labelStyle(.iconOnly).disabled(controller.matchCount == 0)
+          .help("上一个匹配")
+        Button("下一个匹配", systemImage: "chevron.down") { controller.moveMatch(forward: true) }
+          .labelStyle(.iconOnly).disabled(controller.matchCount == 0)
+          .help("下一个匹配")
+        Button("清除搜索", systemImage: "xmark") { controller.query = "" }
+          .labelStyle(.iconOnly).help("清除搜索")
+      }
+    }
+    .buttonStyle(.borderless)
   }
 }
 
@@ -582,7 +627,7 @@ private struct InspectionPDFView: NSViewRepresentable {
     let view = PDFView()
     view.displayMode = .singlePageContinuous
     view.displayDirection = .vertical
-    view.backgroundColor = NSColor(calibratedWhite: 0.94, alpha: 1)
+    view.backgroundColor = .underPageBackgroundColor
     controller.attach(to: view, url: url, initialPage: initialPage)
     return view
   }

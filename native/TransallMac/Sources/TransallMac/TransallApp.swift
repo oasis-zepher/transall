@@ -10,10 +10,9 @@ struct TransallApp: App {
   @StateObject private var model = AppModel()
 
   var body: some Scene {
-    WindowGroup {
+    WindowGroup("Transall") {
       ContentView()
         .environmentObject(model)
-        .preferredColorScheme(.light)
         .frame(minWidth: 760, minHeight: 680)
         .task {
           await model.start()
@@ -24,7 +23,7 @@ struct TransallApp: App {
           model.prepareForTermination()
         }
     }
-    .windowStyle(.hiddenTitleBar)
+    .windowToolbarStyle(.unified(showsTitle: false))
     .defaultSize(width: 1240, height: 820)
     .commands {
       CommandGroup(replacing: .newItem) {
@@ -39,7 +38,6 @@ struct TransallApp: App {
     Settings {
       SettingsView()
         .environmentObject(model)
-        .preferredColorScheme(.light)
     }
   }
 }

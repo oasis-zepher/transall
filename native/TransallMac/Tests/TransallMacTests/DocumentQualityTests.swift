@@ -57,10 +57,14 @@ struct DocumentQualityTests {
     }
     #expect(after.annotations.count == before.annotations.count)
     #expect(after.annotations.contains { $0.url == link.url })
+    let beforeLink = try #require(before.annotations.first { $0.url == link.url })
+    #expect(
+      after.annotations.first { $0.url == link.url }?.border?.lineWidth
+        == (beforeLink.border?.lineWidth ?? 1))
     #expect(after.annotations.contains { $0.contents == note.contents })
     #expect(
       after.annotations.first { $0.url == link.url }?.bounds
-        == link.bounds.offsetBy(dx: offset.x, dy: offset.y))
+        == beforeLink.bounds.offsetBy(dx: offset.x, dy: offset.y))
     #expect(result.string?.contains("译") == true)
     #expect(result.string?.contains("SOURCE HEADING") == false)
     #expect(result.string?.contains("OUTSIDE CROP") == false)

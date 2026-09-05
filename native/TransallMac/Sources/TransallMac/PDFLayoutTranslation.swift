@@ -287,8 +287,14 @@ enum PDFLayoutTranslation {
         guard let copy = annotation.copy() as? PDFAnnotation else {
           throw NativeDocumentError.processing("无法保留 PDF 页面批注。")
         }
-        // PDFKit's copy supplies a zero-width link border when the original used the PDF default.
-        copy.border = annotation.border?.copy() as? PDFBorder
+        if let border = annotation.border {
+          copy.border = border.copy() as? PDFBorder
+        } else if annotation.type == "Link" {
+          // An omitted PDF link border means a 1 pt solid line. PDFKit rewrites nil as 0 pt.
+          let defaultBorder = PDFBorder()
+          defaultBorder.lineWidth = 1
+          copy.border = defaultBorder
+        }
         if let action = annotation.action as? PDFActionGoTo,
           let targetPage = action.destination.page
         {

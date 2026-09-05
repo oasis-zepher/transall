@@ -254,7 +254,7 @@ struct DocumentQualityTests {
     let snapshot = try await engine.inspectionSnapshot(jobID: job.id)
     let original = try #require(snapshot.original)
     #expect(try Data(contentsOf: original) == submittedBytes)
-    #expect(PDFDocument(url: snapshot.result)?.pageCount == 1)
+    #expect(PDFDocument(url: try #require(snapshot.result))?.pageCount == 1)
     try FileManager.default.removeItem(at: snapshot.directory)
 
     let jobDirectory = storage.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)

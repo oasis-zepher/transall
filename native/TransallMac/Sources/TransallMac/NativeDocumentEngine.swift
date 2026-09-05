@@ -531,8 +531,9 @@ final class NativeDocumentEngine: ObservableObject {
 
   func inspectionSnapshot(jobID: String) async throws -> DocumentInspectionSnapshot {
     let job = try job(id: jobID)
-    guard !deletingJobs.contains(jobID), job.status == "done", let output = job.output,
-      output.lowercased().hasSuffix(".pdf")
+    let hasOutput = job.status == "done" && job.output?.lowercased().hasSuffix(".pdf") == true
+    let hasRecovery = job.kind == "pdf_translate" && ["failed", "cancelled"].contains(job.status)
+    guard !deletingJobs.contains(jobID), hasOutput || hasRecovery
     else { throw NativeDocumentError.processing("这个任务没有可检查的 PDF 结果。") }
     let directory = try jobDirectory(jobID)
     let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
@@ -545,11 +546,15 @@ final class NativeDocumentEngine: ObservableObject {
         attributes: [.posixPermissions: 0o700])
       var completed = false
       defer { if !completed { try? FileManager.default.removeItem(at: snapshotDirectory) } }
-      let verified = try Self.validatedCompletedResult(named: output, in: directory)
-      let result = snapshotDirectory.appendingPathComponent("result.pdf")
-      try AtomicResultSaver.copyReplacing(
-        source: verified.url, destination: result,
-        expectedFingerprint: verified.fingerprint, allowReplacingExistingDestination: false)
+      var result: URL?
+      if hasOutput, let output = job.output {
+        let verified = try Self.validatedCompletedResult(named: output, in: directory)
+        let copy = snapshotDirectory.appendingPathComponent("result.pdf")
+        try AtomicResultSaver.copyReplacing(
+          source: verified.url, destination: copy,
+          expectedFingerprint: verified.fingerprint, allowReplacingExistingDestination: false)
+        result = copy
+      }
       var original: URL?
       if metadata.inputNames.count == 1, let input = metadata.inputNames.first,
         input.lowercased().hasSuffix(".pdf")
@@ -567,13 +572,135 @@ final class NativeDocumentEngine: ObservableObject {
           source: source, destination: copy, allowReplacingExistingDestination: false)
         original = copy
       }
+      var issues: [TranslationLayoutIssue] = []
+      if hasRecovery {
+        guard let original else {
+          throw NativeDocumentError.invalidFile("无法找到这项翻译任务的原文副本。")
+        }
+        let recovery = try TranslationRecoveryStore.load(
+          in: directory, inputURL: original, options: metadata.options)
+        issues = recovery.issues
+      }
       try Task.checkCancellation()
       completed = true
       return DocumentInspectionSnapshot(
-        directory: snapshotDirectory, result: result, original: original)
+        directory: snapshotDirectory, result: result, original: original, issues: issues)
     }
     return try await withTaskCancellationHandler(
       operation: { try await operation.value }, onCancel: { operation.cancel() })
+  }
+
+  func translationRecovery(jobID: String) async throws -> TranslationRecoveryDocument {
+    let job = try job(id: jobID)
+    guard job.kind == "pdf_translate", ["failed", "cancelled"].contains(job.status),
+      !deletingJobs.contains(jobID)
+    else { throw NativeDocumentError.processing("这个任务没有可恢复的译文。") }
+    if let task = tasks[jobID] {
+      await task.value
+      try Task.checkCancellation()
+    }
+    guard !deletingJobs.contains(jobID), tasks[jobID] == nil,
+      ["failed", "cancelled"].contains(try self.job(id: jobID).status)
+    else { throw NativeDocumentError.processing("这个任务现在不能读取已保存译文。") }
+    let directory = try jobDirectory(jobID)
+    let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
+    try Self.validateStoredMetadata(metadata, for: job)
+    let operation = Task.detached(priority: .userInitiated) {
+      let inputs = try Self.validatedStoredInputs(named: metadata.inputNames, in: directory)
+      guard inputs.count == 1, let input = inputs.first else {
+        throw NativeDocumentError.invalidFile("翻译恢复需要一份原文副本。")
+      }
+      return try TranslationRecoveryStore.load(
+        in: directory, inputURL: input, options: metadata.options)
+    }
+    return try await withTaskCancellationHandler(
+      operation: { try await operation.value }, onCancel: { operation.cancel() })
+  }
+
+  func recoverTranslationAsPlainPDF(jobID: String) throws -> JobResponse {
+    let job = try job(id: jobID)
+    guard job.kind == "pdf_translate", ["failed", "cancelled"].contains(job.status),
+      !deletingJobs.contains(jobID), tasks[jobID] == nil, !isTerminating
+    else { throw NativeDocumentError.processing("这个任务现在不能重新排版。") }
+    let directory = try jobDirectory(jobID)
+    let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
+    try Self.validateStoredMetadata(metadata, for: job)
+    var options = metadata.options
+    options.outputMode = "translated"
+    let revised = NativeJobMetadata(
+      route: metadata.route, options: options, inputNames: metadata.inputNames)
+    let queued = replacing(
+      job, status: "queued", stage: "queued", message: "正在准备已保存的译文。",
+      progress: 0, cancelRequested: false,
+      logs: job.logs + ["已选择使用本机保存的译文生成纯译文 PDF；不会再次请求翻译服务。"])
+    try persistMetadata(revised, in: directory)
+    do {
+      try jobPersister(queued, directory)
+    } catch {
+      try? persistMetadata(metadata, in: directory)
+      throw error
+    }
+    jobs[jobID] = queued
+    launchRecoveredTranslation(jobID: jobID, metadata: revised, directory: directory)
+    return queued
+  }
+
+  private func launchRecoveredTranslation(
+    jobID: String, metadata: NativeJobMetadata, directory: URL
+  ) {
+    // This path deliberately has no credential lookup or translation-service processor call.
+    tasks[jobID] = Task.detached(priority: .userInitiated) { [weak self] in
+      guard
+        await self?.markRunning(
+          jobID: jobID, directory: directory,
+          message: "正在使用已保存的译文重新排版。") == true
+      else { return }
+      var outputURL: URL?
+      do {
+        try Task.checkCancellation()
+        let inputs = try Self.validatedStoredInputs(named: metadata.inputNames, in: directory)
+        guard inputs.count == 1, let input = inputs.first else {
+          throw NativeDocumentError.invalidFile("翻译恢复需要一份原文副本。")
+        }
+        let recovery = try TranslationRecoveryStore.load(
+          in: directory, inputURL: input, options: metadata.options)
+        let destination = try Self.containedFileURL(
+          named: OutputFileNamer.name(
+            for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
+          in: directory, description: "恢复的译文结果")
+        let renderingDirectory = directory.appendingPathComponent(
+          "Recovery-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+          at: renderingDirectory, withIntermediateDirectories: false,
+          attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: renderingDirectory) }
+        let rendered = renderingDirectory.appendingPathComponent("translated.pdf")
+        let result = try NativeDocumentProcessor.renderRecoveredTranslation(recovery, to: rendered)
+        try Task.checkCancellation()
+        guard result.outputURL.standardizedFileURL == rendered.standardizedFileURL,
+          Self.isCompleteResult(rendered)
+        else {
+          throw NativeDocumentError.processing("重新排版没有生成完整可用的 PDF。")
+        }
+        try AtomicResultSaver.copyReplacing(source: rendered, destination: destination)
+        outputURL = destination
+        try Task.checkCancellation()
+        let accepted =
+          await self?.markCompleted(
+            jobID: jobID, output: destination.lastPathComponent, logs: result.logs,
+            directory: directory) == true
+        if !accepted {
+          await self?.removeIncompleteOutput(at: destination, jobID: jobID)
+          await self?.markCancelled(jobID: jobID, directory: directory)
+        }
+      } catch is CancellationError {
+        if let outputURL { await self?.removeIncompleteOutput(at: outputURL, jobID: jobID) }
+        await self?.markCancelled(jobID: jobID, directory: directory)
+      } catch {
+        if let outputURL { await self?.removeIncompleteOutput(at: outputURL, jobID: jobID) }
+        await self?.markFailed(jobID: jobID, error: error, directory: directory)
+      }
+    }
   }
 
   private func launch(jobID: String, metadata: NativeJobMetadata, directory: URL) {
@@ -629,6 +756,7 @@ final class NativeDocumentEngine: ObservableObject {
             directory: directory) == true
         if !accepted {
           await self?.removeIncompleteOutput(at: expectedOutputURL, jobID: jobID)
+          await self?.markCancelled(jobID: jobID, directory: directory)
         }
       } catch is CancellationError {
         if let outputURL {
@@ -644,13 +772,15 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
-  private func markRunning(jobID: String, directory: URL) -> Bool {
+  private func markRunning(
+    jobID: String, directory: URL, message: String = "原生引擎正在处理。"
+  ) -> Bool {
     guard let job = jobs[jobID], job.status != "cancelled" else {
       tasks[jobID] = nil
       return false
     }
     let updated = replacing(
-      job, status: "running", stage: "processing", message: "原生引擎正在处理。", progress: 12,
+      job, status: "running", stage: "processing", message: message, progress: 12,
       logs: job.logs + ["开始使用 macOS 原生框架处理。"])
     do {
       try jobPersister(updated, directory)
@@ -667,8 +797,8 @@ final class NativeDocumentEngine: ObservableObject {
   private func markCompleted(
     jobID: String, output: String, logs: [String], directory: URL
   ) -> Bool {
-    tasks[jobID] = nil
     guard let job = jobs[jobID], job.status != "cancelled" else { return false }
+    tasks[jobID] = nil
     var updated = replacing(
       job, status: "done", stage: "complete", message: "任务完成。", output: output,
       progress: 100, logs: job.logs + logs)

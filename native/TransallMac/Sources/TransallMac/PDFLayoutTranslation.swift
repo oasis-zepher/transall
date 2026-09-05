@@ -6,8 +6,8 @@ import ImageIO
 import PDFKit
 import Vision
 
-struct PDFTranslationRegion: Equatable, Sendable {
-  enum Kind: String, Sendable {
+struct PDFTranslationRegion: Codable, Equatable, Sendable {
+  enum Kind: String, Codable, Sendable {
     case nativeText
     case imageOCR
   }

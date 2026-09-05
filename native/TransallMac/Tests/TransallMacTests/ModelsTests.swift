@@ -378,7 +378,7 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.code == "processing_limit_exceeded")
       #expect(error.errorDescription?.contains("最多支持") == true)
-      #expect(error.recoverySuggestion.contains("拆分 PDF"))
+      #expect(error.recoverySuggestion?.contains("拆分 PDF") == true)
     }
 
     do {
@@ -388,7 +388,7 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.code == "processing_limit_exceeded")
       #expect(error.errorDescription?.contains("待翻译字符") == true)
-      #expect(error.recoverySuggestion.contains("删除不需要翻译的页面"))
+      #expect(error.recoverySuggestion?.contains("删除不需要翻译的页面") == true)
     }
   }
 

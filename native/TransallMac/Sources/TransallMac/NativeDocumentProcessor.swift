@@ -12,6 +12,7 @@ enum NativeDocumentError: LocalizedError {
   case processing(String)
   case processingLimit(String, recoverySuggestion: String)
   case provider(String)
+  case layoutOverflow(Int)
 
   var errorDescription: String? {
     switch self {
@@ -20,6 +21,8 @@ enum NativeDocumentError: LocalizedError {
       message
     case .processingLimit(let message, _):
       message
+    case .layoutOverflow(let count):
+      "翻译已完成，但有 \(count) 个区域无法在可读字号下放回原位置。已保存全部译文。"
     }
   }
 
@@ -30,16 +33,18 @@ enum NativeDocumentError: LocalizedError {
     case .processing: "native_processing_failed"
     case .processingLimit: "processing_limit_exceeded"
     case .provider: "translation_provider_failed"
+    case .layoutOverflow: "translation_layout_overflow"
     }
   }
 
-  var recoverySuggestion: String {
+  var recoverySuggestion: String? {
     switch self {
     case .invalidFile: "确认文件没有损坏，并与所选输入格式一致。"
     case .invalidOption: "修改任务参数后重新运行。"
     case .processing: "检查输入文件后重试；问题持续时可保留日志用于反馈。"
     case .processingLimit(_, let recoverySuggestion): recoverySuggestion
     case .provider: "检查网络、API Key、服务余额和服务商状态后重试。"
+    case .layoutOverflow: "检查标记区域，或使用已保存的译文生成纯译文 PDF，无需再次调用翻译服务。"
     }
   }
 }
@@ -733,6 +738,9 @@ enum NativeDocumentProcessor {
   private static func translatePDF(
     input: URL, options: JobOptions, outputURL: URL, apiKey: String
   ) async throws -> PDFLayoutTranslationReport? {
+    let sourceSHA256 =
+      options.outputMode == "preserve_layout"
+      ? try TranslationRecoveryStore.sourceFingerprint(inputURL: input) : nil
     guard let document = PDFDocument(url: input), document.pageCount > 0 else {
       throw NativeDocumentError.invalidFile("无法打开 PDF 或 PDF 没有页面。")
     }
@@ -756,14 +764,9 @@ enum NativeDocumentProcessor {
       let translations = try await translator.translateRegions(
         regions, source: options.sourceLanguage, target: options.targetLanguage,
         glossary: options.glossary)
-      let report = try PDFLayoutTranslation.writeTranslatedPDF(
-        inputURL: input, regions: regions, translations: translations, outputURL: outputURL)
-      guard report.overflowRegionIDs.isEmpty else {
-        try? FileManager.default.removeItem(at: outputURL)
-        throw NativeDocumentError.processing(
-          "有 \(report.overflowRegionIDs.count) 个译文区域无法在可读字号下放回原位置。请改用纯译文 PDF。")
-      }
-      return report
+      return try finishLayoutTranslation(
+        input: input, options: options, pageCount: document.pageCount, regions: regions,
+        translations: translations, outputURL: outputURL, expectedSourceSHA256: sourceSHA256)
     }
     let sourcePages = try translationSourcePages(
       document: document, rasterDocument: rasterDocument, options: options)
@@ -787,6 +790,64 @@ enum NativeDocumentProcessor {
     }
     try writeTextPDF(pages.joined(separator: "\n\n────────\n\n"), to: outputURL)
     return nil
+  }
+
+  // Shared by production and tests: completed provider work is persisted before any layout work.
+  static func finishLayoutTranslation(
+    input: URL, options: JobOptions, pageCount: Int, regions: [PDFTranslationRegion],
+    translations: [String: String], outputURL: URL, expectedSourceSHA256: String? = nil
+  ) throws -> PDFLayoutTranslationReport {
+    var recovery = try TranslationRecoveryStore.create(
+      inputURL: input, options: options, pageCount: pageCount, regions: regions,
+      translations: translations, overflowRegionIDs: [])
+    if let expectedSourceSHA256, recovery.sourceSHA256 != expectedSourceSHA256 {
+      throw NativeDocumentError.invalidFile("输入文件在翻译期间发生变化，未保存不匹配的译文。")
+    }
+    let directory = outputURL.deletingLastPathComponent()
+    try TranslationRecoveryStore.save(recovery, in: directory)
+    do {
+      let report = try PDFLayoutTranslation.writeTranslatedPDF(
+        inputURL: input, regions: regions, translations: translations, outputURL: outputURL)
+      guard report.overflowRegionIDs.isEmpty else {
+        recovery.overflowRegionIDs = report.overflowRegionIDs
+        try TranslationRecoveryStore.save(recovery, in: directory)
+        throw NativeDocumentError.layoutOverflow(report.overflowRegionIDs.count)
+      }
+      // The complete cache is already stored; a successful layout adds no recovery metadata.
+      try TranslationRecoveryStore.validateForRendering(recovery)
+      return report
+    } catch {
+      try? FileManager.default.removeItem(at: outputURL)
+      throw error
+    }
+  }
+
+  static func renderRecoveredTranslation(
+    _ document: TranslationRecoveryDocument, to outputURL: URL
+  ) throws -> Result {
+    try TranslationRecoveryStore.validateForRendering(document)
+    let byPage = Dictionary(grouping: document.regions, by: \.pageIndex)
+    // Dictionary grouping retains extraction order within each original page.
+    let pages = (0..<document.pageCount).map { index in
+      let translated = byPage[index, default: []].compactMap {
+        document.translations[$0.id]
+      }.joined(separator: "\n\n")
+      return "原文第 \(index + 1) 页\n\n"
+        + (translated.isEmpty ? "本页没有可翻译的文字。" : translated)
+    }
+    do {
+      try writeTextPDF(pages: pages, to: outputURL)
+      try TranslationRecoveryStore.validateForRendering(document)
+      return Result(
+        outputURL: outputURL,
+        logs: [
+          "已使用本机保存的全部译文生成纯译文 PDF，未再次调用翻译服务。",
+          "保留原文 \(document.pageCount) 页的顺序和页内文字区域顺序，各原文页从新页开始。",
+        ])
+    } catch {
+      try? FileManager.default.removeItem(at: outputURL)
+      throw error
+    }
   }
 
   private static func translationSourcePages(
@@ -894,37 +955,43 @@ enum NativeDocumentProcessor {
   }
 
   private static func writeTextPDF(_ text: String, to outputURL: URL) throws {
+    try writeTextPDF(pages: [text], to: outputURL)
+  }
+
+  private static func writeTextPDF(pages: [String], to outputURL: URL) throws {
     let pageBox = CGRect(x: 0, y: 0, width: 595, height: 842)
     let contentBox = pageBox.insetBy(dx: 52, dy: 54)
-    let attributed = NSAttributedString(
-      string: text,
-      attributes: [
-        NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(
-          "PingFangSC-Regular" as CFString, 11.5, nil),
-        NSAttributedString.Key(kCTForegroundColorAttributeName as String): NSColor(
-          calibratedRed: 0.12, green: 0.14, blue: 0.13, alpha: 1
-        ).cgColor,
-      ])
-    let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-    var location = 0
     try withPDFContext(outputURL: outputURL, mediaBox: pageBox) { context in
-      repeat {
-        try Task.checkCancellation()
-        context.beginPDFPage(nil)
-        context.setFillColor(
-          NSColor(calibratedRed: 0.96, green: 0.965, blue: 0.95, alpha: 1).cgColor)
-        context.fill(pageBox)
-        let path = CGPath(rect: contentBox, transform: nil)
-        let frame = CTFramesetterCreateFrame(
-          framesetter, CFRange(location: location, length: 0), path, nil)
-        CTFrameDraw(frame, context)
-        let visible = CTFrameGetVisibleStringRange(frame)
-        guard visible.length > 0 else {
-          throw NativeDocumentError.processing("文本排版失败。")
-        }
-        location += visible.length
-        context.endPDFPage()
-      } while location < attributed.length
+      for text in pages {
+        let attributed = NSAttributedString(
+          string: text,
+          attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(
+              "PingFangSC-Regular" as CFString, 11.5, nil),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): NSColor(
+              calibratedRed: 0.12, green: 0.14, blue: 0.13, alpha: 1
+            ).cgColor,
+          ])
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        var location = 0
+        repeat {
+          try Task.checkCancellation()
+          context.beginPDFPage(nil)
+          context.setFillColor(
+            NSColor(calibratedRed: 0.96, green: 0.965, blue: 0.95, alpha: 1).cgColor)
+          context.fill(pageBox)
+          let path = CGPath(rect: contentBox, transform: nil)
+          let frame = CTFramesetterCreateFrame(
+            framesetter, CFRange(location: location, length: 0), path, nil)
+          CTFrameDraw(frame, context)
+          let visible = CTFrameGetVisibleStringRange(frame)
+          guard visible.length > 0 else {
+            throw NativeDocumentError.processing("文本排版失败。")
+          }
+          location += visible.length
+          context.endPDFPage()
+        } while location < attributed.length
+      }
     }
   }
 

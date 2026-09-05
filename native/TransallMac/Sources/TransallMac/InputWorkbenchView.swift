@@ -237,10 +237,16 @@ struct InputWorkbenchView: View {
       }
 
       optionGrid {
-        TextField("源语言（如 en）", text: $model.options.sourceLanguage)
-          .textFieldStyle(.roundedBorder).controlSize(.small)
-        TextField("目标语言（如 zh）", text: $model.options.targetLanguage)
-          .textFieldStyle(.roundedBorder).controlSize(.small)
+        VStack(alignment: .leading, spacing: 4) {
+          Text("源语言").font(.caption)
+          TextField("源语言（如 en）", text: $model.options.sourceLanguage)
+            .textFieldStyle(.roundedBorder).controlSize(.small)
+        }
+        VStack(alignment: .leading, spacing: 4) {
+          Text("目标语言").font(.caption)
+          TextField("目标语言（如 zh）", text: $model.options.targetLanguage)
+            .textFieldStyle(.roundedBorder).controlSize(.small)
+        }
       }
       if model.options.outputMode == "preserve_layout" {
         Text("页面背景保存为高清图像，译文可选择；保留页面方向、裁剪和批注。文字放不下时会提示改用纯译文。")

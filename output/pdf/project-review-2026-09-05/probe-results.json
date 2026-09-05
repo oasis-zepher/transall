@@ -1,0 +1,28 @@
+{
+  "disjointOCRDuplicate" : {
+    "note" : "Injected OCR result matches native text but is at a separate page position.",
+    "retainedOCRRegions" : 0,
+    "suppliedOCRRegions" : 1
+  },
+  "geometry" : {
+    "annotationsAfter" : 0,
+    "annotationsBefore" : 2,
+    "cropAfter" : "{{0, 0}, {320, 240}}",
+    "cropBefore" : "{{20, 40}, {270, 180}}",
+    "extractableTextAfter" : "译⽂\nNative heading\nOUTSIDE CROP",
+    "overflowRegions" : [
+
+    ],
+    "rotationAfter" : 0,
+    "rotationBefore" : 90
+  },
+  "markdownOutputText" : "# Report\n**Important**\n| Item | Value |\n| --- | --- |\n| A | 42 |",
+  "readability" : {
+    "overflowRegions" : [
+
+    ],
+    "translatedFontSizes" : [
+      5
+    ]
+  }
+}

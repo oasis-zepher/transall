@@ -529,6 +529,53 @@ final class NativeDocumentEngine: ObservableObject {
       })
   }
 
+  func inspectionSnapshot(jobID: String) async throws -> DocumentInspectionSnapshot {
+    let job = try job(id: jobID)
+    guard !deletingJobs.contains(jobID), job.status == "done", let output = job.output,
+      output.lowercased().hasSuffix(".pdf")
+    else { throw NativeDocumentError.processing("这个任务没有可检查的 PDF 结果。") }
+    let directory = try jobDirectory(jobID)
+    let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
+    try Self.validateStoredMetadata(metadata, for: job)
+    let operation = Task.detached(priority: .userInitiated) {
+      let snapshotDirectory = directory.appendingPathComponent(
+        "Inspection-\(UUID().uuidString)", isDirectory: true)
+      try FileManager.default.createDirectory(
+        at: snapshotDirectory, withIntermediateDirectories: false,
+        attributes: [.posixPermissions: 0o700])
+      var completed = false
+      defer { if !completed { try? FileManager.default.removeItem(at: snapshotDirectory) } }
+      let verified = try Self.validatedCompletedResult(named: output, in: directory)
+      let result = snapshotDirectory.appendingPathComponent("result.pdf")
+      try AtomicResultSaver.copyReplacing(
+        source: verified.url, destination: result,
+        expectedFingerprint: verified.fingerprint, allowReplacingExistingDestination: false)
+      var original: URL?
+      if metadata.inputNames.count == 1, let input = metadata.inputNames.first,
+        input.lowercased().hasSuffix(".pdf")
+      {
+        let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
+        try Self.validateDirectory(inputDirectory, description: "任务输入目录")
+        let source = try Self.validatedRegularFile(
+          named: input, in: inputDirectory, description: "任务输入")
+        let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
+        guard size <= NativeCapabilities.uploadLimitBytes else {
+          throw NativeDocumentError.invalidFile("任务输入超过检查文件的大小上限。")
+        }
+        let copy = snapshotDirectory.appendingPathComponent("original.pdf")
+        try AtomicResultSaver.copyReplacing(
+          source: source, destination: copy, allowReplacingExistingDestination: false)
+        original = copy
+      }
+      try Task.checkCancellation()
+      completed = true
+      return DocumentInspectionSnapshot(
+        directory: snapshotDirectory, result: result, original: original)
+    }
+    return try await withTaskCancellationHandler(
+      operation: { try await operation.value }, onCancel: { operation.cancel() })
+  }
+
   private func launch(jobID: String, metadata: NativeJobMetadata, directory: URL) {
     guard tasks[jobID] == nil else { return }
     let jobProcessor = self.jobProcessor

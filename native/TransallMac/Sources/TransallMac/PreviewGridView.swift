@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PreviewGridView: View {
   let pages: [PreviewPage]
+  let inspectPage: (Int) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
@@ -44,9 +45,11 @@ struct PreviewGridView: View {
               .shadow(color: TransallTheme.ink.opacity(0.09), radius: 6, y: 3)
               .accessibilityLabel("第 \(page.page) 页预览")
 
-              Text("第 \(page.page) 页")
+              Button("第 \(page.page) 页 · 放大") { inspectPage(page.page) }
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(TransallTheme.muted)
+                .buttonStyle(.plain)
+                .foregroundStyle(TransallTheme.target)
+                .accessibilityLabel("放大检查第 \(page.page) 页")
             }
           }
         }

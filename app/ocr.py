@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+
+# Exception types only; execution uses processes.run_tracked.
+import subprocess  # nosec B404
 from collections.abc import Callable
 from pathlib import Path
 

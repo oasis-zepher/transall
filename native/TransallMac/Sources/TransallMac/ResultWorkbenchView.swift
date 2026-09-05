@@ -3,6 +3,7 @@ import SwiftUI
 
 private final class ResultViewState: ObservableObject {
   @Published var pendingDeletionJobID: String?
+  @Published var inspection: DocumentInspectionRequest?
 }
 
 enum JobStatusAnnouncementPriority: Equatable {
@@ -81,9 +82,16 @@ struct ResultWorkbenchView: View {
 
         if !model.previewPages.isEmpty {
           Divider().overlay(TransallTheme.line)
-          PreviewGridView(pages: model.previewPages)
+          PreviewGridView(pages: model.previewPages) { page in
+            if let jobID = model.currentJob?.id {
+              viewState.inspection = DocumentInspectionRequest(jobID: jobID, page: page)
+            }
+          }
         }
       }
+    }
+    .sheet(item: $viewState.inspection) { request in
+      DocumentInspectionView(backend: model.backend, request: request)
     }
     .confirmationDialog(
       "删除这个任务的本地文件？",
@@ -123,6 +131,7 @@ struct ResultWorkbenchView: View {
         ])
     }
     .onChange(of: model.currentJob?.id) { _, jobID in
+      if viewState.inspection?.jobID != jobID { viewState.inspection = nil }
       guard let pendingJobID = viewState.pendingDeletionJobID, pendingJobID != jobID else {
         return
       }
@@ -242,6 +251,11 @@ struct ResultWorkbenchView: View {
         }
 
         if model.hasPreviewableResult {
+          Button("检查与对照…") {
+            viewState.inspection = DocumentInspectionRequest(jobID: job.id, page: 1)
+          }
+          .buttonStyle(QuietButtonStyle())
+          .disabled(model.isDeletingJob || model.isSubmitting)
           Button(previewButtonLabel) {
             Task { await model.refreshPreview() }
           }

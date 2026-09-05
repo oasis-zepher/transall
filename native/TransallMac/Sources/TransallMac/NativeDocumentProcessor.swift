@@ -638,7 +638,11 @@ enum NativeDocumentProcessor {
       if !combined.isEmpty { combined += "\n\n—— \n\n" }
       combined += source == "html" ? stripHTML(text) : text
     }
-    try writeTextPDF(combined, to: outputURL)
+    if source == "md" {
+      try MarkdownPDFRenderer.write(combined, to: outputURL)
+    } else {
+      try writeTextPDF(combined, to: outputURL)
+    }
   }
 
   private static func validatedTextInputSize(_ inputs: [URL]) throws -> Int {

@@ -185,7 +185,7 @@ struct ResultWorkbenchView: View {
       .padding(9)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(TransallTheme.warning.opacity(0.07))
-      .clipShape(RoundedRectangle(cornerRadius: 4))
+      .clipShape(RoundedRectangle(cornerRadius: 10))
     }
   }
 
@@ -227,7 +227,7 @@ struct ResultWorkbenchView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(TransallTheme.source.opacity(0.06))
       .overlay {
-        RoundedRectangle(cornerRadius: 4).stroke(TransallTheme.line, lineWidth: 1)
+        RoundedRectangle(cornerRadius: 10).stroke(TransallTheme.line, lineWidth: 1)
       }
     } else if model.isLoadingTranslationRecovery {
       ProgressView("正在检查已保存的译文")
@@ -253,10 +253,10 @@ struct ResultWorkbenchView: View {
       .frame(minHeight: 112, maxHeight: 190)
       .background(TransallTheme.paper.opacity(0.78))
       .overlay {
-        RoundedRectangle(cornerRadius: 4)
+        RoundedRectangle(cornerRadius: 10)
           .stroke(TransallTheme.line, lineWidth: 1)
       }
-      .clipShape(RoundedRectangle(cornerRadius: 4))
+      .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
   }
@@ -334,10 +334,10 @@ struct ResultWorkbenchView: View {
     .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
     .background(TransallTheme.panelMuted.opacity(0.58))
     .overlay {
-      RoundedRectangle(cornerRadius: 4)
+      RoundedRectangle(cornerRadius: 10)
         .stroke(TransallTheme.line, lineWidth: 1)
     }
-    .clipShape(RoundedRectangle(cornerRadius: 4))
+    .clipShape(RoundedRectangle(cornerRadius: 10))
   }
 
   @ViewBuilder
@@ -349,7 +349,7 @@ struct ResultWorkbenchView: View {
         .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(TransallTheme.warning.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(error)
     }

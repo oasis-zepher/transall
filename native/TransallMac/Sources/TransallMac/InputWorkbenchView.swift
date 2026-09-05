@@ -147,7 +147,7 @@ struct InputWorkbenchView: View {
         ? TransallTheme.accentSoft.opacity(0.44) : TransallTheme.paper.opacity(0.72)
     )
     .overlay {
-      RoundedRectangle(cornerRadius: 6)
+      RoundedRectangle(cornerRadius: 12)
         .stroke(
           viewState.isDropTargeted ? TransallTheme.accent : TransallTheme.lineStrong,
           style: StrokeStyle(lineWidth: 1, dash: [5, 5])
@@ -266,7 +266,7 @@ struct InputWorkbenchView: View {
       .padding(9)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(TransallTheme.warning.opacity(0.075))
-      .clipShape(RoundedRectangle(cornerRadius: 4))
+      .clipShape(RoundedRectangle(cornerRadius: 10))
     }
   }
 

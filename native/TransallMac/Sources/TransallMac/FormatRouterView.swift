@@ -3,6 +3,7 @@ import SwiftUI
 struct FormatRouterView: View {
   @EnvironmentObject private var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
@@ -29,42 +30,36 @@ struct FormatRouterView: View {
       let nodeDiameter = FormatRouterMetrics.nodeDiameter(for: dynamicTypeSize)
       let radius = FormatRouterMetrics.orbitRadius(in: size, nodeDiameter: nodeDiameter)
 
-      ZStack {
-        Circle()
-          .stroke(TransallTheme.line.opacity(0.75), lineWidth: 1)
-          .frame(width: radius * 2, height: radius * 2)
-        Circle()
-          .stroke(TransallTheme.line.opacity(0.42), style: StrokeStyle(lineWidth: 1, dash: [3, 6]))
-          .frame(width: radius * 1.28, height: radius * 1.28)
-        Rectangle()
-          .fill(TransallTheme.line.opacity(0.35))
-          .frame(width: radius * 2.1, height: 1)
-        Rectangle()
-          .fill(TransallTheme.line.opacity(0.35))
-          .frame(width: 1, height: radius * 2.1)
+      TransallControlGroup(spacing: 12) {
+        ZStack {
+          Circle()
+            .stroke(TransallTheme.line.opacity(0.55), lineWidth: 1)
+            .frame(width: radius * 2, height: radius * 2)
+            .accessibilityHidden(true)
 
-        ForEach(Array(model.formatOrder.enumerated()), id: \.element) { index, format in
-          let angle =
-            (Double(index) / Double(model.formatOrder.count)) * 2 * Double.pi - Double.pi / 2
-          FormatNode(
-            format: format,
-            label: model.capabilities?.formats[format]?.label ?? fallbackLabel(for: format),
-            state: state(for: format),
-            diameter: nodeDiameter,
-            allowsMultilineLabel: dynamicTypeSize.isAccessibilitySize,
-            routeChangeLock: model.routeChangeLock,
-            action: { model.chooseFormat(format, animated: !reduceMotion) }
-          )
-          .position(
-            x: center.x + cos(angle) * radius,
-            y: center.y + sin(angle) * radius
-          )
+          ForEach(Array(model.formatOrder.enumerated()), id: \.element) { index, format in
+            let angle =
+              (Double(index) / Double(model.formatOrder.count)) * 2 * Double.pi - Double.pi / 2
+            FormatNode(
+              format: format,
+              label: model.capabilities?.formats[format]?.label ?? fallbackLabel(for: format),
+              state: state(for: format),
+              diameter: nodeDiameter,
+              allowsMultilineLabel: dynamicTypeSize.isAccessibilitySize,
+              routeChangeLock: model.routeChangeLock,
+              action: { model.chooseFormat(format, animated: !reduceMotion) }
+            )
+            .position(
+              x: center.x + cos(angle) * radius,
+              y: center.y + sin(angle) * radius
+            )
+          }
+
+          routeCore
+            .position(center)
         }
-
-        routeCore
-          .position(center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
@@ -81,13 +76,12 @@ struct FormatRouterView: View {
     }
     .padding(12)
     .frame(width: FormatRouterMetrics.routeCoreWidth(for: dynamicTypeSize))
-    .background(TransallTheme.panel.opacity(0.97))
+    .background(TransallTheme.panel)
     .overlay {
       RoundedRectangle(cornerRadius: 8)
-        .stroke(TransallTheme.lineStrong, lineWidth: 1)
+        .stroke(contrast == .increased ? TransallTheme.ink : TransallTheme.line, lineWidth: 1)
     }
     .clipShape(RoundedRectangle(cornerRadius: 8))
-    .shadow(color: TransallTheme.ink.opacity(0.09), radius: 12, y: 5)
   }
 
   private func routeSlot(title: String, format: String?, color: Color) -> some View {
@@ -298,6 +292,10 @@ enum FormatNodeState: Equatable {
 }
 
 private struct FormatNode: View {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
+
   let format: String
   let label: String
   let state: FormatNodeState
@@ -308,6 +306,50 @@ private struct FormatNode: View {
 
   var body: some View {
     Button(action: action) {
+      surface
+    }
+    .buttonStyle(.plain)
+    .disabled(!isInteractive)
+    .accessibilityLabel("\(label)格式")
+    .accessibilityValue(accessibilityValue)
+  }
+
+  @ViewBuilder
+  private var surface: some View {
+    if #available(macOS 26.0, *), !reduceTransparency, contrast != .increased {
+      nodeLabel
+        .glassEffect(
+          .regular.tint(selectionTint?.opacity(0.3)).interactive(isInteractive && !reduceMotion),
+          in: Circle()
+        )
+        .overlay {
+          if selectionRole != nil {
+            Circle().strokeBorder(border.opacity(0.8), lineWidth: state.borderWidth)
+          } else if state == .unavailable {
+            Circle().strokeBorder(
+              TransallTheme.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+          }
+        }
+    } else {
+      nodeLabel
+        .background {
+          Circle().fill(state == .unavailable ? TransallTheme.panelMuted : TransallTheme.panel)
+          if let selectionTint {
+            Circle().fill(selectionTint.opacity(contrast == .increased ? 0.1 : 0.16))
+          }
+        }
+        .overlay {
+          Circle().strokeBorder(
+            contrast == .increased ? TransallTheme.ink : border,
+            style: StrokeStyle(
+              lineWidth: contrast == .increased ? max(2, state.borderWidth) : state.borderWidth,
+              dash: state == .unavailable ? [2, 3] : []))
+        }
+    }
+  }
+
+  private var nodeLabel: some View {
+    ZStack(alignment: .top) {
       Text(FormatRouterMetrics.displayedLabel(label, allowsMultiline: allowsMultilineLabel))
         .font(.system(.caption2, design: .rounded, weight: .bold))
         .minimumScaleFactor(allowsMultilineLabel ? 1 : 0.72)
@@ -316,34 +358,47 @@ private struct FormatNode: View {
         .foregroundStyle(foreground)
         .padding(.horizontal, allowsMultilineLabel ? 6 : 4)
         .frame(width: diameter, height: diameter)
-        .background(background)
-        .overlay {
-          Circle().stroke(border, lineWidth: state.borderWidth)
-        }
-        .clipShape(Circle())
-        .shadow(color: TransallTheme.ink.opacity(state == .unavailable ? 0 : 0.1), radius: 7, y: 3)
+
+      // Keep the role inside the glass content without taking a line from larger format labels.
+      if let selectionRole {
+        Text(selectionRole)
+          .font(.system(size: 10, weight: .semibold, design: .rounded))
+          .foregroundStyle(TransallTheme.ink)
+          .frame(height: 12)
+          .padding(.top, 4)
+          .accessibilityHidden(true)
+      }
     }
-    .buttonStyle(.plain)
-    .disabled(state == .unavailable || routeChangeLock != nil)
-    .opacity(state == .unavailable ? 0.34 : 1)
-    .accessibilityLabel("\(label)格式")
-    .accessibilityValue(accessibilityValue)
+    .contentShape(Circle())
+  }
+
+  private var isInteractive: Bool {
+    state != .unavailable && routeChangeLock == nil
+  }
+
+  private var selectionRole: String? {
+    switch state {
+    case .source: "①"
+    case .target: "②"
+    case .sourceAndTarget: "①②"
+    case .available, .unavailable: nil
+    }
   }
 
   private var foreground: Color {
+    if contrast == .increased { return TransallTheme.ink }
     switch state {
-    case .source, .target, .sourceAndTarget: .white
-    case .available: TransallTheme.formatColors[format] ?? TransallTheme.ink
-    case .unavailable: TransallTheme.muted
+    case .source, .target, .sourceAndTarget: return TransallTheme.ink
+    case .available: return TransallTheme.formatColors[format] ?? TransallTheme.ink
+    case .unavailable: return TransallTheme.muted
     }
   }
 
-  private var background: Color {
+  private var selectionTint: Color? {
     switch state {
     case .source: TransallTheme.source
     case .target, .sourceAndTarget: TransallTheme.target
-    case .available: TransallTheme.panel
-    case .unavailable: TransallTheme.panelMuted
+    case .available, .unavailable: nil
     }
   }
 
@@ -351,8 +406,7 @@ private struct FormatNode: View {
     switch state {
     case .source, .sourceAndTarget: TransallTheme.source
     case .target: TransallTheme.target
-    case .available: TransallTheme.formatColors[format] ?? TransallTheme.lineStrong
-    case .unavailable: TransallTheme.line
+    case .available, .unavailable: TransallTheme.lineStrong
     }
   }
 

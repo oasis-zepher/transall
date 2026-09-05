@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import CoreText
 import Foundation
+import ImageIO
 import PDFKit
 import Vision
 
@@ -37,6 +38,8 @@ enum PDFLayoutTranslation {
 
   static let maximumRegions = 10_000
   static let minimumOCRConfidence: Float = 0.35
+  static let minimumTranslationFontSize: CGFloat = 8
+  static let minimumTranslationFontScale: CGFloat = 0.75
 
   private struct NativeLine {
     let text: String
@@ -116,7 +119,7 @@ enum PDFLayoutTranslation {
       else {
         throw NativeDocumentError.invalidFile("无法读取 PDF 的第 \(pageIndex + 1) 页。")
       }
-      let pageBounds = page.bounds(for: .mediaBox)
+      let pageBounds = page.bounds(for: .cropBox).intersection(page.bounds(for: .mediaBox))
       let native = nativeRegions(page: page, pageIndex: pageIndex, pageBounds: pageBounds)
       result.append(contentsOf: native)
       guard result.count <= maximumRegions else {
@@ -146,11 +149,12 @@ enum PDFLayoutTranslation {
         guard bounds.width >= 2, bounds.height >= 2 else { continue }
         let normalizedText = normalizedForDeduplication(text)
         if native.contains(where: {
-          normalizedForDeduplication($0.sourceText) == normalizedText
+          let overlap = overlapRatio(bounds, $0.bounds)
+          let nativeText = normalizedForDeduplication($0.sourceText)
+          return overlap >= 0.45 && nativeText.contains(normalizedText)
         }) {
           continue
         }
-        if native.contains(where: { overlapRatio(bounds, $0.bounds) >= 0.45 }) { continue }
         if result.contains(where: {
           $0.pageIndex == pageIndex && $0.kind == .imageOCR
             && overlapRatio(bounds, $0.bounds) >= 0.55
@@ -183,7 +187,10 @@ enum PDFLayoutTranslation {
     translations: [String: String],
     outputURL: URL
   ) throws -> PDFLayoutTranslationReport {
-    guard let source = CGPDFDocument(inputURL as CFURL), source.numberOfPages > 0 else {
+    guard let source = CGPDFDocument(inputURL as CFURL), source.numberOfPages > 0,
+      let sourceDocument = PDFDocument(url: inputURL),
+      sourceDocument.pageCount == source.numberOfPages
+    else {
       throw NativeDocumentError.invalidFile("无法打开 PDF 图像内容。")
     }
     let identifiers = Set(regions.map(\.id))
@@ -202,53 +209,119 @@ enum PDFLayoutTranslation {
     var overflowRegionIDs: [String] = []
     for pageIndex in 0..<source.numberOfPages {
       try Task.checkCancellation()
-      guard let page = source.page(at: pageIndex + 1) else {
+      guard let page = source.page(at: pageIndex + 1),
+        let sourcePage = sourceDocument.page(at: pageIndex)
+      else {
         throw NativeDocumentError.invalidFile("无法读取 PDF 的第 \(pageIndex + 1) 页。")
       }
       var mediaBox = page.getBoxRect(.mediaBox)
       guard mediaBox.width > 0, mediaBox.height > 0 else {
         throw NativeDocumentError.invalidFile("PDF 的第 \(pageIndex + 1) 页尺寸无效。")
       }
-      let pageData = NSMutableData()
-      guard let consumer = CGDataConsumer(data: pageData as CFMutableData),
-        let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil)
-      else {
-        throw NativeDocumentError.processing("无法创建保留版式的 PDF 页面。")
-      }
-      context.beginPDFPage(nil)
-      context.drawPDFPage(page)
-      let sampler = render(page: page, maximumDimension: 1_800).map(PageBackgroundSampler.init)
-      for region in byPage[pageIndex, default: []] {
-        try Task.checkCancellation()
-        let background = sampler?.color(around: region.bounds) ?? .white
-        let cover = region.bounds.insetBy(dx: -0.8, dy: -0.6).intersection(mediaBox)
-        context.setFillColor(background.cgColor)
-        context.fill(cover)
-        let text = translations[region.id]!.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !drawFittedText(
-          text, in: region.bounds.insetBy(dx: -0.4, dy: -0.2).intersection(mediaBox),
-          preferredFontSize: region.preferredFontSize, background: background, context: context)
-        {
-          overflowRegionIDs.append(region.id)
+      let renderedPage = try autoreleasepool { () throws -> PDFPage in
+        guard let backgroundPage = render(page: page, maximumDimension: 3_600),
+          let backgroundImage = compressedBackground(backgroundPage.image)
+        else {
+          throw NativeDocumentError.processing("无法生成第 \(pageIndex + 1) 页背景。")
         }
-      }
-      context.endPDFPage()
-      context.closePDF()
-      guard let rendered = PDFDocument(data: pageData as Data),
-        let renderedPage = rendered.page(at: 0)?.copy() as? PDFPage
-      else {
-        throw NativeDocumentError.processing("无法组装保留版式的第 \(pageIndex + 1) 页。")
+        let pageData = NSMutableData()
+        guard let consumer = CGDataConsumer(data: pageData as CFMutableData),
+          let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil)
+        else {
+          throw NativeDocumentError.processing("无法创建保留版式的 PDF 页面。")
+        }
+        context.beginPDFPage(nil)
+        // A raster background prevents covered source glyphs from surviving in the text layer.
+        // Undo the render transform so the original page coordinates and Rotate remain intact.
+        context.saveGState()
+        context.concatenate(backgroundPage.pageToImageTransform.inverted())
+        context.draw(
+          backgroundImage,
+          in: CGRect(
+            x: 0, y: 0, width: backgroundImage.width, height: backgroundImage.height))
+        context.restoreGState()
+        let sampler = PageBackgroundSampler(renderedPage: backgroundPage)
+        let visibleBox = sourcePage.bounds(for: .cropBox).intersection(mediaBox)
+        for region in byPage[pageIndex, default: []] {
+          try Task.checkCancellation()
+          let background = sampler.color(around: region.bounds)
+          let cover = region.bounds.insetBy(dx: -0.8, dy: -0.6).intersection(visibleBox)
+          context.setFillColor(background.cgColor)
+          context.fill(cover)
+          let text = translations[region.id]!.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !drawFittedText(
+            text, in: region.bounds.insetBy(dx: -0.4, dy: -0.2).intersection(visibleBox),
+            preferredFontSize: region.preferredFontSize, background: background, context: context)
+          {
+            overflowRegionIDs.append(region.id)
+          }
+        }
+        context.endPDFPage()
+        context.closePDF()
+        guard let rendered = PDFDocument(data: pageData as Data),
+          let resultPage = rendered.page(at: 0)?.copy() as? PDFPage
+        else {
+          throw NativeDocumentError.processing("无法组装保留版式的第 \(pageIndex + 1) 页。")
+        }
+        for box: PDFDisplayBox in [.mediaBox, .cropBox, .bleedBox, .trimBox, .artBox] {
+          resultPage.setBounds(sourcePage.bounds(for: box), for: box)
+        }
+        resultPage.rotation = sourcePage.rotation
+        return resultPage
       }
       output.insert(renderedPage, at: output.pageCount)
     }
-    guard output.pageCount == source.numberOfPages, output.write(to: outputURL) else {
-      throw NativeDocumentError.processing("无法写入保留原版式的译文 PDF。")
-    }
-    return PDFLayoutTranslationReport(
+    let report = PDFLayoutTranslationReport(
       pageCount: output.pageCount,
       nativeRegionCount: regions.count { $0.kind == .nativeText },
       imageOCRRegionCount: regions.count { $0.kind == .imageOCR },
       overflowRegionIDs: overflowRegionIDs)
+    guard overflowRegionIDs.isEmpty else { return report }
+    // Copy annotations after all destination pages exist, including internal navigation links.
+    for pageIndex in 0..<sourceDocument.pageCount {
+      try Task.checkCancellation()
+      guard let original = sourceDocument.page(at: pageIndex),
+        let translated = output.page(at: pageIndex)
+      else { throw NativeDocumentError.processing("无法保留 PDF 页面批注。") }
+      for annotation in original.annotations {
+        guard let copy = annotation.copy() as? PDFAnnotation else {
+          throw NativeDocumentError.processing("无法保留 PDF 页面批注。")
+        }
+        // PDFKit's copy supplies a zero-width link border when the original used the PDF default.
+        copy.border = annotation.border?.copy() as? PDFBorder
+        if let action = annotation.action as? PDFActionGoTo,
+          let targetPage = action.destination.page
+        {
+          let targetIndex = sourceDocument.index(for: targetPage)
+          if let newTarget = output.page(at: targetIndex) {
+            let destination = PDFDestination(page: newTarget, at: action.destination.point)
+            destination.zoom = action.destination.zoom
+            copy.action = PDFActionGoTo(destination: destination)
+          }
+        }
+        translated.addAnnotation(copy)
+      }
+    }
+    guard output.pageCount == source.numberOfPages, output.write(to: outputURL) else {
+      throw NativeDocumentError.processing("无法写入保留原版式的译文 PDF。")
+    }
+    return report
+  }
+
+  private static func compressedBackground(_ image: CGImage) -> CGImage? {
+    let data = NSMutableData()
+    guard
+      let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImage(
+      destination, image,
+      [kCGImageDestinationLossyCompressionQuality: 0.94] as CFDictionary)
+    guard CGImageDestinationFinalize(destination),
+      let provider = CGDataProvider(data: data as CFData)
+    else { return nil }
+    return CGImage(
+      jpegDataProviderSource: provider, decode: nil,
+      shouldInterpolate: true, intent: .defaultIntent)
   }
 
   private static func nativeRegions(
@@ -349,7 +422,7 @@ enum PDFLayoutTranslation {
     let drawingSize = CGSize(
       width: isQuarterTurn ? box.height : box.width,
       height: isQuarterTurn ? box.width : box.height)
-    let scale = min(maximumDimension / max(drawingSize.width, drawingSize.height), 3)
+    let scale = min(maximumDimension / max(drawingSize.width, drawingSize.height), 4)
     let width = max(1, Int((drawingSize.width * scale).rounded(.up)))
     let height = max(1, Int((drawingSize.height * scale).rounded(.up)))
     guard
@@ -383,8 +456,10 @@ enum PDFLayoutTranslation {
       0.2126 * background.redComponent + 0.7152 * background.greenComponent
       + 0.0722 * background.blueComponent
     let foreground = luminance < 0.38 ? NSColor.white : NSColor(calibratedWhite: 0.08, alpha: 1)
-    var fontSize = min(30, max(5, preferredFontSize))
-    while fontSize >= 4 {
+    let preferred = min(30, max(minimumTranslationFontSize, preferredFontSize))
+    let minimum = max(minimumTranslationFontSize, preferred * minimumTranslationFontScale)
+    var fontSize = preferred
+    while fontSize >= minimum {
       let paragraph = NSMutableParagraphStyle()
       paragraph.lineBreakMode = .byWordWrapping
       paragraph.alignment = .left
@@ -398,12 +473,32 @@ enum PDFLayoutTranslation {
           .paragraphStyle: paragraph,
         ])
       let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-      let path = CGPath(rect: bounds, transform: nil)
+      // PDF selection bounds describe glyph ink, not a paragraph's typographic line box.
+      // Measure the rendered ink before positioning it, so CJK ascenders do not force tiny type.
+      let layoutBounds = CGRect(
+        x: 0, y: 0, width: bounds.width,
+        height: bounds.height + fontSize * 3)
+      let path = CGPath(rect: layoutBounds, transform: nil)
       let frame = CTFramesetterCreateFrame(
         framesetter, CFRange(location: 0, length: attributed.length), path, nil)
       let visible = CTFrameGetVisibleStringRange(frame)
-      if visible.location == 0, visible.length >= attributed.length {
+      let lines = CTFrameGetLines(frame) as! [CTLine]
+      var origins = Array(repeating: CGPoint.zero, count: lines.count)
+      CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+      var ink = CGRect.null
+      for (index, line) in lines.enumerated() {
+        let lineBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        if !lineBounds.isEmpty {
+          ink = ink.union(lineBounds.offsetBy(dx: origins[index].x, dy: origins[index].y))
+        }
+      }
+      if visible.location == 0, visible.length >= attributed.length,
+        !ink.isNull, ink.width <= bounds.width, ink.height <= bounds.height
+      {
+        context.saveGState()
+        context.translateBy(x: bounds.minX - ink.minX, y: bounds.maxY - ink.maxY)
         CTFrameDraw(frame, context)
+        context.restoreGState()
         return true
       }
       fontSize -= 0.5

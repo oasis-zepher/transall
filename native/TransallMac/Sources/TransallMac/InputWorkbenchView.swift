@@ -189,6 +189,10 @@ struct InputWorkbenchView: View {
 
   @ViewBuilder
   private func routeOptions(_ route: RouteDefinition) -> some View {
+    if route.source == "md", route.kind == "text_to_pdf" {
+      Text("支持标题、列表、表格和代码。图片保留替代文字，不嵌入图片。")
+        .font(.caption).foregroundStyle(TransallTheme.inkSoft)
+    }
     if route.optionPanels.contains("translate") {
       translationOptions
     }
@@ -230,6 +234,18 @@ struct InputWorkbenchView: View {
           Text("双语对照 PDF").tag("bilingual")
         }
         .controlSize(.small)
+      }
+
+      optionGrid {
+        TextField("源语言（如 en）", text: $model.options.sourceLanguage)
+          .textFieldStyle(.roundedBorder).controlSize(.small)
+        TextField("目标语言（如 zh）", text: $model.options.targetLanguage)
+          .textFieldStyle(.roundedBorder).controlSize(.small)
+      }
+      if model.options.outputMode == "preserve_layout" {
+        Text("页面背景保存为高清图像，译文可选择；保留页面方向、裁剪和批注。文字放不下时会提示改用纯译文。")
+          .font(.caption).foregroundStyle(TransallTheme.inkSoft)
+          .fixedSize(horizontal: false, vertical: true)
       }
 
       Label {
@@ -280,14 +296,6 @@ struct InputWorkbenchView: View {
   private func advancedOptions(_ route: RouteDefinition) -> some View {
     if route.optionPanels.contains("translate") {
       VStack(alignment: .leading, spacing: 10) {
-        optionGrid {
-          TextField("源语言（如 en）", text: $model.options.sourceLanguage)
-            .textFieldStyle(.roundedBorder)
-            .controlSize(.small)
-          TextField("目标语言（如 zh）", text: $model.options.targetLanguage)
-            .textFieldStyle(.roundedBorder)
-            .controlSize(.small)
-        }
         TextField("术语表：每行一个术语映射", text: $model.options.glossary, axis: .vertical)
           .textFieldStyle(.roundedBorder)
           .lineLimit(2...5)

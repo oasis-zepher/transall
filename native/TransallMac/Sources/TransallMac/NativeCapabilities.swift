@@ -55,7 +55,7 @@ enum NativeCapabilities {
       "按文件顺序将图片写入一个 PDF。", "Core Graphics"),
     route(
       "md", "pdf", "text_to_pdf", "Markdown 转 PDF", "生成 PDF", "Markdown 文本", "PDF 文档",
-      "使用原生排版生成可搜索的 PDF。", "Core Text / Core Graphics"),
+      "排版标题、列表、表格和代码，生成可搜索 PDF；图片保留替代文字。", "Foundation / Core Text"),
     route(
       "html", "pdf", "text_to_pdf", "HTML 转 PDF", "生成 PDF", "HTML 文档", "PDF 文档",
       "提取 HTML 正文后使用原生排版生成 PDF。", "Foundation / Core Text"),

@@ -207,7 +207,21 @@ struct SelectedDocument: Identifiable, Equatable, Sendable {
   }
 }
 
+enum FormatRouteSlot: String, CaseIterable {
+  case source, target
+
+  var title: String { self == .source ? "源格式" : "目标格式" }
+}
+
 struct RouteSelection: Equatable {
+  var reversed: Self { Self(source: target, target: source) }
+
+  subscript(slot: FormatRouteSlot) -> String? {
+    get { slot == .source ? source : target }
+    set {
+      if slot == .source { source = newValue } else { target = newValue }
+    }
+  }
   var source: String?
   var target: String?
 
@@ -241,6 +255,8 @@ struct JobOptions: Codable, Equatable {
   var cropPages = ""
   var cropBox = ""
   var watermark = ""
+  var replaceFind: String?
+  var replaceWith: String?
 
   var ocrLanguage = "zh-Hans,en-US"
   var ocrOutputFormat = "searchable_pdf"
@@ -264,6 +280,8 @@ struct JobOptions: Codable, Equatable {
       result.cropPages = cropPages
       result.cropBox = cropBox
       result.watermark = watermark
+      result.replaceFind = replaceFind
+      result.replaceWith = replaceWith
     case "ocr":
       result.ocrLanguage = ocrLanguage
       result.ocrOutputFormat = ocrOutputFormat
@@ -295,6 +313,8 @@ struct JobOptions: Codable, Equatable {
         "crop_pages": cropPages,
         "crop_box": cropBox,
         "watermark": watermark,
+        "replace_find": replaceFind ?? "",
+        "replace_with": replaceWith ?? "",
       ]
     case "ocr":
       return [

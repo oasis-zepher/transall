@@ -27,60 +27,43 @@ struct DocumentInspectionRequest: Identifiable {
 struct DocumentInspectionView: View {
   let backend: NativeDocumentEngine
   let request: DocumentInspectionRequest
+  var embedded = false
   @Environment(\.dismiss) private var dismiss
   @StateObject private var session = InspectionSession()
   @State private var snapshot: DocumentInspectionSnapshot?
   @State private var error: String?
-  @State private var compare = true
+  @State private var mode: InspectionDisplayMode = .result
   @State private var scale: CGFloat = 1
   @State private var selectedIssueID: String?
 
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 12) {
-        Text(snapshot?.result == nil && snapshot != nil ? "检查排版问题" : "检查文档")
-          .font(.headline)
-        Spacer()
-        TransallControlGroup(spacing: 10) {
-          HStack(spacing: 10) {
-            if snapshot?.original != nil, snapshot?.result != nil {
-              TransallGlassBar {
-                HStack(spacing: 12) {
-                  Toggle("原文对照", isOn: $compare).toggleStyle(.checkbox)
-                  if compare {
-                    Toggle("同页联动", isOn: $session.synchronize).toggleStyle(.checkbox)
-                      .disabled(!session.canSynchronize)
-                      .help("按相同页码和页面位置联动；不判断两侧内容是否对应")
-                  }
-                }
-                .padding(.horizontal, 12).padding(.vertical, 10)
-              }
-            }
-            TransallGlassBar {
-              HStack(spacing: 12) {
-                Button("缩小", systemImage: "minus.magnifyingglass") {
-                  scale = max(0.25, scale / 1.25)
-                }
-                .labelStyle(.iconOnly).help("缩小文档")
-                Button("放大", systemImage: "plus.magnifyingglass") {
-                  scale = min(4, scale * 1.25)
-                }
-                .labelStyle(.iconOnly).help("放大文档")
-                Button("适合页面") { scale = 1 }
-              }
-              .buttonStyle(.borderless)
-              .padding(.horizontal, 12).padding(.vertical, 10)
-            }
-            TransallGlassBar {
-              Button("完成") { dismiss() }
-                .buttonStyle(.borderless)
-                .keyboardShortcut(.cancelAction)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-            }
+        if let snapshot, snapshot.original != nil,
+          snapshot.result?.pathExtension.lowercased() == "pdf"
+        {
+          Picker("显示内容", selection: $mode) {
+            Text("原件").tag(InspectionDisplayMode.original)
+            Text("结果").tag(InspectionDisplayMode.result)
+            Text("对照").tag(InspectionDisplayMode.compare)
           }
+          .pickerStyle(.segmented).frame(maxWidth: 240)
+          if mode == .compare {
+            Toggle("同页联动", isOn: $session.synchronize).toggleStyle(.checkbox)
+              .disabled(!session.canSynchronize).font(.caption)
+              .help("按相同页码和位置联动，不判断内容是否对应")
+          }
+        } else {
+          Text(snapshot?.result?.lastPathComponent ?? "文档预览")
+            .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
+        }
+        Spacer(minLength: 0)
+        if !embedded {
+          Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
         }
       }
-      .padding(14)
+      .padding(.horizontal, 16).padding(.vertical, 10)
+      Divider()
       if let snapshot {
         if snapshot.result == nil {
           Label(
@@ -91,22 +74,26 @@ struct DocumentInspectionView: View {
           )
           .font(.callout).frame(maxWidth: .infinity, alignment: .leading).padding(12)
           Divider()
-        } else if compare, session.pageCountsDiffer {
+        } else if mode == .compare, session.pageCountsDiffer {
           Text("原文与结果页数不同，同页联动已停用；请分别定位内容。")
             .font(.caption).foregroundStyle(TransallTheme.inkSoft)
             .frame(maxWidth: .infinity, alignment: .leading).padding(10)
           Divider()
         }
         HStack(spacing: 1) {
-          if compare || snapshot.result == nil, let original = snapshot.original {
+          if mode != .result || snapshot.result == nil, let original = snapshot.original {
             InspectionPane(
-              title: "原文 · 提交时的副本", url: original, scale: scale,
+              title: "原文 · 提交时的副本", url: original, scale: $scale,
               initialPage: request.page, controller: session.original)
           }
-          if let result = snapshot.result {
-            InspectionPane(
-              title: "处理结果", url: result, scale: scale,
-              initialPage: request.page, controller: session.result)
+          if let result = snapshot.result, mode != .original || snapshot.original == nil {
+            if result.pathExtension.lowercased() == "pdf" {
+              InspectionPane(
+                title: "处理结果", url: result, scale: $scale,
+                initialPage: request.page, controller: session.result)
+            } else {
+              TextResultPreview(url: result)
+            }
           } else if !snapshot.issues.isEmpty {
             issueList(snapshot.issues)
               .frame(minWidth: 240, idealWidth: 285, maxWidth: 330)
@@ -123,8 +110,8 @@ struct DocumentInspectionView: View {
     .background(TransallTheme.paper)
     .foregroundStyle(TransallTheme.ink)
     .frame(
-      minWidth: 760, idealWidth: 1120, maxWidth: .infinity,
-      minHeight: 560, idealHeight: 760, maxHeight: .infinity
+      minWidth: embedded ? 0 : 760, idealWidth: 1120, maxWidth: .infinity,
+      minHeight: embedded ? 0 : 560, idealHeight: 760, maxHeight: .infinity
     )
     .task(id: request.jobID) {
       do {
@@ -141,7 +128,7 @@ struct DocumentInspectionView: View {
         self.error = error.localizedDescription
       }
     }
-    .onChange(of: compare) { _, visible in session.comparisonVisible = visible }
+    .onChange(of: mode) { _, mode in session.comparisonVisible = mode == .compare }
     .onChange(of: session.original.pageCount) { _, count in
       if count > 0 { selectInitialIssue() }
     }
@@ -204,34 +191,26 @@ struct DocumentInspectionView: View {
   }
 }
 
-private struct InspectionPane: View {
+struct InspectionPane: View {
   let title: String
   let url: URL
-  let scale: CGFloat
+  @Binding var scale: CGFloat
   let initialPage: Int
   @ObservedObject var controller: InspectionPDFController
   @State private var pageInput = "1"
 
   var body: some View {
     VStack(spacing: 0) {
-      TransallControlGroup(spacing: 8) {
-        VStack(spacing: 8) {
-          HStack(spacing: 10) {
-            Text(title).font(.caption.weight(.semibold))
-              .foregroundStyle(TransallTheme.inkSoft)
-            Spacer(minLength: 0)
-            TransallGlassBar {
-              pageNavigation
-                .padding(.horizontal, 10).padding(.vertical, 8)
-            }
-          }
-          TransallGlassBar {
-            searchControls
-              .padding(.horizontal, 12).padding(.vertical, 9)
-          }
+      VStack(spacing: 8) {
+        HStack {
+          Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(
+            .middle)
+          Spacer(minLength: 0)
         }
+        searchControls
       }
-      .padding(10)
+      .padding(12)
+      .background(TransallTheme.paper)
       if let searchNotice = controller.searchNotice {
         Text(searchNotice).font(.caption).foregroundStyle(TransallTheme.inkSoft)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -248,9 +227,38 @@ private struct InspectionPane: View {
               "无法读取 PDF", systemImage: "doc.badge.exclamationmark", description: Text(error))
           }
         }
+      TransallControlGroup {
+        TransallGlassBar {
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14) {
+              pageNavigation
+              Divider().frame(height: 16)
+              zoomControls
+            }
+            VStack(spacing: 10) {
+              pageNavigation
+              zoomControls
+            }
+          }
+          .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+      }
+      .fixedSize(horizontal: false, vertical: true).padding(12)
     }
     .background(Color(nsColor: .underPageBackgroundColor))
     .onChange(of: controller.currentPage) { _, page in pageInput = String(page) }
+  }
+
+  private var zoomControls: some View {
+    HStack(spacing: 12) {
+      Button("缩小", systemImage: "minus.magnifyingglass") { scale = max(0.25, scale / 1.25) }
+        .labelStyle(.iconOnly).help("缩小")
+      Button("适合页面") { scale = 1 }.font(.caption)
+      Button("放大", systemImage: "plus.magnifyingglass") { scale = min(4, scale * 1.25) }
+        .labelStyle(.iconOnly).help("放大")
+    }
+    .buttonStyle(.borderless)
+    .disabled(controller.pageCount == 0)
   }
 
   private var pageNavigation: some View {
@@ -303,6 +311,8 @@ private struct InspectionPane: View {
   }
 }
 
+enum InspectionDisplayMode { case original, result, compare }
+
 struct InspectionLocation: Equatable {
   let pageIndex: Int
   let x: CGFloat
@@ -349,7 +359,7 @@ private final class InspectionSession: ObservableObject {
   @Published var synchronize = true
   @Published private var originalCount = 0
   @Published private var resultCount = 0
-  var comparisonVisible = true
+  var comparisonVisible = false
   private var relaying = false
 
   var canSynchronize: Bool { InspectionNavigation.canSynchronize(originalCount, resultCount) }
@@ -392,6 +402,7 @@ final class InspectionPDFController: NSObject, ObservableObject {
   var onLoad: ((Int) -> Void)?
   var onLocation: ((InspectionLocation) -> Void)?
   private weak var view: PDFView?
+  private(set) var loadedURL: URL?
   private var loadTask: Task<Void, Never>?
   private var searchTask: Task<Void, Never>?
   private var timeoutTask: Task<Void, Never>?
@@ -411,6 +422,9 @@ final class InspectionPDFController: NSObject, ObservableObject {
   func attach(to view: PDFView, url: URL, initialPage: Int) {
     detach()
     self.view = view
+    loadedURL = url
+    query = ""
+    currentPage = 1
     loading = true
     loadError = nil
     loadTask = Task { [weak self, weak view] in
@@ -452,6 +466,7 @@ final class InspectionPDFController: NSObject, ObservableObject {
     pendingIssue = nil
     view?.document = nil
     view = nil
+    loadedURL = nil
     pageCount = 0
     onLoad?(0)
     lastScale = nil
@@ -632,7 +647,12 @@ private struct InspectionPDFView: NSViewRepresentable {
     return view
   }
 
-  func updateNSView(_ view: PDFView, context: Context) { controller.setScale(scale) }
+  func updateNSView(_ view: PDFView, context: Context) {
+    if controller.loadedURL != url {
+      controller.attach(to: view, url: url, initialPage: initialPage)
+    }
+    controller.setScale(scale)
+  }
 
   static func dismantleNSView(_ view: PDFView, coordinator: InspectionPDFController) {
     coordinator.detach()

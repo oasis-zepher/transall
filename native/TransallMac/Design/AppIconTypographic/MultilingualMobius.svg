@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Transall multilingual Möbius icon concept</title>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#202734"/>
+      <stop offset="0.55" stop-color="#171C26"/>
+      <stop offset="1" stop-color="#11161E"/>
+    </linearGradient>
+
+    <radialGradient id="backgroundGlow" cx="0.5" cy="0.42" r="0.62">
+      <stop offset="0" stop-color="#384054" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#0D1118" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="typeGradient" x1="160" y1="0" x2="864" y2="0"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3272C9"/>
+      <stop offset="0.34" stop-color="#5267C0"/>
+      <stop offset="0.55" stop-color="#7658A8"/>
+      <stop offset="0.78" stop-color="#B04F76"/>
+      <stop offset="1" stop-color="#D65450"/>
+    </linearGradient>
+
+    <linearGradient id="typeEdge" x1="160" y1="0" x2="864" y2="0"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#74A8F2"/>
+      <stop offset="0.5" stop-color="#A98AD5"/>
+      <stop offset="1" stop-color="#F08A83"/>
+    </linearGradient>
+
+    <filter id="iconShadow" x="-20%" y="-25%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18"
+                    flood-color="#05070B" flood-opacity="0.62"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="2"
+                    flood-color="#05070B" flood-opacity="0.72"/>
+    </filter>
+
+    <filter id="innerHighlight" x="-10%" y="-15%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="-2" stdDeviation="1.5"
+                    flood-color="#FFFFFF" flood-opacity="0.28"/>
+    </filter>
+
+    <clipPath id="squircleClip">
+      <rect x="18" y="18" width="988" height="988" rx="220"/>
+    </clipPath>
+
+    <!-- Invisible layout path only. It is never painted. -->
+    <path id="infinityPath"
+          d="M 176 512
+             C 176 320 350 292 512 512
+             C 674 732 848 704 848 512
+             C 848 320 674 292 512 512
+             C 350 732 176 704 176 512"
+          pathLength="1000"/>
+  </defs>
+
+  <g clip-path="url(#squircleClip)">
+    <rect x="18" y="18" width="988" height="988" rx="220"
+          fill="url(#background)"/>
+    <rect x="18" y="18" width="988" height="988" rx="220"
+          fill="url(#backgroundGlow)"/>
+    <rect x="21" y="21" width="982" height="982" rx="217"
+          fill="none" stroke="#556071" stroke-opacity="0.34" stroke-width="5"/>
+
+    <g filter="url(#iconShadow)">
+      <text fill="url(#typeGradient)"
+            stroke="#0B1018" stroke-opacity="0.48" stroke-width="12"
+            paint-order="stroke fill"
+            font-family="SF Pro Display, PingFang SC, Hiragino Sans, Apple SD Gothic Neo, Geeza Pro, Arial Unicode MS, sans-serif"
+            font-size="102" font-weight="760"
+            letter-spacing="1"
+            dominant-baseline="middle"
+            textLength="2470" lengthAdjust="spacing">
+        <textPath xlink:href="#infinityPath" startOffset="0">A B 文 译 あ カ 한 글 ع ر Я Б Ω Δ א ב अ क ก ข ➜ ←</textPath>
+      </text>
+    </g>
+
+    <text fill="none"
+          stroke="url(#typeEdge)" stroke-opacity="0.46" stroke-width="2.5"
+          font-family="SF Pro Display, PingFang SC, Hiragino Sans, Apple SD Gothic Neo, Geeza Pro, Arial Unicode MS, sans-serif"
+          font-size="102" font-weight="760"
+          letter-spacing="1"
+          dominant-baseline="middle"
+          textLength="2470" lengthAdjust="spacing"
+          filter="url(#innerHighlight)">
+      <textPath xlink:href="#infinityPath" startOffset="0">A B 文 译 あ カ 한 글 ع ر Я Б Ω Δ א ב अ क ก ข ➜ ←</textPath>
+    </text>
+  </g>
+</svg>

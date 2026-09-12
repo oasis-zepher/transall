@@ -516,6 +516,30 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertIn("exc", outcome)
 
+    def test_tracked_process_passes_shell_metacharacters_as_literal_arguments(self):
+        import sys
+
+        from app.processes import run_tracked
+
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "unexpected.txt"
+            argument = f"$(touch {marker}); echo injected"
+            result = run_tracked(
+                [sys.executable, "-c", "import sys; print(sys.argv[1])", argument], timeout=5, check=True
+            )
+            self.assertEqual(result.stdout.strip(), argument)
+            self.assertFalse(marker.exists())
+
+    def test_tracked_process_rejects_shell_and_string_commands_before_start(self):
+        from app.processes import run_tracked
+
+        with patch("app.processes.subprocess.Popen") as start:
+            with self.assertRaises(ValueError):
+                run_tracked(["echo", "test"], timeout=5, shell=True)
+            with self.assertRaises(ValueError):
+                run_tracked("echo test", timeout=5)
+            start.assert_not_called()
+
     def test_tracked_process_redacts_sensitive_values_from_results_and_errors(self):
         import subprocess
         import sys

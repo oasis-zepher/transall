@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Transall App Icon</title>
+  <desc>A document with two opposing arrows, representing document conversion and translation.</desc>
+
+  <!-- A transparent margin gives the macOS icon its native silhouette. -->
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#183B2A" opacity="0.22"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="#2F6F4E"/>
+  <rect x="86" y="78" width="852" height="852" rx="186" fill="none" stroke="#F4F5EE" stroke-opacity="0.18" stroke-width="8"/>
+
+  <!-- One page keeps the mark readable at Finder and Dock sizes. -->
+  <path d="M318 208H604L744 348V762C744 797.346 715.346 826 680 826H318C282.654 826 254 797.346 254 762V272C254 236.654 282.654 208 318 208Z" fill="#F4F1E7"/>
+  <path d="M604 208V300C604 326.51 625.49 348 652 348H744" fill="#D9DDCF"/>
+  <path d="M604 208V300C604 326.51 625.49 348 652 348H744" fill="none" stroke="#C9D0C1" stroke-width="14" stroke-linejoin="round"/>
+
+  <!-- The opposing arrows communicate transformation without format labels. -->
+  <path d="M352 405C352 388.431 365.431 375 382 375H574V327L680 417L574 507V459H382C365.431 459 352 445.569 352 429V405Z" fill="#B3482D"/>
+  <path d="M646 565C662.569 565 676 578.431 676 595V619C676 635.569 662.569 649 646 649H454V697L348 607L454 517V565H646Z" fill="#B3482D"/>
+</svg>

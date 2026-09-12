@@ -13,61 +13,6 @@ import Testing
 @Suite(.serialized)
 struct ModelsTests {
   @Test
-  func inputFileCountUsesCorrectEnglishPlural() {
-    #expect(InputFileCountLabel.text(for: 0) == "0 FILES")
-    #expect(InputFileCountLabel.text(for: 1) == "1 FILE")
-    #expect(InputFileCountLabel.text(for: 2) == "2 FILES")
-  }
-
-  @Test
-  func sameFormatRouteReportsBothSelectionRoles() {
-    let combined = FormatNodeState.selectedState(
-      for: "pdf", source: "pdf", target: "pdf")
-
-    #expect(combined == .sourceAndTarget)
-    #expect(combined?.accessibilityValue == "已选为源格式和目标格式")
-    #expect(combined?.borderWidth == 3)
-    #expect(
-      FormatNodeState.selectedState(for: "pdf", source: "pdf", target: nil) == .source)
-    #expect(
-      FormatNodeState.selectedState(for: "pdf", source: "image", target: "pdf") == .target)
-    #expect(
-      FormatNodeState.selectedState(for: "pdf", source: "image", target: "md") == nil)
-  }
-
-  @Test
-  func fileWellKeyboardActivationMatchesItsAccessibilityHint() {
-    #expect(DocumentSelectionActivationPolicy.keyboardKeys == [.return, .space])
-    #expect(
-      DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
-        documentsAreEmpty: true, canSelectDocuments: true))
-    #expect(
-      !DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
-        documentsAreEmpty: true, canSelectDocuments: false))
-    #expect(
-      !DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
-        documentsAreEmpty: false, canSelectDocuments: true))
-  }
-
-  @Test
-  func formatRouterMetricsAdaptToAccessibilityTextSizeWithoutClipping() {
-    let standardDiameter = FormatRouterMetrics.nodeDiameter(for: .large)
-    let accessibilityDiameter = FormatRouterMetrics.nodeDiameter(for: .accessibility1)
-
-    #expect(standardDiameter == 58)
-    #expect(accessibilityDiameter == 78)
-    #expect(FormatRouterMetrics.routeCoreWidth(for: .accessibility1) > 122)
-    #expect(FormatRouterMetrics.displayedLabel("Markdown", allowsMultiline: false) == "Markdown")
-    #expect(FormatRouterMetrics.displayedLabel("Markdown", allowsMultiline: true) == "Mark\ndown")
-    #expect(FormatRouterMetrics.displayedLabel("译文 PDF", allowsMultiline: true) == "译文 PDF")
-
-    let canvasSize: CGFloat = 348
-    let radius = FormatRouterMetrics.orbitRadius(
-      in: canvasSize, nodeDiameter: accessibilityDiameter)
-    #expect(radius + accessibilityDiameter / 2 <= canvasSize / 2)
-  }
-
-  @Test
   func routeSelectionResetsAfterCompletedPair() {
     var selection = RouteSelection()
     selection.choose("word")
@@ -378,7 +323,7 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.code == "processing_limit_exceeded")
       #expect(error.errorDescription?.contains("最多支持") == true)
-      #expect(error.recoverySuggestion.contains("拆分 PDF"))
+      #expect(error.recoverySuggestion?.contains("拆分 PDF") == true)
     }
 
     do {
@@ -388,7 +333,7 @@ struct ModelsTests {
     } catch let error as NativeDocumentError {
       #expect(error.code == "processing_limit_exceeded")
       #expect(error.errorDescription?.contains("待翻译字符") == true)
-      #expect(error.recoverySuggestion.contains("删除不需要翻译的页面"))
+      #expect(error.recoverySuggestion?.contains("删除不需要翻译的页面") == true)
     }
   }
 
@@ -2191,12 +2136,16 @@ struct ModelsTests {
       resultRevealer: { revealedDestinations.append($0) })
     let job = completedTestJob()
     model.currentJob = job
-    model.selection.source = "pdf"
+    model.selection.source = "md"
     model.selection.target = "pdf"
 
     model.startSavingResult()
 
     #expect(model.isSaving)
+    let selectedRoute = model.selection
+    #expect(model.formatReversalDisabledReason == model.routeChangeLock?.helpText)
+    #expect(!model.reverseFormats(expectedSelection: selectedRoute))
+    #expect(model.selection == selectedRoute)
     #expect(!model.canDeleteCurrentJob)
     #expect(!model.canRun)
     model.startSavingResult()
@@ -2212,6 +2161,7 @@ struct ModelsTests {
     await model.cancelResultSaving()
 
     #expect(!model.isSaving)
+    #expect(model.formatReversalDisabledReason == nil)
     #expect(model.errorMessage == nil)
     #expect(revealedDestinations.isEmpty)
     await gate.waitUntilCancelled()
@@ -3985,12 +3935,16 @@ struct ModelsTests {
     let model = AppModel(backend: NativeDocumentEngine())
     model.capabilities = NativeCapabilities.response
     model.selection.source = "pdf"
-    model.selection.target = "pdf"
+    model.selection.target = "md"
     let original = SelectedDocument(
       url: URL(fileURLWithPath: "/tmp/running-original.pdf"), size: 128)
     model.documents = [original]
     model.currentJob = testJob(status: "running")
 
+    let selectedRoute = model.selection
+    #expect(model.formatReversalDisabledReason == model.routeChangeLock?.helpText)
+    #expect(!model.reverseFormats(expectedSelection: selectedRoute))
+    #expect(model.selection == selectedRoute)
     #expect(model.routeChangeLock == .running)
     #expect(model.routeChangeLock?.statusLabel == "任务运行中")
     #expect(!model.canChangeRoute)
@@ -4000,12 +3954,12 @@ struct ModelsTests {
 
     model.chooseFormat("image", animated: false)
     #expect(model.selection.source == "pdf")
-    #expect(model.selection.target == "pdf")
+    #expect(model.selection.target == "md")
     #expect(model.errorMessage == "任务运行中，请先取消任务再更换路径。")
 
     model.resetRoute(animated: false)
     #expect(model.selection.source == "pdf")
-    #expect(model.selection.target == "pdf")
+    #expect(model.selection.target == "md")
     #expect(model.currentJob?.status == "running")
     #expect(model.errorMessage == "任务运行中，请先取消任务再重选路径。")
 

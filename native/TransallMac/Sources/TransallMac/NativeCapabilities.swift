@@ -16,17 +16,48 @@ enum NativeCapabilities {
         label: "OCR", input: ".pdf,.png,.jpg,.jpeg,.tiff,.heic", detail: "文字识别"),
       "ppt": FormatDefinition(label: "PPT", input: ".ppt,.pptx", detail: "演示文稿"),
       "excel": FormatDefinition(label: "Excel", input: ".xls,.xlsx", detail: "电子表格"),
-      "md": FormatDefinition(label: "Markdown", input: ".md,.txt", detail: "Markdown 文本"),
+      "md": FormatDefinition(label: "Markdown", input: ".md,.markdown,.txt", detail: "Markdown 文本"),
       "html": FormatDefinition(label: "HTML", input: ".html,.htm", detail: "网页文档"),
       "image": FormatDefinition(
-        label: "图片", input: ".png,.jpg,.jpeg,.tiff,.heic", detail: "常见图片"),
-      "data": FormatDefinition(label: "数据", input: ".txt,.csv,.json", detail: "文本数据"),
+        label: "图片", input: ".png,.jpg,.jpeg,.webp,.tif,.tiff,.heic", detail: "常见图片"),
+      "data": FormatDefinition(
+        label: "数据", input: ".txt,.text,.csv,.tsv,.json,.xml,.yaml,.yml", detail: "文本数据"),
     ],
     routes: routes,
     limits: CapabilityLimits(maxUploadBytes: uploadLimitBytes, maxUploadMB: 250)
   )
 
   static let routes: [RouteDefinition] = [
+    route(
+      "word", "pdf", "office_convert", "Word 转 PDF", "生成 PDF", "Word", "PDF 文档",
+      "在本机转换，保留原文件。", "LibreOffice",
+      requirements: [RouteRequirement(name: "libreoffice", required: .required(true))]),
+    route(
+      "word", "md", "office_convert", "Word 转 Markdown", "提取 Markdown", "Word", "Markdown",
+      "在本机转换，保留原文件。", "LibreOffice",
+      requirements: [RouteRequirement(name: "libreoffice", required: .required(true))]),
+    route(
+      "ppt", "pdf", "office_convert", "PPT 转 PDF", "生成 PDF", "PPT", "PDF 文档",
+      "在本机转换，保留原文件。", "LibreOffice",
+      requirements: [RouteRequirement(name: "libreoffice", required: .required(true))]),
+    route(
+      "ppt", "md", "office_convert", "PPT 转 Markdown", "提取 Markdown", "PPT", "Markdown",
+      "在本机转换，保留原文件。", "LibreOffice",
+      requirements: [RouteRequirement(name: "libreoffice", required: .required(true))]),
+    route(
+      "excel", "pdf", "office_convert", "Excel 转 PDF", "生成 PDF", "Excel", "PDF 文档",
+      "在本机转换，保留原文件。", "LibreOffice",
+      requirements: [RouteRequirement(name: "libreoffice", required: .required(true))]),
+    route(
+      "excel", "md", "office_convert", "Excel 转 Markdown", "提取 Markdown", "Excel", "Markdown",
+      "在本机转换，保留原文件。", "LibreOffice",
+      requirements: [RouteRequirement(name: "libreoffice", required: .required(true))]),
+    route(
+      "html", "md", "extract_markdown", "HTML 转 Markdown", "提取 Markdown", "HTML", "Markdown",
+      "在本机转换，保留原文件。", "WebKit / Foundation"),
+    route(
+      "data", "md", "extract_markdown", "文本数据 转 Markdown", "提取 Markdown", "文本数据", "Markdown",
+      "在本机转换，保留原文件。", "WebKit / Foundation"),
     route(
       "pdf", "pdf", "pdf_edit", "整理 PDF", "PDF 编辑", "PDF 文档", "PDF 文档",
       "使用 PDFKit 合并、删除、旋转、重排、裁剪和添加水印。", "PDFKit / Core Graphics",
@@ -55,21 +86,24 @@ enum NativeCapabilities {
       "按文件顺序将图片写入一个 PDF。", "Core Graphics"),
     route(
       "md", "pdf", "text_to_pdf", "Markdown 转 PDF", "生成 PDF", "Markdown 文本", "PDF 文档",
-      "使用原生排版生成可搜索的 PDF。", "Core Text / Core Graphics"),
+      "排版标题、列表、表格、代码和内嵌图片，生成可搜索 PDF。", "WebKit / AppKit"),
     route(
       "html", "pdf", "text_to_pdf", "HTML 转 PDF", "生成 PDF", "HTML 文档", "PDF 文档",
-      "提取 HTML 正文后使用原生排版生成 PDF。", "Foundation / Core Text"),
+      "保留 HTML 样式、表格与内嵌图片，生成 PDF。", "WebKit / AppKit"),
     route(
       "data", "pdf", "text_to_pdf", "文本数据转 PDF", "生成 PDF", "文本数据", "PDF 文档",
       "将 TXT、CSV 或 JSON 使用原生排版生成 PDF。", "Core Text / Core Graphics"),
   ]
 
   static func inputLimitBytes(for route: RouteDefinition) -> Int {
-    route.kind == "text_to_pdf" ? textToPDFLimitBytes : uploadLimitBytes
+    ["text_to_pdf", "extract_markdown"].contains(route.kind)
+      && ["md", "html", "data"].contains(route.source) ? textToPDFLimitBytes : uploadLimitBytes
   }
 
   static func inputLimitMB(for route: RouteDefinition) -> Int {
-    route.kind == "text_to_pdf" ? textToPDFLimitMB : response.limits.maxUploadMB
+    ["text_to_pdf", "extract_markdown"].contains(route.kind)
+      && ["md", "html", "data"].contains(route.source)
+      ? textToPDFLimitMB : response.limits.maxUploadMB
   }
 
   static func diagnostics(providerConfigured: [ProviderCredential: Bool]) -> DiagnosticsResponse {
@@ -82,6 +116,15 @@ enum NativeCapabilities {
         name: "vision", label: "Apple Vision", available: true,
         requiredFor: ["OCR", "扫描 PDF 文字提取"], detail: "识别在本机完成。", installHint: "",
         category: "system_framework", risk: "low", licenseNote: "Apple system framework"),
+      DiagnosticDefinition(
+        name: "libreoffice", label: "Office 文档转换",
+        available: OfficeDocumentConverter.executable != nil
+          && !OfficeConversionComponent.requiresSetup,
+        requiredFor: ["Office 转 PDF", "Office 转 Markdown"],
+        detail: OfficeDocumentConverter.executable == nil
+          ? OfficeDocumentConverter.missingMessage : "已检测到 LibreOffice，转换在本机完成。",
+        installHint: OfficeDocumentConverter.missingMessage, category: "local_application",
+        risk: "local_processing", licenseNote: "LibreOffice 由用户单独安装。"),
       providerDiagnostic(.deepseek, configured: providerConfigured[.deepseek] == true),
       providerDiagnostic(.openAI, configured: providerConfigured[.openAI] == true),
     ])
@@ -107,17 +150,21 @@ enum NativeCapabilities {
       source: source, target: target, kind: kind, title: title, enabled: true,
       accept: responseAccept(for: source), input: input, requirements: requirements,
       optionPanels: panels, kindLabel: kindLabel, output: output, summary: summary, engine: engine,
-      fallbackEngines: [], dependencyProfile: [], licenseNote: "使用 macOS 系统框架。",
+      fallbackEngines: [], dependencyProfile: [],
+      licenseNote: engine == "LibreOffice" ? "使用独立安装的 LibreOffice。" : "使用 macOS 系统框架。",
       ocrFallback: ocrFallback)
   }
 
   private static func responseAccept(for source: String) -> String {
     switch source {
+    case "word": ".doc, .docx"
+    case "ppt": ".ppt, .pptx"
+    case "excel": ".xls, .xlsx"
     case "pdf": ".pdf"
-    case "image": ".png, .jpg, .jpeg, .tiff, .heic"
-    case "md": ".md, .txt"
+    case "image": ".png, .jpg, .jpeg, .webp, .tif, .tiff, .heic"
+    case "md": ".md, .markdown, .txt"
     case "html": ".html, .htm"
-    case "data": ".txt, .csv, .json"
+    case "data": ".txt, .text, .csv, .tsv, .json, .xml, .yaml, .yml"
     default: ""
     }
   }

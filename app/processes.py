@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import signal
-import subprocess
+
+# Local converters run through the shell-free, cancellable wrapper below.
+import subprocess  # nosec B404
 import threading
 from collections.abc import Iterable
 from typing import Any
@@ -23,12 +25,19 @@ def run_tracked(
     **popen_kwargs: Any,
 ) -> subprocess.CompletedProcess:
     """Run a subprocess registered under the current thread so cancellation can kill it."""
+    if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+        raise ValueError("command must be a non-empty argument list")
+    if popen_kwargs.pop("shell", False) is not False:
+        raise ValueError("tracked converters cannot run through a shell")
     if stdin_text is not None and "stdin" in popen_kwargs:
         raise ValueError("stdin_text cannot be combined with an explicit stdin")
     if stdin_text is not None:
         popen_kwargs["stdin"] = subprocess.PIPE
-    process = subprocess.Popen(
+    # Executables are selected by local converter adapters; document paths are separate argv items.
+    # Validated argv, explicit shell=False; literal-argument regression tested.
+    process = subprocess.Popen(  # nosec B603
         command,
+        shell=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

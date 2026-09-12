@@ -1,17 +1,25 @@
 # Transall release quality audit
 
 Audit date: 2026-08-15
-Last verified: 2026-09-02
-Quality bar: App Store-ready version 1.0
+Last verified locally: 2026-09-05
+Target quality bar: version 1.0; this document is not an App Store readiness certification
 Surfaces: native SwiftUI app and local support/privacy website
 
-## Result
+## Current status · 2026-09-05
+
+The [project review](../../docs/reviews/2026-09-05-project-review.md) found four P1 and four P2 issues that the earlier checks had missed. The old 20/20 score and zero-open-findings statement are historical observations about a limited checklist, not a current product-quality guarantee.
+
+Implementation commit `5cac68d` repairs page geometry/annotations, spatial OCR deduplication, Markdown rendering, minimum translation type size, hidden source text, language-control placement, and full-document PDF inspection. It also fixes the two current CI failure causes. Local evidence: 176 SwiftPM and 176 Xcode Scheme tests, Release analysis, 36 metadata fixtures, 123 Python tests, and 11 site tests plus build smoke passed; Ruff, Bandit, OSV and npm audit passed. The [fix report](../../docs/reviews/2026-09-05-fixes.md) records actual remote status and remaining scope.
+
+Layout backgrounds are rasterized; Markdown images use alt text. Visual crop editing, real-provider accuracy evaluation, minimum-OS/Intel-device coverage, complete VoiceOver testing, and signed release verification remain outside this repair. Do not infer those outcomes from passing automated checks.
+
+## Historical result through 2026-09-02
 
 All P1, P2, and P3 findings from the baseline audit remain resolved. All four P2 issues found in the 2026-08-21 follow-up are also resolved: task creation is cancellable, Keychain transactions run off the main actor, the format router adapts to accessibility text sizes, and every support page can bypass repeated navigation. Later P2 findings in same-format route state reporting, unbounded multi-file batches, file-inspection lifecycle, bundle-language metadata, final task status announcements, active-session result integrity, translation redirect handling, crop-box arithmetic, page-relative crop validation, exact crop-field parsing, blank translation response handling, repeated Settings announcements, provider credential validation, truthful credential-row state, preview task identity, duplicate preview state, result-save task identity, deletion-confirmation task identity, and running-task draft state are resolved as well.
 
 The layout-translation follow-up adopted the useful behavior of region-preserving PDF translation without importing a third-party runtime or source code. The native implementation combines PDFKit text extraction with local Vision OCR, assigns stable page-and-kind identifiers, retries omitted translations individually, rejects duplicate, unexpected, blank, or abnormally long mappings, and stops when translated text cannot fit at a readable size. A mixed-page fixture verifies corrected PDF-to-raster coordinate transforms, complete source-text coverage, matching sampled background color, preserved page geometry, and searchable output. Current strict SwiftPM and Xcode Scheme runs pass 169/169, and Release analysis reports no code findings.
 
-The 2026-08-27 release-automation follow-up added native-app and support-site CI coverage. A later audit found one new P1 in that workflow: the release-metadata step invoked `plutil -lint` without file arguments, then treated each plist path as a separate shell command. The workflow now calls an executable `scripts/validate_release_metadata.sh` validator that passes all four files to one `plutil` command and retains both `zh-Hans` assertions. Workflow-source regressions protect that command structure, and the validator passes locally. The workflow has not run on GitHub because these commits have not been pushed.
+The 2026-08-27 release-automation follow-up added native-app and support-site CI coverage. A later audit found one new P1 in that workflow: the release-metadata step invoked `plutil -lint` without file arguments, then treated each plist path as a separate shell command. The workflow now calls an executable `scripts/validate_release_metadata.sh` validator that passes all four files to one `plutil` command and retains both `zh-Hans` assertions. Workflow-source regressions protect that command structure, and the validator passes locally. Correction recorded 2026-09-05: those commits were pushed. Run 33597971095 passed native checks but failed Python Bandit and the support-site npm audit; see the current fix report.
 
 The release-configuration follow-up found one new P2: `project.yml` was documented as the XcodeGen source of truth, but CI built the committed `Transall.xcodeproj` without regenerating or comparing it. The native job now downloads XcodeGen 2.46.0 from the official release URL, verifies its pinned SHA-256 before execution, generates into an isolated temporary project root, and compares the complete tracked project-file set, every generated file, and `Support/Info.plist` before compilation. Current generation matches, while an intentional temporary version drift from 1.0.0 to 1.0.1 fails with the exact differing build settings.
 
@@ -37,23 +45,23 @@ External release work remains with the account holder: activate the individual A
 
 **Pass — the product does not look generically AI-generated.** The native app and support site consistently use the established light document-workbench language: paper-tinted surfaces, compact controls, precise borders, operational logs, and PDF previews. There are no decorative gradients, glass effects, hero metrics, interchangeable card grids, or unrelated dashboard elements.
 
-## Health score
+## Historical health score
 
-| # | Dimension | Baseline | Current | Evidence |
+| # | Dimension | Baseline | Earlier assessment | Evidence |
 | --- | --- | ---: | ---: | --- |
 | 1 | Accessibility | 3/4 | 4/4 | Contrast, scalable type, labels, focus, reduced-motion behavior, keyboard targets, status announcements, and repeated-navigation bypasses are covered across both surfaces. |
 | 2 | Performance | 2/4 | 4/4 | Byte-heavy work and file metadata inspection are bounded, model-owned, and cancellable from the workbench and app lifecycle. |
 | 3 | Responsive design | 3/4 | 4/4 | Native layout changes at 1040 pt, the website reflows at 820 px, and compact website targets meet the release size baseline. |
 | 4 | Theming | 4/4 | 4/4 | Both surfaces retain the quiet, light-first document-workbench palette and centralized color tokens. |
 | 5 | Anti-patterns | 4/4 | 4/4 | The product keeps its specific document-workbench identity without generic dashboards, decorative gradients, or unrelated cards. |
-| **Total** |  | **16/20** | **20/20** | **Excellent product and release-process quality; no audit finding remains open.** |
+| **Total** |  | **16/20** | **20/20** | Earlier checklist score only; superseded by the September 5 review. |
 
-## Executive summary
+## Historical executive summary
 
-- Audit health score: **20/20 — Excellent**.
-- Open findings: **0 P0, 0 P1, 0 P2, 0 P3**.
+- Earlier checklist score: **20/20**; superseded, not a product or release certification.
+- Earlier tracked findings were closed; the September 5 review subsequently identified eight additional issues.
 - All four follow-up P2 findings are resolved and covered by native or rendered-HTML regression tests.
-- Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; remote execution remains unverified until push.
+- Native and support-site CI coverage exists, and the repaired release-metadata validator passes locally; subsequent remote execution exposed Python and site failures; see the current fix report.
 - The pinned XcodeGen gate verifies that `project.yml`, the committed Xcode project, and generated `Info.plist` match before compilation.
 - The pinned installer verifies the archive checksum and uses an atomically created, unpredictable mode-0600 archive path.
 - Draft support-site builds cannot become Sites deployment artifacts; publication builds require verified identity and contact fields and recheck the packaged manifest.
@@ -446,7 +454,9 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 - OCR plain-text output and Markdown extraction write recognized pages incrementally instead of retaining the full document text in memory. Multi-page and multi-document regression tests preserve page boundaries, order, and Markdown separators.
 - Single-document PDF editing mutates the processor-owned in-memory document instead of cloning every page before applying an operation. Merge retains independent per-page copies, source PDFs remain unchanged on disk, and delete, rotate, reorder, crop, and watermark loops propagate cancellation between pages.
 
-## Verification
+## Historical verification through 2026-09-02
+
+The following table preserves earlier evidence; current results and limits are in the September 5 fix report.
 
 | Check | Result |
 | --- | --- |
@@ -468,7 +478,7 @@ Push the commits and require the new GitHub Actions jobs to pass before treating
 | Release metadata validator | Executable script passes all four files to one `plutil -lint` command, then verifies exact Debug/Release entitlements, stable Info.plist release values, no-tracking privacy declarations, Other User Content handling, and both Required Reason APIs; all 36 baseline/mutation fixtures pass their expected outcomes |
 | Archive privacy-policy gate | Missing and unsafe destinations fail; a public HTTPS test fixture archives successfully and appears in the built `Info.plist`; the final real URL remains an account-holder input |
 | Release workflow | YAML parses locally; five external Action uses are fixed to official full release commits; all three checkout steps discard credentials; weekly Dependabot updates are configured; the `macos-26` runner documents Xcode 26.6 at the configured path; and eleven source regressions plus the native metadata mutation gate protect Action pins, token lifetime, XcodeGen, metadata, and archive privacy configuration. |
-| Remote GitHub Actions | Not yet run for these commits; no remote CI success is claimed until they are pushed and the jobs complete. |
+| Remote GitHub Actions | Corrected September 5: run 33597971095 exists for `bb62442`; native passed, Python Bandit and support-site npm audit failed. Current repair checks are in the fix report. |
 | Xcode 26.6 production verification | License accepted; current tests, analysis, and universal Release build passed; earlier archive inspection and launch smoke test passed |
 | Code signing | Blocked; this Mac reports zero valid code-signing identities |
 

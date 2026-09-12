@@ -1,0 +1,2 @@
+Transall plain text sample.
+Original files stay unchanged.

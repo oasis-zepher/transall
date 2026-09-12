@@ -25,6 +25,8 @@ const targetPick = document.querySelector("#targetPick");
 const coreStatus = document.querySelector("#coreStatus");
 const resetRoute = document.querySelector("#resetRoute");
 const formatNodes = [...document.querySelectorAll(".format-node")];
+const nodeBaseAngles = new Map();
+const nodeCurrentAngles = new Map();
 const formatOrbit = document.querySelector(".format-orbit");
 const routeSlots = [...document.querySelectorAll("[data-route-slot]")];
 const filesInput = document.querySelector("#files");
@@ -201,6 +203,49 @@ function routeAvailabilityForCandidate(candidate) {
   return null;
 }
 
+function layoutRingNodes() {
+  const assigned = new Set([sourceFormat, targetFormat].filter(Boolean));
+  const free = formatNodes
+    .filter((node) => !assigned.has(node.dataset.format))
+    .sort((a, b) => nodeBaseAngles.get(a.dataset.format) - nodeBaseAngles.get(b.dataset.format));
+  const count = free.length;
+  if (!count) return;
+  const step = 360 / count;
+  free.forEach((node, index) => {
+    const name = node.dataset.format;
+    const current = nodeCurrentAngles.get(name) ?? nodeBaseAngles.get(name);
+    // Normalize to the shortest arc so nodes never sweep the long way round
+    let target = -90 + index * step;
+    while (target - current > 180) target -= 360;
+    while (target - current < -180) target += 360;
+    nodeCurrentAngles.set(name, target);
+    node.style.setProperty("--angle", `${target}deg`);
+    if (Math.abs(target - current) > 0.5 && shell.classList.contains("ring-live")) {
+      node.classList.remove("is-stretching");
+      void node.offsetWidth;
+      node.classList.add("is-stretching");
+    }
+  });
+}
+
+function initRingLayout() {
+  formatNodes.forEach((node) => {
+    const base = parseFloat(getComputedStyle(node).getPropertyValue("--angle")) || 0;
+    nodeBaseAngles.set(node.dataset.format, base);
+    nodeCurrentAngles.set(node.dataset.format, base);
+    node.addEventListener("animationend", (event) => {
+      if (event.animationName === "node-stretch") {
+        node.classList.remove("is-stretching");
+      }
+    });
+  });
+  layoutRingNodes();
+  // Enable arc transitions only after the initial layout has painted
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => shell.classList.add("ring-live"));
+  });
+}
+
 function updateRouteUi() {
   if (!activeRoute && !hasOpenedRoutePage) {
     shell.classList.remove("is-route-active", "is-route-entering");
@@ -216,6 +261,7 @@ function updateRouteUi() {
     node.classList.toggle("is-route-unavailable", availability === false && !isAssigned);
     node.setAttribute("aria-pressed", isAssigned ? "true" : "false");
   });
+  layoutRingNodes();
   routeSlots.forEach((slot) => {
     const isSourceSlot = slot.dataset.routeSlot === "source";
     const slotFormat = isSourceSlot ? sourceFormat : targetFormat;
@@ -1102,6 +1148,7 @@ function saveStoredGlossary() {
 
 glossaryInput?.addEventListener("input", saveStoredGlossary);
 loadStoredGlossary();
+initRingLayout();
 refreshControls();
 loadCapabilities();
 loadProviders();

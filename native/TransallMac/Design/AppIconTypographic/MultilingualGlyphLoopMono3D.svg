@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Transall multilingual monochrome glyph loop</title>
+
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FAF9F6"/>
+      <stop offset="0.56" stop-color="#F4F2ED"/>
+      <stop offset="1" stop-color="#E9E7E1"/>
+    </linearGradient>
+    <radialGradient id="screenLight" cx="0.46" cy="0.35" r="0.72">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#D8D5CF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="typeDepth" x="-35%" y="-45%" width="170%" height="230%">
+      <feDropShadow dx="6" dy="9" stdDeviation="0" flood-color="#A9A69F" flood-opacity="1"/>
+      <feDropShadow dx="0" dy="34" stdDeviation="17" flood-color="#111315" flood-opacity="0.25"/>
+      <feDropShadow dx="0" dy="15" stdDeviation="7" flood-color="#111315" flood-opacity="0.13"/>
+    </filter>
+    <filter id="groundBlur" x="-25%" y="-80%" width="150%" height="260%">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <clipPath id="squircle">
+      <rect x="18" y="18" width="988" height="988" rx="220"/>
+    </clipPath>
+    <style>
+      .glyph {
+        fill: #1A1C1F;
+        text-anchor: middle;
+        dominant-baseline: central;
+        font-size: 64px;
+        font-weight: 560;
+      }
+      .latin, .cyrillic, .greek { font-family: "Avenir Next", "Helvetica Neue", sans-serif; }
+      .han { font-family: "PingFang SC", "Songti SC", sans-serif; }
+      .japanese { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; }
+      .korean { font-family: "Apple SD Gothic Neo", sans-serif; }
+      .arabic { font-family: "Geeza Pro", "Noto Sans Arabic", sans-serif; }
+      .hebrew { font-family: "Arial Hebrew", "Noto Sans Hebrew", sans-serif; }
+      .devanagari { font-family: "Kohinoor Devanagari", "Noto Sans Devanagari", sans-serif; }
+      .thai { font-family: "Thonburi", "Noto Sans Thai", sans-serif; }
+      .arrow { fill: #1A1C1F; }
+    </style>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="18" y="18" width="988" height="988" rx="220" fill="url(#paper)"/>
+    <rect x="18" y="18" width="988" height="988" rx="220" fill="url(#screenLight)"/>
+    <rect x="21" y="21" width="982" height="982" rx="217"
+          fill="none" stroke="#1A1C1F" stroke-opacity="0.13" stroke-width="2"/>
+
+    <ellipse cx="512" cy="674" rx="355" ry="72"
+             fill="#17191C" fill-opacity="0.11" filter="url(#groundBlur)"/>
+
+    <!-- The loop is composed only of 22 glyphs and two full arrows. -->
+    <g transform="translate(0 -22)" filter="url(#typeDepth)">
+      <!-- Upper-left sweep -->
+      <text class="glyph latin" x="179" y="469" transform="rotate(-81 179 469)">A</text>
+      <text class="glyph latin" x="206" y="400" transform="rotate(-54 206 400)">B</text>
+      <text class="glyph han" x="254" y="363" transform="rotate(-19 254 363)">文</text>
+      <text class="glyph han" x="315" y="360" transform="rotate(11 315 360)">译</text>
+
+      <!-- Full arrow 1, occupying one position in the typographic loop -->
+      <g transform="translate(391 392) rotate(33)">
+        <path class="arrow" d="M-56-11H8V-29L56 0 8 29V11H-56Z"/>
+      </g>
+
+      <text class="glyph japanese" x="473" y="464" transform="rotate(48 473 464)">あ</text>
+
+      <!-- Lower-right sweep -->
+      <text class="glyph korean" x="551" y="560" transform="rotate(48 551 560)">한</text>
+      <text class="glyph korean" x="633" y="632" transform="rotate(33 633 632)">글</text>
+      <text class="glyph arabic" x="709" y="664" transform="rotate(11 709 664)">ع</text>
+      <text class="glyph arabic" x="770" y="661" transform="rotate(-19 770 661)">ت</text>
+      <text class="glyph cyrillic" x="818" y="624" transform="rotate(-54 818 624)">Я</text>
+      <text class="glyph cyrillic" x="845" y="555" transform="rotate(-81 845 555)">Б</text>
+
+      <!-- Upper-right return -->
+      <text class="glyph greek" x="845" y="469" transform="rotate(81 845 469)">Ω</text>
+
+      <!-- Full arrow 2, occupying the opposite side of the loop -->
+      <g transform="translate(818 400) rotate(-126)">
+        <path class="arrow" d="M-56-11H8V-29L56 0 8 29V11H-56Z"/>
+      </g>
+
+      <text class="glyph greek" x="770" y="363" transform="rotate(19 770 363)">Δ</text>
+      <text class="glyph hebrew" x="709" y="360" transform="rotate(-11 709 360)">א</text>
+      <text class="glyph hebrew" x="633" y="392" transform="rotate(-33 633 392)">ב</text>
+      <text class="glyph devanagari" x="551" y="464" transform="rotate(-48 551 464)">अ</text>
+
+      <!-- Lower-left return -->
+      <text class="glyph devanagari" x="473" y="560" transform="rotate(-48 473 560)">क</text>
+      <text class="glyph thai" x="391" y="632" transform="rotate(-33 391 632)">ก</text>
+      <text class="glyph thai" x="315" y="664" transform="rotate(-11 315 664)">ข</text>
+      <text class="glyph japanese" x="254" y="661" transform="rotate(19 254 661)">ア</text>
+      <text class="glyph japanese" x="206" y="624" transform="rotate(54 206 624)">語</text>
+      <text class="glyph cyrillic" x="179" y="555" transform="rotate(81 179 555)">Д</text>
+    </g>
+  </g>
+</svg>

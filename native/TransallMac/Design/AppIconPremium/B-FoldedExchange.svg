@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>B — Folded Exchange</title>
+  <desc>Two dimensional paper ribbons fold through each other to represent conversion.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FBFBF7"/>
+      <stop offset="1" stop-color="#E5EAE1"/>
+    </linearGradient>
+    <linearGradient id="greenRibbon" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#63A17E"/>
+      <stop offset="0.48" stop-color="#2F7552"/>
+      <stop offset="1" stop-color="#17452F"/>
+    </linearGradient>
+    <linearGradient id="rustRibbon" x1="0.8" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#E67C58"/>
+      <stop offset="0.5" stop-color="#BD4B2E"/>
+      <stop offset="1" stop-color="#84301F"/>
+    </linearGradient>
+    <clipPath id="iconMask"><rect x="72" y="64" width="880" height="880" rx="200"/></clipPath>
+  </defs>
+
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#233A2C" opacity="0.18"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="url(#bg)" stroke="#D8DFD4" stroke-width="5"/>
+  <path d="M168 82H856C902 82 936 120 936 168V226C831 137 690 102 512 102C334 102 193 137 88 226V168C88 120 122 82 168 82Z" fill="#FFFFFF" opacity="0.62" clip-path="url(#iconMask)"/>
+
+  <g>
+    <path d="M240 230H574V160L832 364L574 568V498H240C202.444 498 172 467.556 172 430V298C172 260.444 202.444 230 240 230Z" fill="#183427" opacity="0.18" transform="translate(6 22)"/>
+    <path d="M240 230H574V160L832 364L574 568V498H240C202.444 498 172 467.556 172 430V298C172 260.444 202.444 230 240 230Z" fill="url(#greenRibbon)"/>
+    <path d="M574 498V568L658 502L622 498Z" fill="#0B2F1F" opacity="0.58"/>
+    <path d="M238 248H588V190L801 364" fill="none" stroke="#B5D3C0" stroke-opacity="0.5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <path d="M784 526H450V456L192 660L450 864V794H784C821.556 794 852 763.556 852 726V594C852 556.444 821.556 526 784 526Z" fill="#4B160E" opacity="0.2" transform="translate(6 22)"/>
+    <path d="M784 526H450V456L192 660L450 864V794H784C821.556 794 852 763.556 852 726V594C852 556.444 821.556 526 784 526Z" fill="url(#rustRibbon)"/>
+    <path d="M450 526V456L366 522L402 526Z" fill="#702313" opacity="0.65"/>
+    <path d="M786 544H436V486L223 660" fill="none" stroke="#FFB091" stroke-opacity="0.5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

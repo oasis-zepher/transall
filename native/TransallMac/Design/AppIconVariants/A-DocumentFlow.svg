@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>A — Document Flow</title>
+  <desc>Two documents connected by a forward conversion arrow.</desc>
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#6F281B" opacity="0.22"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="#B3482D"/>
+  <rect x="86" y="78" width="852" height="852" rx="186" fill="none" stroke="#F4F1E7" stroke-opacity="0.22" stroke-width="8"/>
+
+  <path d="M194 264H346L434 352V700C434 728.719 410.719 752 382 752H194C165.281 752 142 728.719 142 700V316C142 287.281 165.281 264 194 264Z" fill="#F4F1E7"/>
+  <path d="M346 264V316C346 335.882 362.118 352 382 352H434" fill="#D8DDCF"/>
+  <path d="M642 320H794L882 408V756C882 784.719 858.719 808 830 808H642C613.281 808 590 784.719 590 756V372C590 343.281 613.281 320 642 320Z" fill="#F4F1E7"/>
+  <path d="M794 320V372C794 391.882 810.118 408 830 408H882" fill="#D8DDCF"/>
+
+  <path d="M380 476H618V414L734 512L618 610V548H380C360.118 548 344 531.882 344 512C344 492.118 360.118 476 380 476Z" fill="#285F43"/>
+</svg>

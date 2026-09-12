@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Transall multilingual glyph loop</title>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7F6F2"/>
+      <stop offset="1" stop-color="#EEECE6"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="18" y="18" width="988" height="988" rx="220"/>
+    </clipPath>
+    <style>
+      .glyph {
+        fill: #1B1E21;
+        stroke: none;
+        text-anchor: middle;
+        dominant-baseline: central;
+        font-size: 70px;
+        font-weight: 520;
+      }
+      .latin, .cyrillic, .greek, .arrow { font-family: "Avenir Next", "Helvetica Neue", sans-serif; }
+      .han { font-family: "PingFang SC", "Songti SC", sans-serif; }
+      .japanese { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; }
+      .korean { font-family: "Apple SD Gothic Neo", sans-serif; }
+      .arabic { font-family: "Geeza Pro", "Noto Sans Arabic", sans-serif; }
+      .hebrew { font-family: "Arial Hebrew", "Noto Sans Hebrew", sans-serif; }
+      .devanagari { font-family: "Kohinoor Devanagari", "Noto Sans Devanagari", sans-serif; }
+      .thai { font-family: "Thonburi", "Noto Sans Thai", sans-serif; }
+      .arrow { font-size: 76px; font-weight: 500; }
+    </style>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="18" y="18" width="988" height="988" rx="220" fill="url(#background)"/>
+    <rect x="21" y="21" width="982" height="982" rx="217"
+          fill="none" stroke="#1B1E21" stroke-opacity="0.13" stroke-width="2"/>
+
+    <!-- No band or ring is drawn. These glyphs alone trace the full infinity path. -->
+    <g>
+      <!-- Upper-left sweep into the crossing -->
+      <text class="glyph latin" x="178" y="479" transform="rotate(-83 178 479)">A</text>
+      <text class="glyph latin" x="192" y="425" transform="rotate(-67 192 425)">B</text>
+      <text class="glyph han" x="218" y="386" transform="rotate(-45 218 386)">文</text>
+      <text class="glyph han" x="254" y="363" transform="rotate(-19 254 363)">译</text>
+      <text class="glyph japanese" x="315" y="360" transform="rotate(11 315 360)">あ</text>
+      <text class="glyph japanese" x="368" y="379" transform="rotate(27 368 379)">ア</text>
+      <text class="glyph korean" x="424" y="417" transform="rotate(40 424 417)">한</text>
+      <text class="glyph arrow" x="483" y="475" transform="rotate(50 483 475)">➜</text>
+
+      <!-- Lower-right sweep -->
+      <text class="glyph korean" x="541" y="549" transform="rotate(50 541 549)">글</text>
+      <text class="glyph korean" x="600" y="607" transform="rotate(40 600 607)">가</text>
+      <text class="glyph arabic" x="656" y="645" transform="rotate(27 656 645)">ع</text>
+      <text class="glyph arabic" x="709" y="664" transform="rotate(11 709 664)">ت</text>
+      <text class="glyph cyrillic" x="770" y="661" transform="rotate(-19 770 661)">Я</text>
+      <text class="glyph cyrillic" x="806" y="638" transform="rotate(-45 806 638)">Б</text>
+      <text class="glyph greek" x="832" y="599" transform="rotate(-67 832 599)">Ω</text>
+      <text class="glyph greek" x="846" y="545" transform="rotate(-83 846 545)">Δ</text>
+
+      <!-- Upper-right return into the crossing -->
+      <text class="glyph hebrew" x="846" y="479" transform="rotate(83 846 479)">א</text>
+      <text class="glyph hebrew" x="832" y="425" transform="rotate(67 832 425)">ב</text>
+      <text class="glyph devanagari" x="806" y="386" transform="rotate(45 806 386)">अ</text>
+      <text class="glyph devanagari" x="770" y="363" transform="rotate(19 770 363)">क</text>
+      <text class="glyph thai" x="709" y="360" transform="rotate(-11 709 360)">ก</text>
+      <text class="glyph thai" x="656" y="379" transform="rotate(-27 656 379)">ข</text>
+      <text class="glyph japanese" x="600" y="417" transform="rotate(-40 600 417)">語</text>
+      <text class="glyph latin" x="541" y="475" transform="rotate(-50 541 475)">C</text>
+
+      <!-- Lower-left return -->
+      <text class="glyph arrow" x="483" y="549" transform="rotate(131 483 549)">➜</text>
+      <text class="glyph han" x="424" y="607" transform="rotate(-40 424 607)">中</text>
+      <text class="glyph japanese" x="368" y="645" transform="rotate(-27 368 645)">ひ</text>
+      <text class="glyph korean" x="315" y="664" transform="rotate(-11 315 664)">나</text>
+      <text class="glyph arabic" x="254" y="661" transform="rotate(19 254 661)">ر</text>
+      <text class="glyph cyrillic" x="218" y="638" transform="rotate(45 218 638)">Д</text>
+      <text class="glyph greek" x="192" y="599" transform="rotate(67 192 599)">λ</text>
+      <text class="glyph devanagari" x="178" y="545" transform="rotate(83 178 545)">श</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>A — Ribbon Page</title>
+  <desc>A floating paper sheet wrapped by a conversion ribbon.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#4B8768"/>
+      <stop offset="0.48" stop-color="#2F6F4E"/>
+      <stop offset="1" stop-color="#194A33"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0.18" y1="0" x2="0.82" y2="1">
+      <stop offset="0" stop-color="#FFFDF5"/>
+      <stop offset="0.62" stop-color="#F3F0E6"/>
+      <stop offset="1" stop-color="#DDE2D5"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8F7EF"/>
+      <stop offset="0.55" stop-color="#CFD7C8"/>
+      <stop offset="1" stop-color="#AAB9AA"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D76A49"/>
+      <stop offset="0.5" stop-color="#BD4B2E"/>
+      <stop offset="1" stop-color="#94321F"/>
+    </linearGradient>
+    <clipPath id="iconMask"><rect x="72" y="64" width="880" height="880" rx="200"/></clipPath>
+  </defs>
+
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#0D2E1E" opacity="0.28"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="url(#bg)"/>
+  <path d="M172 78H852C901.706 78 938 119.294 938 169V260C844 151 710 103 512 103C314 103 180 151 86 260V169C86 119.294 122.294 78 172 78Z" fill="#FFFFFF" opacity="0.075" clip-path="url(#iconMask)"/>
+  <rect x="86" y="78" width="852" height="852" rx="186" fill="none" stroke="#EAF1E8" stroke-opacity="0.28" stroke-width="8"/>
+
+  <g transform="rotate(-5 512 512)">
+    <path d="M322 190H594L744 340V766C744 805.764 711.764 838 672 838H322C282.236 838 250 805.764 250 766V262C250 222.236 282.236 190 322 190Z" fill="#082116" opacity="0.22" transform="translate(10 24)"/>
+    <path d="M322 190H594L744 340V766C744 805.764 711.764 838 672 838H322C282.236 838 250 805.764 250 766V262C250 222.236 282.236 190 322 190Z" fill="url(#paper)" stroke="#FFFFFF" stroke-opacity="0.7" stroke-width="5"/>
+    <path d="M594 190V276C594 311.346 622.654 340 658 340H744" fill="url(#fold)"/>
+    <path d="M594 190V276C594 311.346 622.654 340 658 340H744" fill="none" stroke="#B7C3B5" stroke-width="5"/>
+
+    <path d="M208 456H548V378L792 512L548 646V568H208C180.386 568 158 545.614 158 518V506C158 478.386 180.386 456 208 456Z" fill="#37130E" opacity="0.2" transform="translate(0 18)"/>
+    <path d="M208 456H548V378L792 512L548 646V568H208C180.386 568 158 545.614 158 518V506C158 478.386 180.386 456 208 456Z" fill="url(#ribbon)"/>
+    <path d="M204 466H560V400L763 512" fill="none" stroke="#F4A083" stroke-opacity="0.48" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M548 568V646L622 605L598 568Z" fill="#782616" opacity="0.62"/>
+  </g>
+</svg>

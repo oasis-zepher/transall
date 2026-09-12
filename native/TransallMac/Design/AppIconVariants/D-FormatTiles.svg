@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>D — Format Tiles</title>
+  <desc>Two format tiles connected by a two-way conversion control.</desc>
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#2D332F" opacity="0.18"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="#F1F2EA"/>
+  <rect x="78" y="70" width="868" height="868" rx="194" fill="none" stroke="#2F6F4E" stroke-width="14"/>
+
+  <rect x="152" y="292" width="300" height="440" rx="72" fill="#2F6F4E"/>
+  <rect x="572" y="292" width="300" height="440" rx="72" fill="#B3482D"/>
+
+  <path d="M236 396H314L368 450V628C368 645.673 353.673 660 336 660H236C218.327 660 204 645.673 204 628V428C204 410.327 218.327 396 236 396Z" fill="#F4F1E7"/>
+  <path d="M314 396V424C314 438.359 325.641 450 340 450H368" fill="#D8DDCF"/>
+  <path d="M656 396H734L788 450V628C788 645.673 773.673 660 756 660H656C638.327 660 624 645.673 624 628V428C624 410.327 638.327 396 656 396Z" fill="#F4F1E7"/>
+  <path d="M734 396V424C734 438.359 745.641 450 760 450H788" fill="#D8DDCF"/>
+
+  <rect x="390" y="420" width="244" height="184" rx="86" fill="#F1F2EA" stroke="#223E5C" stroke-width="14"/>
+  <path d="M424 458H540V424L600 474L540 524V490H424Z" fill="#223E5C"/>
+  <path d="M600 566H484V600L424 550L484 500V534H600Z" fill="#223E5C"/>
+</svg>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>E — Transall T</title>
+  <desc>A folded document containing a T-shaped forward arrow.</desc>
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#183B2A" opacity="0.22"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="#2F6F4E"/>
+  <rect x="86" y="78" width="852" height="852" rx="186" fill="none" stroke="#F4F1E7" stroke-opacity="0.18" stroke-width="8"/>
+
+  <path d="M314 204H598L746 352V762C746 797.346 717.346 826 682 826H314C278.654 826 250 797.346 250 762V268C250 232.654 278.654 204 314 204Z" fill="#F4F1E7"/>
+  <path d="M598 204V298C598 327.823 622.177 352 652 352H746" fill="#D8DDCF"/>
+
+  <path d="M344 384H566V326L686 420L566 514V456H522V704H430V456H344C324.118 456 308 439.882 308 420C308 400.118 324.118 384 344 384Z" fill="#B3482D"/>
+</svg>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>D — Transall Fold</title>
+  <desc>A bespoke T monogram folded into a forward page arrow.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#D66A48"/>
+      <stop offset="0.52" stop-color="#B3482D"/>
+      <stop offset="1" stop-color="#7F2D1D"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#FFFDF5"/>
+      <stop offset="0.6" stop-color="#F1EFE5"/>
+      <stop offset="1" stop-color="#D6DDD0"/>
+    </linearGradient>
+    <linearGradient id="greenFold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5E9D79"/>
+      <stop offset="0.5" stop-color="#2F6F4E"/>
+      <stop offset="1" stop-color="#17452F"/>
+    </linearGradient>
+    <clipPath id="iconMask"><rect x="72" y="64" width="880" height="880" rx="200"/></clipPath>
+  </defs>
+
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#50190F" opacity="0.28"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="url(#bg)"/>
+  <path d="M176 78H848C898 78 938 119 938 169V252C827 151 689 108 512 108C335 108 197 151 86 252V169C86 119 126 78 176 78Z" fill="#FFFFFF" opacity="0.085" clip-path="url(#iconMask)"/>
+  <rect x="86" y="78" width="852" height="852" rx="186" fill="none" stroke="#FFE2D6" stroke-opacity="0.25" stroke-width="8"/>
+
+  <g>
+    <path d="M254 246H596V174L824 360L596 546V474H558V746C558 789.078 523.078 824 480 824C436.922 824 402 789.078 402 746V474H254C211.474 474 177 439.526 177 397V323C177 280.474 211.474 246 254 246Z" fill="#50160D" opacity="0.24" transform="translate(6 24)"/>
+    <path d="M254 246H596V174L824 360L596 546V474H558V746C558 789.078 523.078 824 480 824C436.922 824 402 789.078 402 746V474H254C211.474 474 177 439.526 177 397V323C177 280.474 211.474 246 254 246Z" fill="url(#paper)"/>
+    <path d="M596 174L824 360L596 546V474H554V246H596Z" fill="url(#greenFold)"/>
+    <path d="M596 174V246H554" fill="none" stroke="#9EC1AA" stroke-opacity="0.66" stroke-width="7"/>
+    <path d="M596 190L800 360" fill="none" stroke="#A7CEB5" stroke-opacity="0.42" stroke-width="8" stroke-linecap="round"/>
+    <path d="M254 260H530" fill="none" stroke="#FFFFFF" stroke-opacity="0.65" stroke-width="9" stroke-linecap="round"/>
+    <path d="M416 484V738" fill="none" stroke="#FFFFFF" stroke-opacity="0.36" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>B — Circular Router</title>
+  <desc>A document surrounded by two circular conversion arrows.</desc>
+  <rect x="82" y="88" width="860" height="860" rx="196" fill="#183B2A" opacity="0.22"/>
+  <rect x="72" y="64" width="880" height="880" rx="200" fill="#2F6F4E"/>
+  <rect x="86" y="78" width="852" height="852" rx="186" fill="none" stroke="#F4F1E7" stroke-opacity="0.18" stroke-width="8"/>
+
+  <path d="M244 508C244 324 366 202 534 202C638 202 730 253 784 338" fill="none" stroke="#B3482D" stroke-width="62" stroke-linecap="round"/>
+  <path d="M733 295L830 364L730 424Z" fill="#B3482D"/>
+  <path d="M780 528C780 712 658 834 490 834C386 834 294 783 240 698" fill="none" stroke="#B3482D" stroke-width="62" stroke-linecap="round"/>
+  <path d="M291 741L194 672L294 612Z" fill="#B3482D"/>
+
+  <path d="M400 286H566L674 394V704C674 733.823 649.823 758 620 758H400C370.177 758 346 733.823 346 704V340C346 310.177 370.177 286 400 286Z" fill="#F4F1E7"/>
+  <path d="M566 286V344C566 371.614 588.386 394 616 394H674" fill="#D8DDCF"/>
+  <rect x="414" y="478" width="192" height="42" rx="21" fill="#2F6F4E" opacity="0.82"/>
+  <rect x="414" y="552" width="144" height="42" rx="21" fill="#2F6F4E" opacity="0.58"/>
+</svg>

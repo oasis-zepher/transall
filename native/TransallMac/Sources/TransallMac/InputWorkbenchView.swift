@@ -1,196 +1,73 @@
 import SwiftUI
-import UniformTypeIdentifiers
-
-private final class InputViewState: ObservableObject {
-  @Published var showImporter = false
-  @Published var isDropTargeted = false
-  var isAppending = false
-}
-
-enum DocumentSelectionActivationPolicy {
-  static var keyboardKeys: Set<KeyEquivalent> { [.return, .space] }
-
-  static func canActivateEmptyFileWell(
-    documentsAreEmpty: Bool, canSelectDocuments: Bool
-  ) -> Bool {
-    documentsAreEmpty && canSelectDocuments
-  }
-}
-
-enum InputFileCountLabel {
-  static func text(for count: Int) -> String {
-    "\(count) \(count == 1 ? "FILE" : "FILES")"
-  }
-}
 
 struct InputWorkbenchView: View {
   @EnvironmentObject private var model: AppModel
-  @StateObject private var viewState = InputViewState()
 
   var body: some View {
-    WorkbenchPanel {
-      VStack(alignment: .leading, spacing: 16) {
-        panelHeader
-        fileWell
-
-        if let route = model.route, route.enabled {
-          routeOptions(route)
-            .disabled(!model.canEditTaskDraft)
-          actionBar(route)
-        } else {
-          unavailableHint
-        }
-      }
-    }
-    .fileImporter(
-      isPresented: $viewState.showImporter,
-      allowedContentTypes: allowedContentTypes,
-      allowsMultipleSelection: true
-    ) { result in
-      switch result {
-      case .success(let urls):
-        let appending = viewState.isAppending
-        model.startDocumentImport(urls, appending: appending)
-      case .failure(let error): model.errorMessage = error.localizedDescription
-      }
-    }
-    .onReceive(
-      NotificationCenter.default.publisher(for: .transallChooseDocuments)
-    ) { _ in
-      guard model.canSelectDocuments else { return }
-      viewState.isAppending = !model.documents.isEmpty
-      viewState.showImporter = true
-    }
-  }
-
-  private var panelHeader: some View {
-    HStack(alignment: .top) {
-      VStack(alignment: .leading, spacing: 3) {
-        SectionLabel(text: "Input")
-        Text(model.route?.enabled == true ? model.routeTitle : "选择路径后上传")
-          .font(.system(.title3, design: .serif, weight: .semibold))
-      }
-      Spacer()
-      Text(InputFileCountLabel.text(for: model.documents.count))
-        .font(.system(.caption2, design: .rounded, weight: .semibold))
-        .tracking(0.7)
-        .foregroundStyle(TransallTheme.muted)
-    }
-  }
-
-  private var fileWell: some View {
-    LazyVStack(spacing: model.documents.isEmpty || model.isImporting ? 7 : 10) {
-      if model.isImporting {
-        ProgressView()
-          .controlSize(.small)
-          .accessibilityLabel("正在读取文件")
-        Text("正在读取文件")
-          .font(.callout.weight(.semibold))
-        Text("全部文件通过校验后才会加入列表")
-          .font(.caption2)
-          .foregroundStyle(TransallTheme.muted)
-      } else if model.documents.isEmpty {
-        Image(systemName: "doc.badge.plus")
-          .font(.title2.weight(.light))
-          .foregroundStyle(TransallTheme.accent)
-          .accessibilityHidden(true)
-        Text("拖入文件，或点击选择")
-          .font(.callout.weight(.semibold))
-        Text(fileHint)
-          .font(.caption2)
-          .foregroundStyle(TransallTheme.muted)
-          .multilineTextAlignment(.center)
-      } else {
-        ForEach(model.documents) { document in
-          HStack(spacing: 10) {
-            Image(systemName: "doc.text")
-              .foregroundStyle(TransallTheme.source)
-              .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-              Text(document.name)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(document.name)
-              Text(document.formattedSize)
-                .font(.caption2)
-                .foregroundStyle(TransallTheme.muted)
+    VStack(spacing: 0) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          Text(model.selectedTask.title).font(.headline)
+          if model.selectedTask.sources.count > 1 {
+            Picker(
+              "文件类型",
+              selection: Binding(
+                get: { model.selection.source ?? model.selectedTask.sources[0] },
+                set: { model.selectTask(model.selectedTask, source: $0) }
+              )
+            ) {
+              ForEach(model.selectedTask.sources, id: \.self) { source in
+                Text(WorkbenchTask.sourceTitle(source)).tag(source)
+              }
             }
-            Spacer()
-            Button {
-              model.removeDocument(document)
-            } label: {
-              Image(systemName: "xmark")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(TransallTheme.muted)
-                .padding(5)
+            .disabled(!model.canChangeRoute)
+          }
+          if let route = model.route {
+            routeOptions(route).disabled(!model.canEditTaskDraft || model.isImporting)
+            if route.source == "image", route.target == "pdf" {
+              Text("按文件列表顺序合成一个 PDF。").font(.callout).foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .disabled(inputIsLocked)
-            .accessibilityLabel("移除\(document.name)")
+            if route.source == "html" {
+              Text(route.target == "pdf" ? "保留样式、表格与内嵌图片；不加载外部资源。" : "提取标题、列表、表格与链接。").font(
+                .caption
+              ).foregroundStyle(.secondary)
+            }
+            if route.kind == "office_convert" {
+              if OfficeConversionComponent.requiresSetup {
+                SettingsLink { Text("启用 Office 转换…") }.font(.caption)
+              }
+              Text(
+                OfficeDocumentConverter.executable == nil
+                  ? OfficeDocumentConverter.missingMessage : "使用本机 LibreOffice；多个文件按列表顺序合并输出。"
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            Text("接受 \(route.accept)").font(.caption).foregroundStyle(.secondary)
+            Text(
+              "上限 \(model.inputLimitMB) MB · 每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件"
+            )
+            .font(.caption).foregroundStyle(.secondary)
           }
         }
-
-        Button("继续添加文件") {
-          viewState.isAppending = true
-          viewState.showImporter = true
-        }
-        .buttonStyle(QuietButtonStyle())
-        .disabled(!model.canSelectDocuments)
-        .help(addDocumentsHelp)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
       }
-    }
-    .frame(maxWidth: .infinity, minHeight: model.documents.isEmpty || model.isImporting ? 116 : 76)
-    .padding(13)
-    .background(
-      viewState.isDropTargeted
-        ? TransallTheme.accentSoft.opacity(0.44) : TransallTheme.paper.opacity(0.72)
-    )
-    .overlay {
-      RoundedRectangle(cornerRadius: 12)
-        .stroke(
-          viewState.isDropTargeted ? TransallTheme.accent : TransallTheme.lineStrong,
-          style: StrokeStyle(lineWidth: 1, dash: [5, 5])
-        )
-    }
-    .contentShape(Rectangle())
-    .onTapGesture {
-      if canActivateEmptyFileWell {
-        viewState.isAppending = false
-        viewState.showImporter = true
+      .accessibilityLabel("任务参数")
+      Divider()
+      HStack {
+        TaskActionButtons().labelStyle(.titleAndIcon)
+        Spacer(minLength: 0)
       }
+      .padding(20)
     }
-    .dropDestination(for: URL.self) { urls, _ in
-      guard model.canSelectDocuments, !urls.isEmpty else { return false }
-      let appending = !model.documents.isEmpty
-      model.startDocumentImport(urls, appending: appending)
-      return !urls.isEmpty
-    } isTargeted: { targeted in
-      viewState.isDropTargeted = targeted
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("文件选择区")
-    .accessibilityHint(
-      inputAccessibilityHint
-    )
-    .accessibilityAddTraits(canActivateEmptyFileWell ? .isButton : [])
-    .documentSelectionAccessibilityAction(enabled: model.canSelectDocuments) {
-      viewState.isAppending = !model.documents.isEmpty
-      viewState.showImporter = true
-    }
-    .focusable(canActivateEmptyFileWell)
-    .onKeyPress(keys: DocumentSelectionActivationPolicy.keyboardKeys) { _ in
-      guard canActivateEmptyFileWell else { return .ignored }
-      viewState.isAppending = false
-      viewState.showImporter = true
-      return .handled
-    }
+    .background(TransallTheme.panel)
   }
 
   @ViewBuilder
   private func routeOptions(_ route: RouteDefinition) -> some View {
     if route.source == "md", route.kind == "text_to_pdf" {
-      Text("支持标题、列表、表格和代码。图片保留替代文字，不嵌入图片。")
+      Text("支持标题、列表、表格、代码和内嵌图片；不加载外部资源。")
         .font(.caption).foregroundStyle(TransallTheme.inkSoft)
     }
     if route.optionPanels.contains("translate") {
@@ -202,10 +79,13 @@ struct InputWorkbenchView: View {
     }
 
     if route.optionPanels.contains("ocr") {
-      ocrOptions
+      ocrOptions(showsOutput: route.target == "ocr")
     }
 
-    if route.optionPanels.contains("advanced") {
+    if route.optionPanels.contains("advanced"),
+      route.optionPanels.contains("translate")
+        || (route.optionPanels.contains("edit") && model.options.editAction == "edit")
+    {
       Divider().overlay(TransallTheme.line)
       DisclosureGroup("高级参数", isExpanded: $model.showAdvanced) {
         advancedOptions(route)
@@ -218,7 +98,7 @@ struct InputWorkbenchView: View {
 
   private var translationOptions: some View {
     VStack(alignment: .leading, spacing: 11) {
-      SectionLabel(text: "Translation")
+      SectionLabel(text: "翻译设置")
       optionGrid {
         Picker("翻译服务", selection: $model.options.provider) {
           ForEach(model.providers) { provider in
@@ -262,38 +142,37 @@ struct InputWorkbenchView: View {
         Image(systemName: "network")
       }
       .font(.caption2)
-      .foregroundStyle(TransallTheme.warning)
-      .padding(9)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(TransallTheme.warning.opacity(0.075))
-      .clipShape(RoundedRectangle(cornerRadius: 10))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 
   private var editOptions: some View {
     VStack(alignment: .leading, spacing: 9) {
-      SectionLabel(text: "PDF operation")
+      SectionLabel(text: "操作")
       Picker("PDF 操作", selection: $model.options.editAction) {
         Text("编辑单个 PDF").tag("edit")
-        Text("按列表顺序合并 PDF").tag("merge")
+        Text("合并 PDF").tag("merge")
       }
-      .pickerStyle(.segmented)
+      .pickerStyle(.menu)
       .controlSize(.small)
     }
   }
 
-  private var ocrOptions: some View {
+  private func ocrOptions(showsOutput: Bool) -> some View {
     VStack(alignment: .leading, spacing: 9) {
-      SectionLabel(text: "OCR")
+      SectionLabel(text: "文字识别")
       optionGrid {
         TextField("识别语言，如 zh-Hans,en-US", text: $model.options.ocrLanguage)
           .textFieldStyle(.roundedBorder)
           .controlSize(.small)
-        Picker("输出", selection: $model.options.ocrOutputFormat) {
-          Text("可搜索 PDF").tag("searchable_pdf")
-          Text("纯文本").tag("text")
+        if showsOutput {
+          Picker("输出", selection: $model.options.ocrOutputFormat) {
+            Text("可搜索 PDF").tag("searchable_pdf")
+            Text("纯文本").tag("text")
+          }
+          .controlSize(.small)
         }
-        .controlSize(.small)
       }
     }
   }
@@ -320,119 +199,19 @@ struct InputWorkbenchView: View {
         compactField("裁剪页，如 1,3-5", text: $model.options.cropPages)
         compactField("裁剪区域 x0,y0,x1,y1", text: $model.options.cropBox)
         compactField("水印文字", text: $model.options.watermark)
+        compactField(
+          "查找文字",
+          text: Binding(
+            get: { model.options.replaceFind ?? "" }, set: { model.options.replaceFind = $0 }))
+        compactField(
+          "替换为（留空则删除）",
+          text: Binding(
+            get: { model.options.replaceWith ?? "" }, set: { model.options.replaceWith = $0 }))
       }
-    }
-  }
-
-  private func actionBar(_ route: RouteDefinition) -> some View {
-    HStack(spacing: 10) {
-      Button {
-        model.startJob()
-      } label: {
-        if model.isImporting {
-          HStack(spacing: 7) {
-            ProgressView().controlSize(.small)
-            Text("正在读取文件")
-          }
-        } else if model.isSubmitting {
-          HStack(spacing: 7) {
-            ProgressView().controlSize(.small)
-            Text("正在准备任务")
-          }
-        } else {
-          Text("开始\(route.kindLabel)")
-        }
+      if !(model.options.replaceFind ?? "").isEmpty {
+        Text("精确匹配单行文字，替换区域为白底。修改页重绘并保留搜索；交互批注不保留。")
+          .font(.caption).foregroundStyle(.secondary)
       }
-      .buttonStyle(PrimaryButtonStyle())
-      .disabled(!model.canRun)
-
-      if model.isImporting {
-        Button("取消读取") {
-          model.requestDocumentImportCancellation()
-        }
-        .buttonStyle(QuietButtonStyle())
-        .help("停止读取文件；当前文件列表保持不变")
-      } else if model.isSubmitting {
-        Button("取消创建") {
-          model.requestJobSubmissionCancellation()
-        }
-        .buttonStyle(QuietButtonStyle())
-      } else if model.currentJob?.isRunning == true {
-        Button("取消任务") {
-          Task { await model.cancelJob() }
-        }
-        .buttonStyle(QuietButtonStyle())
-      }
-
-      Spacer()
-
-      Text(
-        "上限 \(model.inputLimitMB) MB · 最多 \(NativeCapabilities.maximumInputFileCount) 个文件"
-      )
-      .font(.caption2)
-      .foregroundStyle(TransallTheme.muted)
-    }
-  }
-
-  private var unavailableHint: some View {
-    Text(model.selection.target == nil ? "在左侧选择源格式和目标格式。" : "这条转换路径尚未接入，请重新选择。")
-      .font(.caption)
-      .foregroundStyle(TransallTheme.muted)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.vertical, 4)
-  }
-
-  private var fileHint: String {
-    guard let route = model.route, route.enabled else { return "路径确定后会校验文件类型" }
-    return "接受 \(route.accept)"
-  }
-
-  private var inputIsLocked: Bool {
-    model.isImporting || !model.canEditTaskDraft
-  }
-
-  private var canActivateEmptyFileWell: Bool {
-    DocumentSelectionActivationPolicy.canActivateEmptyFileWell(
-      documentsAreEmpty: model.documents.isEmpty,
-      canSelectDocuments: model.canSelectDocuments
-    )
-  }
-
-  private var inputAccessibilityHint: String {
-    if model.route?.enabled != true { return "先选择源格式和目标格式" }
-    if model.isImporting { return "全部文件通过校验后才会加入列表" }
-    if let taskDraftLockMessage = model.taskDraftLockMessage { return taskDraftLockMessage }
-    if model.documents.count >= NativeCapabilities.maximumInputFileCount {
-      return "已达到每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件的限制，可先移除文件"
-    }
-    return model.documents.isEmpty
-      ? "按回车键选择文件，也可以将文件拖到这里"
-      : "可继续添加或移除文件"
-  }
-
-  private var addDocumentsHelp: String {
-    if let taskDraftLockMessage = model.taskDraftLockMessage { return taskDraftLockMessage }
-    if model.documents.count >= NativeCapabilities.maximumInputFileCount {
-      return "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件"
-    }
-    return "向当前任务继续添加文件"
-  }
-
-  private var allowedContentTypes: [UTType] {
-    guard let source = model.route?.source else { return [.item] }
-    switch source {
-    case "pdf":
-      return [.pdf]
-    case "image":
-      return [.image]
-    case "md":
-      return [UTType(filenameExtension: "md") ?? .plainText, .plainText]
-    case "html":
-      return [.html]
-    case "data":
-      return [.plainText, .commaSeparatedText, .json]
-    default:
-      return [.item]
     }
   }
 
@@ -448,18 +227,5 @@ struct InputWorkbenchView: View {
 
   private func optionGrid<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     LazyVGrid(columns: fieldColumns, alignment: .leading, spacing: 9, content: content)
-  }
-}
-
-extension View {
-  @ViewBuilder
-  fileprivate func documentSelectionAccessibilityAction(
-    enabled: Bool, action: @escaping () -> Void
-  ) -> some View {
-    if enabled {
-      accessibilityAction(named: "选择文件", action)
-    } else {
-      self
-    }
   }
 }

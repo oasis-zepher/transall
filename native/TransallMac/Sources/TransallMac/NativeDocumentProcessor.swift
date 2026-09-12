@@ -221,6 +221,15 @@ enum JobOptionValidator {
         }
       }
     }
+    let find = options.replaceFind ?? ""
+    let replacement = options.replaceWith ?? ""
+    if find.count > 512 || replacement.count > 512 || find.contains("\n")
+      || replacement.contains("\n") || (find.isEmpty && !replacement.isEmpty)
+    {
+      issues.append(
+        JobOptionValidationIssue(
+          code: "invalid_text_replacement", message: "查找替换需使用单行文字，每项最多 512 字；请先填写查找内容。", hint: nil))
+    }
     if options.watermark.count > maximumWatermarkCharacters {
       issues.append(
         JobOptionValidationIssue(
@@ -395,14 +404,24 @@ enum NativeDocumentProcessor {
     case "image_to_pdf":
       try imagesToPDF(inputs: inputs, outputURL: outputURL)
       return Result(outputURL: outputURL, logs: ["图片已按文件顺序写入 PDF。"])
+    case "office_convert":
+      try await OfficeDocumentConverter.convert(
+        inputs: inputs, source: route.source, target: route.target, output: outputURL)
+      return Result(outputURL: outputURL, logs: ["Office 文档已在本机转换。"])
     case "text_to_pdf":
-      try textFilesToPDF(inputs: inputs, source: route.source, outputURL: outputURL)
-      return Result(outputURL: outputURL, logs: ["文本已使用 Core Text 排版。"])
+      try await WebDocumentConverter.convert(
+        inputs: inputs, source: route.source, target: "pdf", output: outputURL)
+      return Result(outputURL: outputURL, logs: ["文档已使用系统排版生成 PDF；未加载外部网络资源。"])
     case "ocr":
       try await performOCR(inputs: inputs, options: options, outputURL: outputURL)
       return Result(outputURL: outputURL, logs: ["文字识别在本机使用 Apple Vision 完成。"])
     case "extract_markdown":
-      try await extractMarkdown(inputs: inputs, options: options, outputURL: outputURL)
+      if ["html", "data"].contains(route.source) {
+        try await WebDocumentConverter.convert(
+          inputs: inputs, source: route.source, target: "md", output: outputURL)
+      } else {
+        try await extractMarkdown(inputs: inputs, options: options, outputURL: outputURL)
+      }
       return Result(outputURL: outputURL, logs: ["文字已提取为 Markdown。"])
     case "pdf_translate":
       guard inputs.count == 1, let input = inputs.first else {
@@ -582,6 +601,9 @@ enum NativeDocumentProcessor {
           }
         }
       }
+
+      try PDFTextReplacement.apply(
+        to: document, find: options.replaceFind ?? "", replacement: options.replaceWith ?? "")
 
       let watermark = options.watermark.trimmingCharacters(in: .whitespacesAndNewlines)
       if !watermark.isEmpty {
@@ -1048,12 +1070,17 @@ enum NativeDocumentProcessor {
     return image
   }
 
-  private static func render(page: CGPDFPage, maximumDimension: CGFloat) -> CGImage? {
+  static func render(page: CGPDFPage, maximumDimension: CGFloat) -> CGImage? {
     let box = page.getBoxRect(.mediaBox)
     guard box.width > 0, box.height > 0 else { return nil }
-    let scale = min(maximumDimension / max(box.width, box.height), 3)
-    let width = max(1, Int((box.width * scale).rounded(.up)))
-    let height = max(1, Int((box.height * scale).rounded(.up)))
+    let rotation = normalizedRotation(Int(page.rotationAngle))
+    let quarterTurn = rotation == 90 || rotation == 270
+    let drawingSize = CGSize(
+      width: quarterTurn ? box.height : box.width,
+      height: quarterTurn ? box.width : box.height)
+    let scale = min(maximumDimension / max(drawingSize.width, drawingSize.height), 3)
+    let width = max(1, Int((drawingSize.width * scale).rounded(.up)))
+    let height = max(1, Int((drawingSize.height * scale).rounded(.up)))
     guard
       let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -1063,9 +1090,12 @@ enum NativeDocumentProcessor {
     context.setFillColor(NSColor.white.cgColor)
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     context.saveGState()
-    let target = CGRect(x: 0, y: 0, width: width, height: height)
-    context.concatenate(
-      page.getDrawingTransform(.mediaBox, rect: target, rotate: 0, preserveAspectRatio: true))
+    // Fit in page coordinates first, then explicitly scale into raster pixels.
+    // getDrawingTransform can center an unscaled page in a larger destination.
+    let pageTransform = page.getDrawingTransform(
+      .mediaBox,
+      rect: CGRect(origin: .zero, size: drawingSize), rotate: 0, preserveAspectRatio: true)
+    context.concatenate(pageTransform.concatenating(CGAffineTransform(scaleX: scale, y: scale)))
     context.drawPDFPage(page)
     context.restoreGState()
     return context.makeImage()

@@ -310,13 +310,14 @@ final class ProviderSettingsModel: ObservableObject {
 struct SettingsView: View {
   @EnvironmentObject private var appModel: AppModel
   @StateObject private var settings = ProviderSettingsModel()
+  @State private var conversionMessage = ""
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         VStack(alignment: .leading, spacing: 4) {
           Text("翻译与隐私")
-            .font(.system(.title2, design: .serif, weight: .semibold))
+            .font(.title2.weight(.semibold))
           Text("API Key 只保存在 macOS 钥匙串，不写入任务文件或日志。")
             .font(.caption)
             .foregroundStyle(TransallTheme.muted)
@@ -345,6 +346,20 @@ struct SettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 5))
 
         VStack(alignment: .leading, spacing: 8) {
+          LabeledContent(
+            "Office 文档转换",
+            value: OfficeDocumentConverter.executable == nil
+              ? "未安装 LibreOffice" : (OfficeConversionComponent.requiresSetup ? "待启用" : "可用"))
+          if OfficeConversionComponent.requiresSetup {
+            Button("启用 Office 转换…") { conversionMessage = OfficeConversionComponent.install() }
+          }
+          if !conversionMessage.isEmpty { Text(conversionMessage).textSelection(.enabled) }
+          if OfficeDocumentConverter.executable == nil {
+            Link(
+              "获取 LibreOffice",
+              destination: URL(
+                string: "https://www.libreoffice.org/download/download-libreoffice/")!)
+          }
           Text("Transall 数据与隐私")
             .font(.callout.weight(.semibold))
           Label("文件副本、结果、预览和日志保存在 Transall 的 App 容器内。", systemImage: "internaldrive")

@@ -192,6 +192,12 @@ final class NativeDocumentEngine: ObservableObject {
       return PreflightResponse(
         ok: false, blockingIssues: blocking, warnings: [], requirements: [])
     }
+    if route.kind == "office_convert", OfficeConversionComponent.requiresSetup {
+      blocking.append(issue("office_component_setup", OfficeConversionComponent.setupMessage))
+    }
+    if route.kind == "office_convert", OfficeDocumentConverter.executable == nil {
+      blocking.append(issue("missing_office_converter", OfficeDocumentConverter.missingMessage))
+    }
     if files.count > NativeCapabilities.maximumInputFileCount {
       blocking.append(
         issue(
@@ -529,9 +535,16 @@ final class NativeDocumentEngine: ObservableObject {
       })
   }
 
+  func taskConfiguration(jobID: String) throws -> (route: RouteDefinition, options: JobOptions) {
+    let job = try job(id: jobID)
+    let metadata: NativeJobMetadata = try load("metadata.json", from: jobDirectory(jobID))
+    try Self.validateStoredMetadata(metadata, for: job)
+    return (metadata.route, metadata.options)
+  }
+
   func inspectionSnapshot(jobID: String) async throws -> DocumentInspectionSnapshot {
     let job = try job(id: jobID)
-    let hasOutput = job.status == "done" && job.output?.lowercased().hasSuffix(".pdf") == true
+    let hasOutput = job.status == "done" && job.output != nil
     let hasRecovery = job.kind == "pdf_translate" && ["failed", "cancelled"].contains(job.status)
     guard !deletingJobs.contains(jobID), hasOutput || hasRecovery
     else { throw NativeDocumentError.processing("这个任务没有可检查的 PDF 结果。") }
@@ -549,7 +562,7 @@ final class NativeDocumentEngine: ObservableObject {
       var result: URL?
       if hasOutput, let output = job.output {
         let verified = try Self.validatedCompletedResult(named: output, in: directory)
-        let copy = snapshotDirectory.appendingPathComponent("result.pdf")
+        let copy = snapshotDirectory.appendingPathComponent(output)
         try AtomicResultSaver.copyReplacing(
           source: verified.url, destination: copy,
           expectedFingerprint: verified.fingerprint, allowReplacingExistingDestination: false)
@@ -1059,14 +1072,11 @@ final class NativeDocumentEngine: ObservableObject {
   }
 
   private func allowedExtensions(for source: String) -> Set<String> {
-    switch source {
-    case "pdf": ["pdf"]
-    case "image": ["png", "jpg", "jpeg", "tif", "tiff", "heic"]
-    case "md": ["md", "txt"]
-    case "html": ["html", "htm"]
-    case "data": ["txt", "csv", "json"]
-    default: []
-    }
+    Set(
+      (NativeCapabilities.routes.first { $0.source == source }?.accept ?? "")
+        .split(separator: ",").map {
+          $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ".", with: "")
+        })
   }
 
   private func issue(
@@ -1481,7 +1491,7 @@ struct CompletedResultFingerprint: Equatable, Sendable {
   let sampleSHA256: String
 }
 
-private enum SecureFileTransfer {
+enum SecureFileTransfer {
   static func openRegularSource(
     _ source: URL, nonRegularMessage: String
   ) throws -> (handle: FileHandle, status: stat) {
@@ -1750,6 +1760,7 @@ enum OutputFileNamer {
     case "pdf_edit": "\(stem)-edited.pdf"
     case "ocr" where options.ocrOutputFormat == "text": "\(stem)-ocr.txt"
     case "ocr": "\(stem)-ocr.pdf"
+    case "office_convert" where route.target == "md": "\(stem).md"
     case "extract_markdown": "\(stem).md"
     case "pdf_translate": "\(stem)-translated.pdf"
     case "image_to_pdf" where inputNames.count > 1: "images.pdf"

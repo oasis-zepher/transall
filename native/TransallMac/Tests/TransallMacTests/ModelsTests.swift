@@ -1150,9 +1150,7 @@ struct ModelsTests {
 
     let submittedJob = try #require(model.currentJob)
     #expect(preferences.string(forKey: "transall.native.lastJobId") == submittedJob.id)
-    for _ in 0..<200 where model.currentJob?.isFinished != true {
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    try await eventually { model.currentJob?.isFinished == true }
     #expect(model.currentJob?.status == "done")
     #expect(!model.isSubmitting)
   }
@@ -1318,10 +1316,7 @@ struct ModelsTests {
 
     var job = try await engine.createJob(
       route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
-    for _ in 0..<200 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: job.id)
-    }
+    job = try await finishedJob(job.id, in: engine)
 
     #expect(job.status == "done")
     let destination = temporary.appendingPathComponent("saved.pdf")
@@ -1349,10 +1344,7 @@ struct ModelsTests {
 
     var job = try await engine.createJob(
       route: route, files: [SelectedDocument(url: input, size: 1)], options: JobOptions())
-    for _ in 0..<200 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: job.id)
-    }
+    job = try await finishedJob(job.id, in: engine)
 
     #expect(job.status == "done")
     #expect(store.reads.isEmpty)
@@ -1384,10 +1376,7 @@ struct ModelsTests {
     var job = try await engine.createJob(
       route: route, files: [SelectedDocument(url: input, size: Int64(inputData.count))],
       options: options)
-    for _ in 0..<200 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: job.id)
-    }
+    job = try await finishedJob(job.id, in: engine)
     #expect(job.status == "done")
 
     let jobDirectory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
@@ -1437,10 +1426,7 @@ struct ModelsTests {
       route: translationRoute,
       files: [SelectedDocument(url: sourcePDF, size: Int64(sourceSize))],
       options: JobOptions())
-    for _ in 0..<200 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: job.id)
-    }
+    job = try await finishedJob(job.id, in: engine)
 
     #expect(job.status == "done")
     #expect(store.reads == [.deepseek])
@@ -1471,10 +1457,7 @@ struct ModelsTests {
 
     var job = try await engine.createJob(
       route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
-    for _ in 0..<200 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: job.id)
-    }
+    job = try await finishedJob(job.id, in: engine)
 
     let output = dataDirectory.appendingPathComponent("Jobs/\(job.id)/source.pdf")
     #expect(job.status == "failed")
@@ -1521,9 +1504,7 @@ struct ModelsTests {
     await gate.waitUntilCancelled()
     await gate.release()
     await gate.waitUntilFinished()
-    for _ in 0..<200 where FileManager.default.fileExists(atPath: output.path) {
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    try await eventually { !FileManager.default.fileExists(atPath: output.path) }
 
     #expect(try engine.job(id: created.id).status == "cancelled")
     #expect(!FileManager.default.fileExists(atPath: output.path))
@@ -1552,10 +1533,7 @@ struct ModelsTests {
 
     var job = try await engine.createJob(
       route: route, files: [SelectedDocument(url: input, size: 17)], options: JobOptions())
-    for _ in 0..<200 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: job.id)
-    }
+    job = try await finishedJob(job.id, in: engine)
 
     #expect(job.status == "failed")
     #expect(job.error?.contains("完整可用") == true)
@@ -1634,10 +1612,7 @@ struct ModelsTests {
     ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
 
     var restored = try engine.job(id: jobID)
-    for _ in 0..<200 where !restored.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      restored = try engine.job(id: jobID)
-    }
+    restored = try await finishedJob(jobID, in: engine)
 
     #expect(restored.status == "done")
     #expect(restored.output == "input.pdf")

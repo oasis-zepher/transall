@@ -248,13 +248,12 @@ struct TranslationRecoveryEngineTests {
     #expect(cancelled.output == nil)
 
     // Cancellation returns before its worker has stopped. Wait for cache access to become available.
-    var recoveryReady = false
-    for _ in 0..<500 where !recoveryReady {
+    let recoveryReady = try await eventually {
       do {
         _ = try await engine.translationRecovery(jobID: submitted.id)
-        recoveryReady = true
+        return true
       } catch is NativeDocumentError {
-        try await Task.sleep(for: .milliseconds(10))
+        return false
       }
     }
     #expect(recoveryReady)
@@ -400,25 +399,10 @@ struct TranslationRecoveryEngineTests {
 
   @MainActor
   private func waitForModel(_ model: AppModel, until predicate: (AppModel) -> Bool) async throws {
-    for _ in 0..<250 where !predicate(model) {
-      try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(
-      predicate(model), "The recovery model did not reach its expected state within five seconds")
+    let reached = try await eventually { predicate(model) }
+    #expect(reached, "The recovery model did not reach its expected state")
   }
 
-  @MainActor
-  private func finishedJob(_ id: String, in engine: NativeDocumentEngine) async throws
-    -> JobResponse
-  {
-    var job = try engine.job(id: id)
-    for _ in 0..<500 where !job.isFinished {
-      try await Task.sleep(for: .milliseconds(10))
-      job = try engine.job(id: id)
-    }
-    #expect(job.isFinished, "The local recovery fixture did not finish within five seconds")
-    return job
-  }
 }
 
 enum RecoveryTampering: CaseIterable, Sendable {

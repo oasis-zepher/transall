@@ -533,10 +533,7 @@ struct DocumentQualityTests {
       route: route,
       files: [SelectedDocument(url: input, size: Int64(submittedBytes.count))],
       options: JobOptions())
-    for _ in 0..<200 {
-      if try engine.job(id: job.id).isFinished { break }
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    _ = try await finishedJob(job.id, in: engine)
     let finished = try engine.job(id: job.id)
     #expect(finished.status == "done")
     try Data("Original changed after submission".utf8).write(to: input)

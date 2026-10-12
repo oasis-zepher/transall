@@ -160,10 +160,7 @@ struct CapabilityExpansionTests {
     let size = try input.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
     let job = try await engine.createJob(
       route: route, files: [SelectedDocument(url: input, size: Int64(size))], options: JobOptions())
-    for _ in 0..<400 {
-      if try engine.job(id: job.id).isFinished { break }
-      try await Task.sleep(for: .milliseconds(50))
-    }
+    _ = try await finishedJob(job.id, in: engine)
     let finished = try engine.job(id: job.id)
     try #require(finished.status == "done", "\(finished.status): \(finished.error ?? "no error")")
     let recovered = NativeDocumentEngine(dataDirectoryOverride: dir.appendingPathComponent("jobs"))

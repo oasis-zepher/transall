@@ -130,14 +130,18 @@ enum NativeCapabilities {
     ])
   }
 
-  static func providers(configured: [ProviderCredential: Bool]) -> ProvidersResponse {
+  static func providers(
+    configured: [ProviderCredential: Bool], requiresAuthorization: Set<ProviderCredential> = []
+  ) -> ProvidersResponse {
     ProvidersResponse(providers: [
       ProviderDefinition(
         name: "deepseek", baseURL: "https://api.deepseek.com", model: "deepseek-chat",
-        configured: configured[.deepseek] == true),
+        configured: configured[.deepseek] == true,
+        authorizationRequired: requiresAuthorization.contains(.deepseek)),
       ProviderDefinition(
         name: "openai", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini",
-        configured: configured[.openAI] == true),
+        configured: configured[.openAI] == true,
+        authorizationRequired: requiresAuthorization.contains(.openAI)),
     ])
   }
 
@@ -175,7 +179,7 @@ enum NativeCapabilities {
     let label = credential == .deepseek ? "DeepSeek" : "OpenAI"
     return DiagnosticDefinition(
       name: credential.rawValue, label: label, available: configured,
-      requiredFor: ["PDF 翻译"], detail: configured ? "API Key 已保存在钥匙串。" : "尚未配置 API Key。",
+      requiredFor: ["PDF 翻译"], detail: configured ? "API Key 已保存在本机配置。" : "尚未配置 API Key。",
       installHint: configured ? "" : "在 Transall 设置中填写 API Key。", category: "network_provider",
       risk: "remote_content_processing", licenseNote: "文档文字会发送给所选服务商。")
   }

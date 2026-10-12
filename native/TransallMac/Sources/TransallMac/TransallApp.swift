@@ -31,7 +31,6 @@ struct TransallApp: App {
           NotificationCenter.default.post(name: .transallChooseDocuments, object: nil)
         }
         .keyboardShortcut("o", modifiers: .command)
-        .disabled(!model.canSelectDocuments)
       }
     }
 

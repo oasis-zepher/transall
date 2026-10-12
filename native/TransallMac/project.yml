@@ -19,6 +19,10 @@ targets:
       - path: Sources/TransallMac
       - path: Resources
         buildPhase: resources
+    dependencies:
+      - framework: ThirdParty/PDFium/lib/libpdfium.a
+        embed: false
+      - sdk: libc++.tbd
     info:
       path: Support/Info.plist
       properties:
@@ -34,6 +38,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.transall.mac
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Sources/CPDFium"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/ThirdParty/PDFium/lib"
         PRODUCT_NAME: Transall
         PRODUCT_MODULE_NAME: TransallMac
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -64,6 +70,8 @@ targets:
       - target: Transall
     settings:
       base:
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Sources/CPDFium"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/ThirdParty/PDFium/lib"
         PRODUCT_BUNDLE_IDENTIFIER: com.transall.mac.tests
         GENERATE_INFOPLIST_FILE: YES
 schemes:

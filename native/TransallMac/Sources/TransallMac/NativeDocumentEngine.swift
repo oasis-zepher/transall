@@ -46,6 +46,7 @@ final class NativeDocumentEngine: ObservableObject {
 
   @Published private(set) var state: State = .starting
   @Published private(set) var serviceLog: [String] = []
+  @Published private(set) var taskProgress: [String: [TaskProgressLine]] = [:]
 
   private var jobs: [String: JobResponse] = [:]
   private var tasks: [String: Task<Void, Never>] = [:]
@@ -137,7 +138,8 @@ final class NativeDocumentEngine: ObservableObject {
     }
     return NativeEnvironmentSnapshot(
       diagnostics: NativeCapabilities.diagnostics(providerConfigured: status.configured),
-      providers: NativeCapabilities.providers(configured: status.configured))
+      providers: NativeCapabilities.providers(
+        configured: status.configured, requiresAuthorization: status.requiresAuthorization))
   }
 
   func applyCredentialChanges() async -> String {
@@ -170,7 +172,7 @@ final class NativeDocumentEngine: ObservableObject {
     } catch {
       blocking.append(
         issue(
-          "provider_keychain_unavailable", "无法从 macOS 钥匙串读取翻译 API Key。",
+          "provider_keychain_unavailable", "无法从 本机配置文件读取翻译 API Key。",
           hint: error.localizedDescription))
     }
     response = PreflightResponse(
@@ -585,6 +587,7 @@ final class NativeDocumentEngine: ObservableObject {
           source: source, destination: copy, allowReplacingExistingDestination: false)
         original = copy
       }
+      let bilingualDownload = result.map { PDFLayoutTranslation.isSideBySideBilingual($0) } ?? false
       var issues: [TranslationLayoutIssue] = []
       if hasRecovery {
         guard let original else {
@@ -597,13 +600,16 @@ final class NativeDocumentEngine: ObservableObject {
       try Task.checkCancellation()
       completed = true
       return DocumentInspectionSnapshot(
-        directory: snapshotDirectory, result: result, original: original, issues: issues)
+        directory: snapshotDirectory, result: result, original: original, issues: issues,
+        bilingualDownload: bilingualDownload)
     }
     return try await withTaskCancellationHandler(
       operation: { try await operation.value }, onCancel: { operation.cancel() })
   }
 
-  func translationRecovery(jobID: String) async throws -> TranslationRecoveryDocument {
+  func translationRecovery(jobID: String, allowingIncomplete: Bool = false) async throws
+    -> TranslationRecoveryDocument
+  {
     let job = try job(id: jobID)
     guard job.kind == "pdf_translate", ["failed", "cancelled"].contains(job.status),
       !deletingJobs.contains(jobID)
@@ -624,28 +630,38 @@ final class NativeDocumentEngine: ObservableObject {
         throw NativeDocumentError.invalidFile("翻译恢复需要一份原文副本。")
       }
       return try TranslationRecoveryStore.load(
-        in: directory, inputURL: input, options: metadata.options)
+        in: directory, inputURL: input, options: metadata.options,
+        allowingIncomplete: allowingIncomplete)
     }
     return try await withTaskCancellationHandler(
       operation: { try await operation.value }, onCancel: { operation.cancel() })
   }
 
   func recoverTranslationAsPlainPDF(jobID: String) throws -> JobResponse {
+    try rebuildTranslationPDF(jobID: jobID, outputMode: "translated")
+  }
+
+  func rebuildTranslationPDF(jobID: String, outputMode: String) throws -> JobResponse {
+    guard ["translated", "preserve_layout", "bilingual"].contains(outputMode) else {
+      throw NativeDocumentError.processing("不支持的译文输出格式。")
+    }
     let job = try job(id: jobID)
-    guard job.kind == "pdf_translate", ["failed", "cancelled"].contains(job.status),
+    guard job.kind == "pdf_translate",
+      ["failed", "cancelled"].contains(job.status)
+        || (job.status == "done" && outputMode != "translated"),
       !deletingJobs.contains(jobID), tasks[jobID] == nil, !isTerminating
     else { throw NativeDocumentError.processing("这个任务现在不能重新排版。") }
     let directory = try jobDirectory(jobID)
     let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
     try Self.validateStoredMetadata(metadata, for: job)
     var options = metadata.options
-    options.outputMode = "translated"
+    options.outputMode = outputMode
     let revised = NativeJobMetadata(
       route: metadata.route, options: options, inputNames: metadata.inputNames)
     let queued = replacing(
       job, status: "queued", stage: "queued", message: "正在准备已保存的译文。",
       progress: 0, cancelRequested: false,
-      logs: job.logs + ["已选择使用本机保存的译文生成纯译文 PDF；不会再次请求翻译服务。"])
+      logs: job.logs + ["已选择使用本机保存的译文重新生成 PDF；不会再次读取密钥或请求翻译服务。"])
     try persistMetadata(revised, in: directory)
     do {
       try jobPersister(queued, directory)
@@ -688,7 +704,10 @@ final class NativeDocumentEngine: ObservableObject {
           attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: renderingDirectory) }
         let rendered = renderingDirectory.appendingPathComponent("translated.pdf")
-        let result = try NativeDocumentProcessor.renderRecoveredTranslation(recovery, to: rendered)
+        let result = try NativeDocumentProcessor.renderRecoveredTranslation(
+          recovery, to: rendered,
+          layoutInputURL: metadata.options.outputMode == "translated" ? nil : input,
+          bilingual: metadata.options.outputMode == "bilingual")
         try Task.checkCancellation()
         guard result.outputURL.standardizedFileURL == rendered.standardizedFileURL,
           Self.isCompleteResult(rendered)
@@ -733,7 +752,7 @@ final class NativeDocumentEngine: ObservableObject {
             storedKey = try await credentialWorker.value(for: credential)
           } catch {
             throw NativeDocumentError.provider(
-              "无法从 macOS 钥匙串读取翻译 API Key：\(error.localizedDescription)")
+              "无法从 本机配置文件读取翻译 API Key：\(error.localizedDescription)")
           }
           do {
             apiKey = try ProviderCredentialPolicy.normalizedValue(
@@ -754,9 +773,14 @@ final class NativeDocumentEngine: ObservableObject {
         outputURL = expectedOutputURL
         let inputURLs = try Self.validatedStoredInputs(
           named: metadata.inputNames, in: directory)
-        let result = try await jobProcessor(
-          metadata.route, inputURLs, metadata.options, expectedOutputURL, apiKey)
+        let result = try await ProcessingProgress.$reporter.withValue(
+          { [weak self] line in await self?.updateProgress(line, jobID: jobID) }
+        ) {
+          try await jobProcessor(
+            metadata.route, inputURLs, metadata.options, expectedOutputURL, apiKey)
+        }
         try Task.checkCancellation()
+        await self?.updateProgress(TaskProgressLine(title: "正在检查结果"), jobID: jobID)
         guard result.outputURL.standardizedFileURL == expectedOutputURL.standardizedFileURL else {
           throw NativeDocumentError.processing("处理器返回了意外的结果位置。")
         }
@@ -785,6 +809,21 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
+  private func updateProgress(_ line: TaskProgressLine, jobID: String) {
+    guard jobs[jobID]?.status == "running", !isTerminating else { return }
+    if line.id == "main" {
+      taskProgress[jobID] = [line]
+    } else {
+      var lines = taskProgress[jobID, default: []].filter { $0.id != "main" }
+      if let index = lines.firstIndex(where: { $0.id == line.id }) {
+        lines[index] = line
+      } else {
+        lines.append(line)
+      }
+      taskProgress[jobID] = lines.sorted { $0.id < $1.id }
+    }
+  }
+
   private func markRunning(
     jobID: String, directory: URL, message: String = "原生引擎正在处理。"
   ) -> Bool {
@@ -798,6 +837,7 @@ final class NativeDocumentEngine: ObservableObject {
     do {
       try jobPersister(updated, directory)
       jobs[jobID] = updated
+      taskProgress[jobID] = [TaskProgressLine(title: message)]
       return true
     } catch {
       jobs[jobID] = persistenceFailure(from: job, action: "无法保存任务启动状态", error: error)
@@ -812,6 +852,7 @@ final class NativeDocumentEngine: ObservableObject {
   ) -> Bool {
     guard let job = jobs[jobID], job.status != "cancelled" else { return false }
     tasks[jobID] = nil
+    taskProgress[jobID] = nil
     var updated = replacing(
       job, status: "done", stage: "complete", message: "任务完成。", output: output,
       progress: 100, logs: job.logs + logs)
@@ -851,6 +892,7 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func markCancelled(jobID: String, directory: URL) {
     tasks[jobID] = nil
+    taskProgress[jobID] = nil
     guard !isTerminating else { return }
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
     let updated = replacing(
@@ -869,6 +911,7 @@ final class NativeDocumentEngine: ObservableObject {
 
   private func markFailed(jobID: String, error: Error, directory: URL) {
     tasks[jobID] = nil
+    taskProgress[jobID] = nil
     guard let job = jobs[jobID], job.status != "cancelled" else { return }
     let nativeError = error as? NativeDocumentError
     let updated = replacing(
@@ -1762,6 +1805,7 @@ enum OutputFileNamer {
     case "ocr": "\(stem)-ocr.pdf"
     case "office_convert" where route.target == "md": "\(stem).md"
     case "extract_markdown": "\(stem).md"
+    case "pdf_translate" where options.outputMode == "bilingual": "\(stem)-bilingual.pdf"
     case "pdf_translate": "\(stem)-translated.pdf"
     case "image_to_pdf" where inputNames.count > 1: "images.pdf"
     default: "\(stem).pdf"

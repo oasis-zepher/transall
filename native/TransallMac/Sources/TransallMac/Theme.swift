@@ -4,7 +4,19 @@ import SwiftUI
 enum TransallTheme {
   static let paper = Color(nsColor: .windowBackgroundColor)
   static let panel = Color(nsColor: .controlBackgroundColor)
+  // The empty chamber and supported roles share a bright native surface.
   static let orbitVacancy = Color(nsColor: .controlColor)
+
+  static func orbitBackground(for scheme: ColorScheme) -> Color {
+    scheme == .light ? panelMuted : panel
+  }
+
+  static func orbitUnavailable(for scheme: ColorScheme) -> Color {
+    Color(
+      nsColor: scheme == .light ? .unemphasizedSelectedContentBackgroundColor : .textBackgroundColor
+    )
+  }
+
   static let panelMuted = Color(nsColor: .underPageBackgroundColor)
   static let ink = Color.primary
   static let inkSoft = Color.secondary

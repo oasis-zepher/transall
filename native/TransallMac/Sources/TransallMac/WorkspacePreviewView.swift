@@ -4,48 +4,71 @@ import SwiftUI
 
 struct WorkspacePreviewView: View {
   @EnvironmentObject private var model: AppModel
-  @State private var targeted = false
+
+  private var selectedDocument: SelectedDocument? {
+    model.documents.first(where: { $0.id == model.selectedDocumentID }) ?? model.documents.first
+  }
 
   var body: some View {
     Group {
       if let job = model.currentJob,
-        (job.status == "done" && !model.showInputPreview) || model.translationRecovery != nil
+        job.status == "done" || model.translationRecovery != nil
       {
         DocumentInspectionView(
           backend: model.backend,
           request: DocumentInspectionRequest(jobID: job.id, page: model.inspectionPage),
-          embedded: true
+          embedded: true, pairedWorkspace: true, fallbackOriginal: selectedDocument
         )
         .id("\(job.id)-\(job.status)-\(model.inspectionPage)")
-      } else if let document = model.documents.first(where: { $0.id == model.selectedDocumentID }) {
-        VStack(spacing: 0) {
-          if model.currentJob?.status == "done" {
-            HStack {
-              Text("输入文件").font(.caption).foregroundStyle(.secondary)
-              Spacer()
-              Button("查看处理结果") { model.showInputPreview = false }.buttonStyle(.borderless)
-            }.padding(12).background(TransallTheme.paper)
-          }
-          SourceDocumentPreview(document: document).id(document.id)
-        }
       } else {
-        emptyState
+        HStack(spacing: 0) {
+          VStack(spacing: 0) {
+            previewHeading("原文件")
+            if let document = selectedDocument {
+              SourceDocumentPreview(document: document).id(document.id)
+            } else {
+              emptyState
+            }
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          Divider()
+          VStack(spacing: 0) {
+            previewHeading("转换结果")
+            resultPlaceholder
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(nsColor: .underPageBackgroundColor))
-    .overlay {
-      if targeted {
-        Rectangle().strokeBorder(TransallTheme.accent, lineWidth: 3).allowsHitTesting(false)
-      }
+
+  }
+
+  private func previewHeading(_ title: String) -> some View {
+    Text(title).font(.headline)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 16).padding(.vertical, 14)
+      .background(TransallTheme.paper)
+      .overlay(alignment: .bottom) { Divider() }
+  }
+
+  private var resultPlaceholder: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "doc.richtext").font(.system(size: 32, weight: .light))
+        .foregroundStyle(.tertiary).accessibilityHidden(true)
+      Text(resultPlaceholderTitle).font(.headline)
+      Text(model.currentJob?.status == "failed" ? "调整参数后，可从顶部重新执行。" : "转换完成后，结果会显示在这里。")
+        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
     }
-    .dropDestination(for: URL.self) { urls, _ in
-      guard model.canSelectDocuments, !urls.isEmpty else { return false }
-      model.startDocumentImport(urls, appending: !model.documents.isEmpty)
-      return true
-    } isTargeted: {
-      targeted = $0 && model.canSelectDocuments
-    }
+    .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var resultPlaceholderTitle: String {
+    if model.isSubmitting || model.currentJob?.isRunning == true { return "正在转换" }
+    if model.currentJob?.status == "failed" { return "转换未完成" }
+    if model.currentJob?.status == "cancelled" { return "已取消转换" }
+    return "等待执行"
   }
 
   private var emptyState: some View {
@@ -56,10 +79,8 @@ struct WorkspacePreviewView: View {
       Text(model.selectedTask.title).font(.title2.weight(.semibold))
       Text(model.isImporting ? "正在读取文件…" : "将文件拖到这里")
         .foregroundStyle(.secondary)
-      Button("选择文件…") {
-        NotificationCenter.default.post(name: .transallChooseDocuments, object: nil)
-      }
-      .buttonStyle(PrimaryButtonStyle()).disabled(!model.canSelectDocuments)
+      Text("使用工具栏的“添加文件”，或直接拖入文件。")
+        .font(.callout).foregroundStyle(.secondary)
       if let route = model.route {
         Text(route.accept).font(.caption).foregroundStyle(.secondary)
       }
@@ -119,7 +140,7 @@ struct InputPreviewSnapshot: Sendable {
   }
 }
 
-private struct SourceDocumentPreview: View {
+struct SourceDocumentPreview: View {
   let document: SelectedDocument
   @State private var snapshot: InputPreviewSnapshot?
   @State private var error: String?

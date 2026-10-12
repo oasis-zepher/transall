@@ -60,6 +60,9 @@ struct TranslationRecoverySummary: Equatable {
   let regionCount: Int
   let issueCount: Int
   let issuePages: [Int]
+  var completedRegionCount: Int? = nil
+
+  var isComplete: Bool { completedRegionCount == nil || completedRegionCount == regionCount }
 }
 
 @MainActor
@@ -127,7 +130,8 @@ final class AppModel: ObservableObject {
   private var hasStarted = false
   private let preferences: UserDefaults
   private let jobCreator: JobCreator
-  private let resultDestinationPicker: ResultDestinationPicker
+  private let resultDestinationPicker: ResultDestinationPicker?
+  private var resultSavePanel: NSSavePanel?
   private let resultDownloader: ResultDownloader
   private let resultRevealer: ResultRevealer
   private let documentInspector: DocumentInspector
@@ -151,7 +155,7 @@ final class AppModel: ObservableObject {
       jobCreator ?? { route, files, options in
         try await backend.createJob(route: route, files: files, options: options)
       }
-    self.resultDestinationPicker = resultDestinationPicker ?? Self.pickResultDestination
+    self.resultDestinationPicker = resultDestinationPicker
     self.resultDownloader =
       resultDownloader ?? { jobID, destination, allowReplacingExistingDestination in
         try await backend.download(
@@ -240,7 +244,9 @@ final class AppModel: ObservableObject {
   }
 
   var canRecoverTranslation: Bool {
-    guard let job = currentJob, translationRecovery?.jobID == job.id else { return false }
+    guard let job = currentJob, translationRecovery?.jobID == job.id,
+      translationRecovery?.isComplete == true
+    else { return false }
     return ["failed", "cancelled"].contains(job.status)
       && !isImporting && !isSubmitting && !isSaving && !isDeletingJob
   }
@@ -295,10 +301,10 @@ final class AppModel: ObservableObject {
   }
 
   func reloadEnvironment() async {
-    let capabilities = backend.capabilities()
+    // Local task controls must remain available while Keychain provider checks await authorization.
+    self.capabilities = backend.capabilities()
     let environment = await backend.environment()
     guard !Task.isCancelled else { return }
-    self.capabilities = capabilities
     self.diagnostics = Dictionary(
       uniqueKeysWithValues: environment.diagnostics.dependencies.map { ($0.name, $0) })
     providers = environment.providers.providers
@@ -507,6 +513,39 @@ final class AppModel: ObservableObject {
     errorMessage = nil
   }
 
+  @discardableResult
+  func receiveDroppedDocuments(_ urls: [URL]) -> Bool {
+    guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else {
+      errorMessage = "请拖入本机文件。"
+      return false
+    }
+    guard canEditTaskDraft, !isImporting else {
+      errorMessage = taskDraftLockMessage ?? "正在读取文件，请稍后再拖入。"
+      return false
+    }
+    if route == nil {
+      // On the empty hourglass, infer only a supported route for this batch.
+      // Existing source/target choices constrain the inference.
+      let candidates = (capabilities?.routes ?? []).filter { route in
+        let suffixes = Set(
+          route.accept.split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ".", with: "")
+              .lowercased()
+          })
+        return route.enabled && (selection.source == nil || selection.source == route.source)
+          && (selection.target == nil || selection.target == route.target)
+          && urls.allSatisfy { suffixes.contains($0.pathExtension.lowercased()) }
+      }
+      guard let route = candidates.first(where: { $0.target == "pdf" }) ?? candidates.first else {
+        errorMessage = "这些文件无法用于当前格式组合，请选择匹配的源格式和目标格式。"
+        return false
+      }
+      selection = RouteSelection(source: route.source, target: route.target)
+    }
+    startDocumentImport(urls, appending: !documents.isEmpty)
+    return isImporting
+  }
+
   func startDocumentImport(_ urls: [URL], appending: Bool = false) {
     guard !urls.isEmpty else {
       errorMessage = "没有选择文件。"
@@ -614,14 +653,8 @@ final class AppModel: ObservableObject {
       return
     }
     guard !Task.isCancelled else { return }
-    if currentJob?.isFinished == true {
-      currentJob = nil
-      resultOriginalDocuments = nil
-      previewPages = []
-      previewError = nil
-      isLoadingPreview = false
-      preferences.removeObject(forKey: lastJobKey)
-    }
+    // Import edits the next submission's draft. Keep the displayed result, its
+    // preview and submitted-original identities available until a new job exists.
     documents = combined
     errorMessage = nil
   }
@@ -780,7 +813,7 @@ final class AppModel: ObservableObject {
       if recoveryLoadID == requestID { isLoadingTranslationRecovery = false }
     }
     do {
-      let recovery = try await backend.translationRecovery(jobID: jobID)
+      let recovery = try await backend.translationRecovery(jobID: jobID, allowingIncomplete: true)
       try Task.checkCancellation()
       guard recoveryLoadID == requestID, currentJob?.id == jobID,
         currentJob?.status == job.status, !isDeletingJob, !isSubmitting
@@ -788,7 +821,9 @@ final class AppModel: ObservableObject {
       translationRecovery = TranslationRecoverySummary(
         jobID: jobID, regionCount: recovery.regions.count,
         issueCount: recovery.overflowRegionIDs.count,
-        issuePages: Array(Set(recovery.issues.map { $0.pageIndex + 1 })).sorted())
+        issuePages: Array(Set(recovery.issues.map { $0.pageIndex + 1 })).sorted(),
+        completedRegionCount: recovery.translations.count)
+
     } catch is CancellationError {
       return
     } catch {
@@ -819,6 +854,23 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func rebuildTranslationPDF(outputMode: String) {
+    guard let job = currentJob, job.kind == "pdf_translate", job.isFinished,
+      !isImporting && !isSubmitting && !isSaving && !isDeletingJob
+    else { return }
+    do {
+      let queued = try backend.rebuildTranslationPDF(jobID: job.id, outputMode: outputMode)
+      pollingTask?.cancel()
+      currentJob = queued
+      previewPages = []
+      previewError = nil
+      isLoadingPreview = false
+      errorMessage = nil
+      options.outputMode = outputMode
+      beginPolling(jobID: job.id)
+    } catch { errorMessage = error.localizedDescription }
+  }
+
   private func clearTranslationRecovery() {
     recoveryLoadID = UUID()
     translationRecovery = nil
@@ -830,15 +882,38 @@ final class AppModel: ObservableObject {
     guard resultSaveTask == nil, canStartSavingResult,
       let job = currentJob, job.status == "done", let output = job.output
     else { return }
+    isSaving = true
+    errorMessage = nil
+    if let resultDestinationPicker {
+      saveResult(to: resultDestinationPicker(output), job: job)
+    } else {
+      let panel = NSSavePanel()
+      panel.nameFieldStringValue = output
+      panel.canCreateDirectories = true
+      panel.message = ResultSavePolicy.panelMessage
+      resultSavePanel = panel
+      // Keep SwiftUI's main event loop free while the system file service validates destinations.
+      panel.begin { [weak self] response in
+        guard let self, resultSavePanel === panel else { return }
+        resultSavePanel = nil
+        saveResult(to: response == .OK ? panel.url : nil, job: job)
+      }
+    }
+  }
+
+  private func saveResult(to destination: URL?, job: JobResponse) {
+    guard let destination else {
+      isSaving = false
+      return
+    }
     let originalDocuments = resultOriginalDocuments
     let allowReplacingExistingDestination = originalDocuments != nil
-    guard let destination = resultDestinationPicker(output) else { return }
-
     do {
       try ResultSavePolicy.validate(
         destination: destination, originalDocuments: originalDocuments)
     } catch {
       errorMessage = error.localizedDescription
+      isSaving = false
       return
     }
 
@@ -865,6 +940,11 @@ final class AppModel: ObservableObject {
   }
 
   func cancelResultSaving() async {
+    if let panel = resultSavePanel {
+      resultSavePanel = nil
+      panel.cancel(nil)
+      isSaving = false
+    }
     guard let resultSaveTask else { return }
     resultSaveTask.cancel()
     await resultSaveTask.value
@@ -904,6 +984,7 @@ final class AppModel: ObservableObject {
     documentImportTask?.cancel()
     jobSubmissionTask?.cancel()
     resultSaveTask?.cancel()
+    resultSavePanel?.cancel(nil)
     backend.prepareForTermination()
   }
 
@@ -1002,18 +1083,15 @@ final class AppModel: ObservableObject {
         await loadPreview(jobID: job.id)
       } else {
         await refreshTranslationRecovery(jobID: job.id)
+        if !Task.isCancelled, currentJob?.id == job.id,
+          job.errorCode == "translation_layout_overflow", translationRecovery?.isComplete == true
+        {
+          rebuildTranslationPDF(outputMode: options.outputMode)
+        }
       }
     } catch {
       preferences.removeObject(forKey: lastJobKey)
     }
   }
 
-  private static func pickResultDestination(suggestedName: String) -> URL? {
-    let panel = NSSavePanel()
-    panel.nameFieldStringValue = suggestedName
-    panel.canCreateDirectories = true
-    panel.message = ResultSavePolicy.panelMessage
-    guard panel.runModal() == .OK else { return nil }
-    return panel.url
-  }
 }

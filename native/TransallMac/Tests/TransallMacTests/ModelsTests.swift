@@ -3,6 +3,7 @@ import CoreText
 import CryptoKit
 import Foundation
 import ImageIO
+import LocalAuthentication
 import PDFKit
 import Security
 import SwiftUI
@@ -167,7 +168,7 @@ struct ModelsTests {
   }
 
   @Test @MainActor
-  func cancelledAppStartDoesNotPublishEnvironmentAndCanRetry() async throws {
+  func localTaskControlsRemainAvailableWhileProviderChecksWaitAndCanRetry() async throws {
     let temporary = FileManager.default.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
@@ -188,12 +189,16 @@ struct ModelsTests {
       try? await Task.sleep(for: .milliseconds(1))
     }
     #expect(store.hasStarted)
+    #expect(model.capabilities != nil)
+    #expect(model.providers.isEmpty)
+    #expect(model.options.sourceLanguage == "auto")
+    #expect(model.options.targetLanguage == "zh")
 
     startup.cancel()
     store.release()
     await startup.value
 
-    #expect(model.capabilities == nil)
+    #expect(model.capabilities != nil)
     #expect(model.providers.isEmpty)
 
     await model.start()
@@ -229,14 +234,120 @@ struct ModelsTests {
         sourceText: String(repeating: "x", count: 24), preferredFontSize: 10)
     }
 
-    let batches = TranslationService.regionBatches(regions, maximumCharacters: 80)
+    let batches = TranslationService.regionBatches(regions)
 
     #expect(batches.count == 4)
     #expect(batches.flatMap { $0.map(\.id) } == regions.map(\.id))
   }
 
   @Test
-  func translationRegionMappingRecoversAnOmittedItem() async throws {
+  func translationRegionCheckpointsSurviveMalformedResponseAndSkipPaidWorkOnRetry() async throws {
+    let records = RegionConcurrencyRecorder()
+    let regions = (1...2).map { index in
+      PDFTranslationRegion(
+        id: "r\(index)", pageIndex: 0, kind: .nativeText,
+        bounds: CGRect(x: 0, y: index * 20, width: 100, height: 14), sourceText: "Source \(index)",
+        preferredFontSize: 10)
+    }
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { request in
+        let body = String(decoding: request.httpBody!, as: UTF8.self)
+        let content = body.contains("r1") ? "{\"id\":\"r1\",\"text\":\"第一\"}" : "{}"
+        let data = try JSONSerialization.data(withJSONObject: [
+          "choices": [["message": ["content": content]]]
+        ])
+        return (
+          data,
+          HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+      })
+    await #expect(throws: (any Error).self) {
+      try await service.translateRegions(
+        regions, source: "en", target: "zh", glossary: "", checkpoint: { await records.save($0) })
+    }
+    let saved = try #require(await records.checkpoints.last)
+    #expect(saved == ["r1": "第一"])
+    let retry = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { request in
+        let body = String(decoding: request.httpBody!, as: UTF8.self)
+        #expect(!body.contains("r1"))
+        #expect(body.contains("r2"))
+        let data = try JSONSerialization.data(withJSONObject: [
+          "choices": [["message": ["content": "{\"id\":\"r2\",\"text\":\"第二\"}"]]]
+        ])
+        return (
+          data,
+          HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+      })
+    let completed = try await retry.translateRegions(
+      regions, source: "en", target: "zh", glossary: "", existingTranslations: saved)
+    #expect(completed == ["r1": "第一", "r2": "第二"])
+  }
+
+  @Test
+  func translationRegionConcurrencyKeepsOutOfOrderResponsesAttachedToSources() async throws {
+    let calls = RegionConcurrencyRecorder()
+    var regions = (1...9).map { index in
+      PDFTranslationRegion(
+        id: "region-\(index)", pageIndex: index / 3, kind: .nativeText,
+        bounds: CGRect(x: 0, y: index * 20, width: 100, height: 14),
+        sourceText: "Source \(index)", preferredFontSize: 10)
+    }
+    regions.append(
+      PDFTranslationRegion(
+        id: "stamp", pageIndex: 0, kind: .nativeText,
+        bounds: CGRect(x: 0, y: 0, width: 200, height: 180), sourceText: "ARTICLE IN PRESS",
+        preferredFontSize: 30, preserveOriginal: true))
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key", pageConcurrency: 4,
+      requestSender: { request in
+        let body = try #require(request.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(payload["messages"] as? [[String: String]])
+        let content = try #require(messages.last?["content"]?.data(using: .utf8))
+        let input = try #require(JSONSerialization.jsonObject(with: content) as? [String: Any])
+        let items = try #require(input["items"] as? [[String: String]])
+        #expect(items.count == 1)
+        let item = try #require(items.first)
+        let id = try #require(item["id"])
+        let source = try #require(item["text"])
+        #expect(id != "stamp")
+        await calls.begin()
+        try await Task.sleep(for: .milliseconds(id == "region-1" ? 60 : 10))
+        await calls.end()
+        let result = try JSONSerialization.data(withJSONObject: [
+          "items": [["id": id, "text": source + "译文"]]
+        ])
+        let data = try JSONSerialization.data(withJSONObject: [
+          "choices": [["message": ["content": String(decoding: result, as: UTF8.self)]]]
+        ])
+        let url = try #require(request.url)
+        return (
+          data,
+          try #require(
+            HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+        )
+      })
+    let result = try await ProcessingProgress.$reporter.withValue(
+      { await calls.record($0) },
+      operation: {
+        try await service.translateRegions(regions, source: "en", target: "zh", glossary: "")
+      })
+    for region in regions {
+      #expect(
+        result[region.id] == region.sourceText + (region.preserveOriginal == true ? "" : "译文"))
+    }
+    #expect(await calls.peak == 4)
+    let progress = await calls.progress
+    #expect(progress.filter { $0.id == "main" }.count == 1)
+    #expect(progress.contains { $0.id == "translation-total" && $0.fraction == 1 })
+  }
+
+  @Test
+  func translationRegionMappingIsolatesEachInput() async throws {
     let regions = [
       PDFTranslationRegion(
         id: "p0001-t0001", pageIndex: 0, kind: .nativeText,
@@ -261,12 +372,82 @@ struct ModelsTests {
     ])
     let service = TranslationService(
       provider: "deepseek", apiKey: "test-key",
-      requestSender: { try await responses.send($0) }, sleeper: { _ in })
+      requestSender: { request in
+        let body = try #require(request.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(payload["messages"] as? [[String: String]])
+        let content = try #require(messages.last?["content"]?.data(using: .utf8))
+        let input = try #require(JSONSerialization.jsonObject(with: content) as? [String: Any])
+        let items = try #require(input["items"] as? [[String: String]])
+        #expect(items.count == 1)
+        return try await responses.send(request)
+      }, sleeper: { _ in })
 
     let translated = try await service.translateRegions(
       regions, source: "en", target: "zh", glossary: "")
 
     #expect(translated == ["p0001-t0001": "第一", "p0001-i0001": "第二"])
+    #expect(await responses.snapshot().requestCount == 2)
+  }
+
+  @Test
+  func documentContextIsAnalyzedAndCarriedIntoRegionBatchesAndRetries() async throws {
+    let regions = [
+      PDFTranslationRegion(
+        id: "first", pageIndex: 0, kind: .nativeText,
+        bounds: CGRect(x: 0, y: 0, width: 100, height: 20), sourceText: "tear vesicles",
+        preferredFontSize: 10),
+      PDFTranslationRegion(
+        id: "last", pageIndex: 9, kind: .imageOCR,
+        bounds: CGRect(x: 0, y: 0, width: 100, height: 20), sourceText: "HSK", preferredFontSize: 10
+      ),
+    ]
+    let analysisService = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { request in
+        let body = try #require(request.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(payload["messages"] as? [[String: String]])
+        #expect(messages.last?["content"]?.contains("[Page 1]") == true)
+        #expect(messages.last?["content"]?.contains("[Page 10]") == true)
+        let endpoint = try #require(request.url)
+        return (
+          try JSONSerialization.data(withJSONObject: [
+            "choices": [["message": ["content": "tear=泪液; HSK=单纯疱疹性角膜炎"]]]
+          ]),
+          try #require(
+            HTTPURLResponse(
+              url: endpoint, statusCode: 200, httpVersion: nil, headerFields: nil))
+        )
+      })
+    let context = try await analysisService.analyzeDocument(regions, source: "en", target: "zh")
+    #expect(context.contains("tear=泪液"))
+    let responses = TranslationResponseSequence([
+      .http(
+        status: 200, headers: [:],
+        body: try JSONSerialization.data(withJSONObject: [
+          "choices": [
+            ["message": ["content": "{\"items\":[{\"id\":\"first\",\"text\":\"泪液囊泡\"}]}"]]
+          ]
+        ])),
+      .http(
+        status: 200, headers: [:],
+        body: try JSONSerialization.data(withJSONObject: [
+          "choices": [["message": ["content": "{\"items\":[{\"id\":\"last\",\"text\":\"HSK\"}]}"]]]
+        ])),
+    ])
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { request in
+        let body = try #require(request.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(payload["messages"] as? [[String: String]])
+        #expect(messages.first?["content"]?.contains(context) == true)
+        return try await responses.send(request)
+      })
+    let translated = try await service.translateRegions(
+      regions, source: "en", target: "zh", glossary: "", documentContext: context)
+    #expect(translated == ["first": "泪液囊泡", "last": "HSK"])
     #expect(await responses.snapshot().requestCount == 2)
   }
 
@@ -951,7 +1132,7 @@ struct ModelsTests {
     #expect(store.values[.deepseek] == "existing-deepseek")
     #expect(store.values[.openAI] == "existing-openai")
     #expect(store.writes.isEmpty)
-    #expect(settings.message.contains("先重新读取钥匙串"))
+    #expect(settings.message.contains("先重新读取本机配置"))
     #expect(settings.announcement?.message == settings.message)
     #expect(settings.announcement?.priority == .high)
   }
@@ -1118,7 +1299,7 @@ struct ModelsTests {
 
     #expect(settings.isLoaded)
     #expect(settings.messageIsError)
-    #expect(settings.message.contains("已验证钥匙串已恢复到保存前状态"))
+    #expect(settings.message.contains("已验证本机配置已恢复到保存前状态"))
     #expect(store.values[.deepseek] == "old-deepseek")
     #expect(store.values[.openAI] == "old-openai")
     #expect(store.writes.map(\.credential) == [.deepseek, .openAI, .deepseek])
@@ -1139,7 +1320,7 @@ struct ModelsTests {
 
     #expect(settings.isLoaded)
     #expect(settings.messageIsError)
-    #expect(settings.message.contains("已验证钥匙串已恢复到保存前状态"))
+    #expect(settings.message.contains("已验证本机配置已恢复到保存前状态"))
     #expect(settings.deepseekKey == "old-deepseek")
     #expect(settings.openAIKey == "old-openai")
     #expect(store.values[.deepseek] == "old-deepseek")
@@ -1167,7 +1348,7 @@ struct ModelsTests {
     #expect(settings.isLoaded)
     #expect(settings.messageIsError)
     #expect(settings.message.contains("OpenAI 未恢复到保存前状态"))
-    #expect(settings.message.contains("已重新读取钥匙串当前值"))
+    #expect(settings.message.contains("已重新读取本机配置当前值"))
     #expect(settings.deepseekKey == "old-deepseek")
     #expect(settings.openAIKey == "new-openai")
     #expect(store.values[.deepseek] == "old-deepseek")
@@ -1326,21 +1507,73 @@ struct ModelsTests {
     }
   }
 
+  @Test(arguments: [true, false]) @MainActor
+  func credentialBackgroundChecksNeverPromptAndSuccessfulAuthorizationIsReused(
+    protectedStorage: Bool
+  ) async throws {
+    let keychain = SimulatedKeychain(dataProtectionAvailable: protectedStorage)
+    if protectedStorage {
+      keychain.protected[ProviderCredential.deepseek.rawValue] = Data("saved-key".utf8)
+    } else {
+      keychain.legacy[ProviderCredential.deepseek.rawValue] = Data("saved-key".utf8)
+    }
+    keychain.requiresAuthentication = true
+    let worker = ProviderCredentialWorker(store: ProviderCredentialStore(client: keychain.client))
+    let settings = ProviderSettingsModel(worker: worker)
+    let status = await worker.status()
+    #expect(status.requiresAuthorization == [.deepseek])
+    #expect(status.configured[.deepseek] == false)
+    await settings.reload(showSuccess: false)
+    #expect(!settings.isLoaded)
+    #expect(settings.rowState(for: .deepseek).storage == .awaitingAuthorization)
+    #expect(!settings.messageIsError)
+    #expect(keychain.interactiveReads == 0)
+    #expect(keychain.metadataReads + keychain.silentReads > 0)
+
+    #expect(try await worker.value(for: .deepseek) == "saved-key")
+    let readsAfterAuthorization = keychain.interactiveReads
+    #expect(readsAfterAuthorization == 1)
+    #expect(try await worker.value(for: .deepseek) == "saved-key")
+    await settings.reload(showSuccess: false)
+    #expect(settings.isLoaded)
+    let authorized = await worker.status()
+    #expect(authorized.configured[.deepseek] == true)
+    #expect(authorized.requiresAuthorization.isEmpty)
+    #expect(keychain.interactiveReads == readsAfterAuthorization)
+    let stored = protectedStorage ? keychain.protected : keychain.legacy
+    #expect(stored[ProviderCredential.deepseek.rawValue] == Data("saved-key".utf8))
+  }
+
   @Test @MainActor
-  func keychainMigratesLegacyCredentialsToLockedDataProtectionStorage() throws {
+  func credentialCacheTracksSaveRemovalAndExplicitReload() async throws {
+    let store = TestCredentialStore(values: [.deepseek: "first-key", .openAI: ""])
+    let worker = ProviderCredentialWorker(store: store)
+    let previous = try await worker.readStoredValues()
+    var replacement = previous
+    replacement[.deepseek] = "second-key"
+    _ = try await worker.save(replacement, replacing: previous)
+    #expect(try await worker.value(for: .deepseek) == "second-key")
+    store.values[.deepseek] = "externally-updated"
+    let refreshed = try await worker.readStoredValues(refreshing: true)
+    #expect(refreshed[.deepseek] == "externally-updated")
+    _ = try await worker.remove(.deepseek, from: refreshed)
+    #expect(try await worker.value(for: .deepseek) == "")
+  }
+
+  @Test @MainActor
+  func keychainReadsAreNonmutatingAndExplicitSaveMigratesLegacyStorage() throws {
     let keychain = SimulatedKeychain()
     keychain.legacy[ProviderCredential.deepseek.rawValue] = Data("legacy-key".utf8)
     let store = ProviderCredentialStore(client: keychain.client)
 
     #expect(try store.value(for: .deepseek) == "legacy-key")
+    #expect(keychain.legacy[ProviderCredential.deepseek.rawValue] == Data("legacy-key".utf8))
+    #expect(keychain.protected[ProviderCredential.deepseek.rawValue] == nil)
+    try store.setValue("updated-key", for: .deepseek)
     #expect(keychain.legacy[ProviderCredential.deepseek.rawValue] == nil)
-    #expect(
-      keychain.protected[ProviderCredential.deepseek.rawValue] == Data("legacy-key".utf8))
     #expect(
       keychain.accessibility[ProviderCredential.deepseek.rawValue]
         == (kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String))
-
-    try store.setValue("updated-key", for: .deepseek)
     #expect(
       keychain.protected[ProviderCredential.deepseek.rawValue] == Data("updated-key".utf8))
     try store.setValue("", for: .deepseek)
@@ -2854,7 +3087,7 @@ struct ModelsTests {
 
     #expect(job.status == "failed")
     #expect(job.errorCode == "translation_provider_failed")
-    #expect(job.error?.contains("钥匙串") == true)
+    #expect(job.error?.contains("本机配置") == true)
     #expect(store.reads == [.deepseek])
     let directory = dataDirectory.appendingPathComponent("Jobs/\(job.id)", isDirectory: true)
     #expect(
@@ -5914,7 +6147,7 @@ private final class TestCredentialStore: ProviderCredentialStoring, @unchecked S
 private enum TestCredentialError: LocalizedError {
   case unavailable
 
-  var errorDescription: String? { "测试钥匙串不可用" }
+  var errorDescription: String? { "测试本机配置不可用" }
 }
 
 private actor APIKeyCapture {
@@ -6003,6 +6236,10 @@ private final class BlockingCredentialStore: ProviderCredentialStoring, @uncheck
 
 @MainActor
 private final class SimulatedKeychain {
+  var requiresAuthentication = false
+  var interactiveReads = 0
+  var silentReads = 0
+  var metadataReads = 0
   var legacy: [String: Data] = [:]
   var protected: [String: Data] = [:]
   var accessibility: [String: String] = [:]
@@ -6021,6 +6258,15 @@ private final class SimulatedKeychain {
         }
         let values = isDataProtection(query) ? protected : legacy
         guard let data = values[account] else { return (errSecItemNotFound, nil) }
+        if query[kSecReturnAttributes as String] as? Bool == true {
+          metadataReads += 1
+          return (errSecSuccess, nil)
+        }
+        let silent =
+          (query[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed
+          == true
+        if silent { silentReads += 1 } else { interactiveReads += 1 }
+        if requiresAuthentication && silent { return (errSecInteractionNotAllowed, nil) }
         return (errSecSuccess, data)
       },
       update: { [self] query, attributes in
@@ -6083,4 +6329,18 @@ private final class SimulatedKeychain {
   private func recordAccessibility(_ attributes: [String: Any], account: String) {
     accessibility[account] = attributes[kSecAttrAccessible as String] as? String
   }
+}
+
+private actor RegionConcurrencyRecorder {
+  var checkpoints: [[String: String]] = []
+  func save(_ value: [String: String]) { checkpoints.append(value) }
+  var progress: [TaskProgressLine] = []
+  func record(_ line: TaskProgressLine) { progress.append(line) }
+  var active = 0
+  var peak = 0
+  func begin() {
+    active += 1
+    peak = max(peak, active)
+  }
+  func end() { active -= 1 }
 }

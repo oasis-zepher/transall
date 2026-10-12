@@ -48,7 +48,7 @@ struct TranslationRecoveryDocument: Codable, Sendable {
 enum TranslationRecoveryStore {
   static let filename = "translation-recovery.json"
   static let maximumBytes = 32 * 1_024 * 1_024
-  static let schemaVersion = 1
+  static let schemaVersion = 2
 
   private struct Envelope: Codable {
     let document: TranslationRecoveryDocument
@@ -58,7 +58,7 @@ enum TranslationRecoveryStore {
   static func create(
     inputURL: URL, options: JobOptions, pageCount: Int,
     regions: [PDFTranslationRegion], translations: [String: String],
-    overflowRegionIDs: [String]
+    overflowRegionIDs: [String], allowingIncomplete: Bool = false
   ) throws -> TranslationRecoveryDocument {
     var document = TranslationRecoveryDocument(
       schemaVersion: schemaVersion, sourceSHA256: try sourceFingerprint(inputURL: inputURL),
@@ -66,14 +66,18 @@ enum TranslationRecoveryStore {
       targetLanguage: options.targetLanguage, glossary: options.glossary,
       regions: regions, translations: translations, overflowRegionIDs: overflowRegionIDs)
     document.sourceURL = inputURL
-    try validateContents(document)
+    try validateContents(document, allowingIncomplete: allowingIncomplete)
     try validateSourcePageCount(document)
     try validateSource(document)
     return document
   }
 
-  static func save(_ document: TranslationRecoveryDocument, in directory: URL) throws {
-    try validateForRendering(document)
+  static func save(
+    _ document: TranslationRecoveryDocument, in directory: URL,
+    allowingIncomplete: Bool = false
+  ) throws {
+    try validateContents(document, allowingIncomplete: allowingIncomplete)
+    try validateSource(document)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let payload = try encoder.encode(document)
@@ -114,7 +118,9 @@ enum TranslationRecoveryStore {
     guard fsync(directoryFD) == 0 else { throw posixError() }
   }
 
-  static func load(in directory: URL, inputURL: URL, options: JobOptions) throws
+  static func load(
+    in directory: URL, inputURL: URL, options: JobOptions, allowingIncomplete: Bool = false
+  ) throws
     -> TranslationRecoveryDocument
   {
     let directoryFD = try openDirectory(directory)
@@ -135,7 +141,7 @@ enum TranslationRecoveryStore {
     }
     var document = envelope.document
     document.sourceURL = inputURL
-    try validateContents(document)
+    try validateContents(document, allowingIncomplete: allowingIncomplete)
     guard document.provider == options.provider,
       document.sourceLanguage == options.sourceLanguage,
       document.targetLanguage == options.targetLanguage, document.glossary == options.glossary
@@ -144,6 +150,45 @@ enum TranslationRecoveryStore {
     try validateSourcePageCount(document)
     try validateSource(document)
     return document
+  }
+
+  static func resumableTranslations(
+    in directory: URL, inputURL: URL, options: JobOptions,
+    regions: [PDFTranslationRegion]
+  ) -> [String: String] {
+    let siblings =
+      (try? FileManager.default.contentsOfDirectory(
+        at: directory.deletingLastPathComponent(), includingPropertiesForKeys: [.isDirectoryKey]))
+      ?? []
+    var best: [String: String] = [:]
+    for candidate in [directory] + siblings where candidate != inputURL.deletingLastPathComponent()
+    {
+      guard FileManager.default.fileExists(atPath: candidate.appendingPathComponent(filename).path),
+        let document = try? load(
+          in: candidate, inputURL: inputURL, options: options, allowingIncomplete: true)
+      else { continue }
+      let savedRegions = Dictionary(uniqueKeysWithValues: document.regions.map { ($0.id, $0) })
+      var matching: [String: String] = [:]
+      for region in regions {
+        guard let saved = savedRegions[region.id], saved.sourceText == region.sourceText,
+          saved.pageIndex == region.pageIndex, saved.kind == region.kind,
+          saved.continuationGroup == region.continuationGroup,
+          saved.continuationVersion == region.continuationVersion,
+          (saved.preserveOriginal == true) == (region.preserveOriginal == true),
+          let translated = document.translations[region.id]
+        else { continue }
+        // Vision can vary the last subpixel digits on repeat extraction. Never match
+        // by ID alone, and never reuse text that moved to a different place.
+        let old = saved.bounds
+        let new = region.bounds
+        guard abs(old.minX - new.minX) <= 0.5, abs(old.minY - new.minY) <= 0.5,
+          abs(old.width - new.width) <= 0.5, abs(old.height - new.height) <= 0.5
+        else { continue }
+        matching[region.id] = translated
+      }
+      if matching.count > best.count { best = matching }
+    }
+    return best
   }
 
   static func sourceFingerprint(inputURL: URL) throws -> String {
@@ -195,13 +240,18 @@ enum TranslationRecoveryStore {
     else { throw invalid("输入 PDF 页数与已保存译文不一致。") }
   }
 
-  private static func validateContents(_ document: TranslationRecoveryDocument) throws {
-    guard document.schemaVersion == schemaVersion,
+  private static func validateContents(
+    _ document: TranslationRecoveryDocument, allowingIncomplete: Bool = false
+  ) throws {
+    guard document.schemaVersion == schemaVersion else {
+      throw invalid("旧版译文可能存在区域错配，请重新翻译。原文件和旧记录已保留。")
+    }
+    guard
       document.sourceSHA256.count == 64,
       document.sourceSHA256.allSatisfy({ "0123456789abcdef".contains($0) }),
       (1...PDFTranslationPolicy.maximumPages).contains(document.pageCount),
       !document.regions.isEmpty, document.regions.count <= PDFLayoutTranslation.maximumRegions,
-      document.translations.count == document.regions.count,
+      document.translations.count <= document.regions.count,
       document.overflowRegionIDs.count <= document.regions.count,
       ["openai", "deepseek"].contains(document.provider),
       !document.sourceLanguage.isEmpty, document.sourceLanguage.count <= 80,
@@ -210,10 +260,14 @@ enum TranslationRecoveryStore {
     else { throw invalid("译文缓存版本或文档信息无效。") }
     let identifiers = Set(document.regions.map(\.id))
     guard identifiers.count == document.regions.count,
-      Set(document.translations.keys) == identifiers,
+      Set(document.translations.keys).isSubset(of: identifiers),
       Set(document.overflowRegionIDs).count == document.overflowRegionIDs.count,
       Set(document.overflowRegionIDs).isSubset(of: identifiers)
     else { throw invalid("译文缓存的区域标识或译文对应关系无效。") }
+    if !allowingIncomplete && document.translations.count != document.regions.count {
+      throw invalid(
+        "翻译尚未完成，已保存 \(document.translations.count)/\(document.regions.count) 个区域。重新执行可接着翻译。")
+    }
     var sourceCharacters = 0
     var textBytes = 0
     for region in document.regions {
@@ -230,13 +284,15 @@ enum TranslationRecoveryStore {
         bounds.width <= 1_000_000, bounds.height <= 1_000_000,
         region.preferredFontSize > 0, region.preferredFontSize <= 10_000,
         !region.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        let translation = document.translations[region.id],
-        !translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        translation.count <= TranslationService.maximumTranslatedCharacters(for: region.sourceText)
+        document.translations[region.id].map({
+          !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && $0.count <= TranslationService.maximumTranslatedCharacters(for: region.sourceText)
+        }) ?? allowingIncomplete
       else { throw invalid("译文缓存包含无效区域、页码或译文。") }
       sourceCharacters = try PDFTranslationPolicy.totalCharacters(
         afterAdding: region.sourceText.count, to: sourceCharacters)
-      textBytes += region.sourceText.utf8.count + translation.utf8.count
+      textBytes +=
+        region.sourceText.utf8.count + (document.translations[region.id]?.utf8.count ?? 0)
       guard textBytes <= maximumBytes * 3 / 4 else {
         throw invalid("译文缓存中的文字超过大小限制。")
       }

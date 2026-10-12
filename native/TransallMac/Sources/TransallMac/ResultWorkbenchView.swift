@@ -42,30 +42,60 @@ enum JobStatusAnnouncementPolicy {
   }
 }
 
-struct TaskActionButtons: View {
+// Classifies task state so the fixed execution slot can present cancellation while busy.
+enum TaskToolbarAction: Equatable {
+  case addFiles, start, retry, save, cancelImport, cancelSubmission, cancelSaving, cancelJob,
+    deleting
+
+  @MainActor
+  init(model: AppModel) {
+    if model.isDeletingJob {
+      self = .deleting
+    } else if model.isImporting {
+      self = .cancelImport
+    } else if model.isSubmitting {
+      self = .cancelSubmission
+    } else if model.isSaving {
+      self = .cancelSaving
+    } else if model.currentJob?.isRunning == true {
+      self = .cancelJob
+    } else if model.currentJob?.status == "done" {
+      self = .save
+    } else if model.documents.isEmpty {
+      self = .addFiles
+    } else if model.currentJob?.isFinished == true {
+      self = .retry
+    } else {
+      self = .start
+    }
+  }
+}
+
+struct TaskExecutionButton: View {
   @EnvironmentObject private var model: AppModel
 
   var body: some View {
-    if model.isImporting {
-      Button("取消读取") { model.requestDocumentImportCancellation() }
-    } else if model.isSubmitting {
-      Button("取消创建") { model.requestJobSubmissionCancellation() }
-    } else if model.isSaving {
-      Button("取消保存") { Task { await model.cancelResultSaving() } }
-    } else if model.currentJob?.isRunning == true {
-      Button("取消任务") { Task { await model.cancelJob() } }
-    } else if model.currentJob?.status == "done" {
-      Button("保存结果…", systemImage: "square.and.arrow.down") { model.startSavingResult() }
-        .buttonStyle(PrimaryButtonStyle()).disabled(!model.canStartSavingResult)
-        .keyboardShortcut("s", modifiers: .command)
-    } else {
-      Button(
-        model.currentJob?.isFinished == true ? "重新处理" : "开始处理",
-        systemImage: model.currentJob?.isFinished == true ? "arrow.clockwise" : "play.fill"
-      ) { model.startJob() }
-      .buttonStyle(PrimaryButtonStyle()).disabled(!model.canRun)
-      .keyboardShortcut(.return, modifiers: .command)
+    Group {
+      switch TaskToolbarAction(model: model) {
+      case .cancelImport:
+        Button("取消读取", systemImage: "xmark") { model.requestDocumentImportCancellation() }
+      case .cancelSubmission:
+        Button("取消执行", systemImage: "xmark") { model.requestJobSubmissionCancellation() }
+      case .cancelSaving:
+        Button("取消保存", systemImage: "xmark") { Task { await model.cancelResultSaving() } }
+      case .cancelJob:
+        Button("取消执行", systemImage: "xmark") { Task { await model.cancelJob() } }
+      case .deleting:
+        Button("正在删除…", systemImage: "hourglass") {}.disabled(true)
+      default:
+        Button("开始执行", systemImage: "play.fill") { model.startJob() }
+          .disabled(!model.canRun)
+          .keyboardShortcut(.return, modifiers: .command)
+          .help(model.currentJob?.isFinished == true ? "使用当前参数重新执行（⌘↩）" : "开始执行（⌘↩）")
+      }
     }
+    .controlSize(.regular).labelStyle(.iconOnly)
+    .accessibilityIdentifier("task.primaryAction")
   }
 }
 
@@ -89,7 +119,7 @@ struct ResultWorkbenchView: View {
         )
         .font(.caption).foregroundStyle(TransallTheme.warning).padding(12)
       }
-      if let job = model.currentJob, job.status == "failed" {
+      if let job = model.currentJob, job.status == "failed", model.translationRecoveryError == nil {
         VStack(alignment: .leading, spacing: 4) {
           Label(job.error ?? "任务未完成", systemImage: "exclamationmark.triangle")
             .foregroundStyle(TransallTheme.danger)
@@ -97,14 +127,26 @@ struct ResultWorkbenchView: View {
         }
         .font(.callout).textSelection(.enabled).padding(12)
       }
-      if let recovery = model.translationRecovery, recovery.jobID == model.currentJob?.id {
+      if let recovery = model.translationRecovery, recovery.jobID == model.currentJob?.id,
+        !recovery.isComplete
+      {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("已保存 \(recovery.completedRegionCount ?? 0)/\(recovery.regionCount) 个区域的译文")
+            .font(.callout.weight(.medium))
+          Button("继续翻译") { model.startJob() }.disabled(!model.canRun)
+          Text("重新执行仅补译未完成区域。重新打开 App 后，先添加同一份原文件。")
+            .font(.caption).foregroundStyle(.secondary)
+        }.padding(12)
+      } else if let recovery = model.translationRecovery, recovery.jobID == model.currentJob?.id {
         VStack(alignment: .leading, spacing: 8) {
           Text("译文已保存，可以继续生成 PDF").font(.callout.weight(.medium))
           Text(recovery.issueCount > 0 ? "\(recovery.issueCount) 处译文放不进原文区域。" : "可以使用已完成的译文重新排版。")
             .font(.caption).foregroundStyle(.secondary)
           HStack {
+            Button("生成左右对照 PDF") { model.rebuildTranslationPDF(outputMode: "bilingual") }
+              .buttonStyle(.bordered).disabled(!model.canRecoverTranslation)
             Button("生成纯译文 PDF") { model.recoverTranslationAsPlainPDF(jobID: recovery.jobID) }
-              .buttonStyle(PrimaryButtonStyle()).disabled(!model.canRecoverTranslation)
+              .buttonStyle(.bordered).disabled(!model.canRecoverTranslation)
             if let page = recovery.issuePages.first {
               Button("查看问题区域") { model.inspectionPage = page }
                 .disabled(model.isDeletingJob || model.isSubmitting)
@@ -117,11 +159,24 @@ struct ResultWorkbenchView: View {
         Text(error).font(.caption).foregroundStyle(TransallTheme.warning).padding(12)
       }
       HStack(spacing: 10) {
-        if busy { ProgressView().controlSize(.small) }
-        Text(statusText).font(.callout).lineLimit(1).truncationMode(.middle)
-        Spacer(minLength: 8)
+        if busy {
+          TaskProgressView(
+            engine: model.backend,
+            jobID: model.isImporting || model.isSubmitting || model.isSaving || model.isDeletingJob
+              ? nil : model.currentJob?.id,
+            fallbackTitle: statusText
+          )
+          .frame(maxWidth: .infinity)
+        } else {
+          Text(statusText).font(.callout).lineLimit(1).truncationMode(.middle)
+          Spacer(minLength: 8)
+        }
         if let job = model.currentJob, job.isFinished {
           Menu {
+            if job.kind == "pdf_translate", job.status == "done" {
+              Button("用已保存译文生成左右对照 PDF") { model.rebuildTranslationPDF(outputMode: "bilingual") }
+                .disabled(model.isSubmitting || model.isSaving || model.isDeletingJob)
+            }
             Button("新任务") {
               let task = model.selectedTask
               let source = model.selection.source
@@ -129,7 +184,7 @@ struct ResultWorkbenchView: View {
               model.selectTask(task, source: source)
             }
             .disabled(!model.canChangeRoute)
-            if !model.documents.isEmpty {
+            if job.status == "done", !model.documents.isEmpty {
               Button("重新处理") { model.startJob() }.disabled(!model.canRun)
             }
             Button("删除任务数据", role: .destructive) { pendingDeletionJobID = job.id }
@@ -206,7 +261,54 @@ struct ResultWorkbenchView: View {
     case "done": return "已完成 · \(job.output ?? "结果可以保存")"
     case "failed": return "处理失败"
     case "cancelled": return "已取消"
-    default: return job.message.isEmpty ? "正在处理" : job.message
+    default: return "正在处理文档"
     }
+  }
+}
+
+struct TaskProgressView: View {
+  @ObservedObject var engine: NativeDocumentEngine
+  let jobID: String?
+  let fallbackTitle: String
+
+  private var lines: [TaskProgressLine] {
+    if let jobID, let lines = engine.taskProgress[jobID], !lines.isEmpty {
+      return lines.sorted {
+        if $0.id == "translation-total" { return $1.id != "translation-total" }
+        if $1.id == "translation-total" { return false }
+        return $0.id < $1.id
+      }
+    }
+    return [TaskProgressLine(title: fallbackTitle)]
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      ForEach(lines) { line in
+        VStack(alignment: .leading, spacing: 4) {
+          HStack {
+            Text(line.title).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 8)
+            if let fraction = line.fraction {
+              Text(fraction, format: .percent.precision(.fractionLength(0))).monospacedDigit()
+            }
+          }
+          .font(.caption)
+          .fontWeight(line.id == "translation-total" ? .semibold : .regular)
+          .foregroundStyle(line.id == "translation-total" ? .primary : .secondary)
+          ProgressView(value: line.fraction, total: 1)
+            .progressViewStyle(.linear).controlSize(.small)
+            .tint(TransallTheme.accent)
+            .accessibilityLabel(line.title)
+            .accessibilityValue(
+              line.fraction.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "正在进行")
+          if line.id == "translation-total" {
+            Text("百分比按已完成文字量计算；下方页码表示各任务当前处理页")
+              .font(.caption2).foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+    .accessibilityIdentifier("task.progress")
   }
 }

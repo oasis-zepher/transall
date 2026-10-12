@@ -12,6 +12,83 @@ import Testing
 @Suite(.serialized)
 struct TranslationRecoveryTests {
   @Test
+  func partialCheckpointResumesOnlyMatchingDocumentAndCannotBeExported() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let old = root.appendingPathComponent("old")
+    let new = root.appendingPathComponent("new")
+    for directory in [old, new] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let source = root.appendingPathComponent("source.pdf")
+    try fixture(source)
+    let regions = [region("first", page: 0), region("second", page: 0)]
+    let partial = try TranslationRecoveryStore.create(
+      inputURL: source, options: JobOptions(), pageCount: 1,
+      regions: regions, translations: ["first": "第一段"], overflowRegionIDs: [],
+      allowingIncomplete: true)
+    try TranslationRecoveryStore.save(partial, in: old, allowingIncomplete: true)
+    #expect(throws: (any Error).self) {
+      try TranslationRecoveryStore.load(in: old, inputURL: source, options: JobOptions())
+    }
+    #expect(throws: (any Error).self) { try TranslationRecoveryStore.validateForRendering(partial) }
+    #expect(
+      TranslationRecoveryStore.resumableTranslations(
+        in: new, inputURL: source, options: JobOptions(), regions: regions) == ["first": "第一段"])
+    var changed = JobOptions()
+    changed.targetLanguage = "ja"
+    #expect(
+      TranslationRecoveryStore.resumableTranslations(
+        in: new, inputURL: source, options: changed, regions: regions
+      ).isEmpty)
+    #expect(
+      TranslationRecoveryStore.resumableTranslations(
+        in: new, inputURL: source, options: JobOptions(),
+        regions: [
+          PDFTranslationRegion(
+            id: "first", pageIndex: 0, kind: .nativeText, bounds: regions[0].bounds,
+            sourceText: "DIFFERENT SOURCE", preferredFontSize: 12)
+        ]
+      ).isEmpty)
+  }
+
+  @Test
+  func newContinuationInvalidatesOnlyItsOldFragmentsAndPersistsMetadata() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let old = root.appendingPathComponent("old")
+    let new = root.appendingPathComponent("new")
+    for directory in [old, new] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let source = root.appendingPathComponent("source.pdf")
+    try fixture(source, pageCount: 2)
+    let regions = [region("first", page: 0), region("second", page: 1), region("other", page: 1)]
+    let text = ["first": "旧上半句", "second": "旧下半句", "other": "已完成的其他段落"]
+    let saved = try TranslationRecoveryStore.create(
+      inputURL: source, options: JobOptions(), pageCount: 2,
+      regions: regions, translations: text, overflowRegionIDs: [])
+    try TranslationRecoveryStore.save(saved, in: old)
+    var linked = regions
+    linked[0].continuationGroup = ["first", "second"]
+    linked[1].continuationGroup = ["first", "second"]
+    #expect(
+      TranslationRecoveryStore.resumableTranslations(
+        in: new, inputURL: source,
+        options: JobOptions(), regions: linked) == ["other": text["other"]!])
+    let newSaved = try TranslationRecoveryStore.create(
+      inputURL: source, options: JobOptions(), pageCount: 2,
+      regions: linked, translations: text, overflowRegionIDs: [])
+    try TranslationRecoveryStore.save(newSaved, in: new)
+    let loaded = try TranslationRecoveryStore.load(in: new, inputURL: source, options: JobOptions())
+    #expect(loaded.regions == linked)
+    #expect(
+      TranslationRecoveryStore.resumableTranslations(
+        in: new, inputURL: source,
+        options: JobOptions(), regions: linked) == text)
+  }
+
+  @Test
   func layoutRecoveryHintSurvivesOptionalAndNSErrorBridging() throws {
     let error: NativeDocumentError? = .layoutOverflow(2)
     let hint = try #require(error?.recoverySuggestion)
@@ -23,7 +100,7 @@ struct TranslationRecoveryTests {
   }
 
   @Test
-  func overflowPersistsAllProviderWorkBeforeThrowingAndCanRenderOffline() throws {
+  func overflowAutomaticallyAppendsReadableNotesAndCanRenderOffline() throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let source = directory.appendingPathComponent("source.pdf")
@@ -39,21 +116,25 @@ struct TranslationRecoveryTests {
     let layoutOutput = directory.appendingPathComponent("layout.pdf")
     var options = JobOptions()
     options.outputMode = "preserve_layout"
-    do {
-      _ = try NativeDocumentProcessor.finishLayoutTranslation(
-        input: source, options: options, pageCount: 3, regions: regions,
-        translations: translations, outputURL: layoutOutput,
-        expectedSourceSHA256: TranslationRecoveryStore.sourceFingerprint(inputURL: source))
-      Issue.record("An overflowing region must report a recoverable layout error")
-    } catch let error as NativeDocumentError {
-      #expect(error.code == "translation_layout_overflow")
-    }
-    #expect(!FileManager.default.fileExists(atPath: layoutOutput.path))
+    let report = try NativeDocumentProcessor.finishLayoutTranslation(
+      input: source, options: options, pageCount: 3, regions: regions,
+      translations: translations, outputURL: layoutOutput,
+      expectedSourceSHA256: TranslationRecoveryStore.sourceFingerprint(inputURL: source))
+    #expect(report.overflowRegionIDs.isEmpty)
+    #expect(report.supplementedRegionIDs.contains("first"))
+    let completed = try #require(PDFDocument(url: layoutOutput))
+    #expect(completed.pageCount > 3)
+    #expect(completed.string?.contains("FIRST END") == true)
+    try PDFLayoutTranslation.pairOriginalAndTranslation(inputURL: source, outputURL: layoutOutput)
+    let paired = try #require(PDFDocument(url: layoutOutput))
+    #expect(paired.pageCount == completed.pageCount)
+    #expect(paired.string?.contains("FIRST END") == true)
+    #expect(PDFLayoutTranslation.isSideBySideBilingual(layoutOutput))
     options.outputMode = "translated"
     let cached = try TranslationRecoveryStore.load(
       in: directory, inputURL: source, options: options)
     #expect(cached.translations == translations)
-    #expect(cached.issues.contains { $0.id == "first" && $0.pageIndex == 0 })
+    #expect(cached.issues.isEmpty)
     let cacheAttributes = try FileManager.default.attributesOfItem(
       atPath: directory.appendingPathComponent(TranslationRecoveryStore.filename).path)
     #expect((cacheAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
@@ -152,7 +233,7 @@ struct TranslationRecoveryTests {
     var regions = try #require(payload["regions"] as? [[String: Any]])
     switch kind {
     case "checksum": payload["translations"] = ["first": "TAMPERED TRANSLATION"]
-    case "version": payload["schemaVersion"] = 99
+    case "version": payload["schemaVersion"] = 1
     case "missing": payload["translations"] = [String: String]()
     case "duplicate": regions.append(regions[0])
     case "page": regions[0]["pageIndex"] = 1

@@ -10,6 +10,12 @@ import Testing
 @Suite(.serialized)
 struct WorkbenchTests {
   @Test
+  func filePickerAcceptsPDFBeforeSavedRouteIsRestored() {
+    #expect(WorkbenchTask.contentTypes(source: nil).contains(.pdf))
+    #expect(WorkbenchTask.contentTypes(source: "pdf") == [.pdf])
+  }
+
+  @Test
   func taskCatalogCoversEveryNativeRouteExactlyOnce() {
     let selections = WorkbenchTask.allCases.flatMap { task in
       task.sources.map { task.selection(source: $0) }
@@ -71,6 +77,157 @@ struct WorkbenchTests {
     #expect(model.selectedDocumentID == first)
     model.removeDocument(model.documents[0])
     #expect(model.selectedDocumentID == second)
+  }
+
+  @Test(arguments: [true, false]) @MainActor
+  func importingAfterCompletionPreservesPreviewAndExport(appending: Bool) async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let first = directory.appendingPathComponent("completed.pdf")
+    let second = directory.appendingPathComponent("next.pdf")
+    let export = directory.appendingPathComponent("saved.pdf")
+    try makePDF(first, pages: 2, text: "COMPLETED DOCUMENT")
+    try makePDF(second, pages: 1, text: "NEXT DOCUMENT")
+    let originalBytes = try Data(contentsOf: first)
+    let suiteName = "Transall.ImportAfterCompletion.\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suiteName))
+    defer { preferences.removePersistentDomain(forName: suiteName) }
+    var destination = first
+    let model = AppModel(
+      backend: NativeDocumentEngine(
+        dataDirectoryOverride: directory.appendingPathComponent("jobs"),
+        credentialStore: EmptyWorkbenchCredentials()), preferences: preferences,
+      resultDestinationPicker: { _ in destination }, resultRevealer: { _ in })
+    await model.start()
+    defer { model.prepareForTermination() }
+    model.selectTask(.editPDF)
+    await model.importDocuments([first])
+    await model.runJob()
+    try await waitFor { model.currentJob?.isFinished == true }
+    let job = try #require(model.currentJob)
+    try #require(job.status == "done")
+    await model.refreshPreview()
+    try await waitFor { model.previewPages.count == 2 }
+    let pages = model.previewPages.map(\.url)
+    let originals = model.resultOriginalDocuments?.map(\.url)
+    await model.importDocuments([second], appending: appending)
+    #expect(model.documents.map(\.url) == (appending ? [first, second] : [second]))
+    #expect(model.currentJob?.id == job.id)
+    #expect(model.canStartSavingResult)
+    #expect(model.previewPages.map(\.url) == pages)
+    #expect(model.resultOriginalDocuments?.map(\.url) == originals)
+    #expect(preferences.string(forKey: "transall.native.lastJobId") == job.id)
+    // Duplicate imports must not discard the result either.
+    await model.importDocuments([second], appending: true)
+    #expect(model.currentJob?.id == job.id)
+    model.startSavingResult()
+    #expect(!model.isSaving)
+    #expect(model.errorMessage != nil)
+    #expect(try Data(contentsOf: first) == originalBytes)
+    destination = export
+    model.startSavingResult()
+    try await waitFor { !model.isSaving }
+    #expect(model.errorMessage == nil)
+    let saved = try #require(PDFDocument(url: export))
+    #expect(saved.pageCount == 2)
+    #expect(saved.string?.contains("COMPLETED DOCUMENT") == true)
+    #expect(saved.string?.contains("NEXT DOCUMENT") == false)
+  }
+
+  @Test @MainActor
+  func parallelProgressIsIndependentPerJobAndClearsOnCompletionOrCancellation() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let first = directory.appendingPathComponent("first.pdf")
+    let second = directory.appendingPathComponent("second.pdf")
+    try makePDF(first, pages: 1, text: "FIRST")
+    try makePDF(second, pages: 1, text: "SECOND")
+    let gate = ProgressTestGate()
+    let engine = NativeDocumentEngine(
+      dataDirectoryOverride: directory.appendingPathComponent("jobs"),
+      credentialStore: EmptyWorkbenchCredentials(),
+      jobProcessor: { route, inputs, options, output, key in
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          for worker in 1...2 {
+            group.addTask {
+              await ProcessingProgress.report(
+                inputs[0].lastPathComponent, fraction: Double(worker) / 3,
+                id: "worker-\(worker)")
+              try await gate.wait()
+            }
+          }
+          try await group.waitForAll()
+        }
+        return try await NativeDocumentProcessor.process(
+          route: route, inputs: inputs, options: options, outputURL: output, apiKey: key)
+      })
+    await engine.start()
+    let route = try #require(NativeCapabilities.routes.first { $0.kind == "pdf_edit" })
+    let firstJob = try await engine.createJob(
+      route: route,
+      files: [SelectedDocument(url: first, size: Int64(Data(contentsOf: first).count))],
+      options: JobOptions())
+    let secondJob = try await engine.createJob(
+      route: route,
+      files: [SelectedDocument(url: second, size: Int64(Data(contentsOf: second).count))],
+      options: JobOptions())
+    try await waitFor {
+      engine.taskProgress[firstJob.id]?.count == 2 && engine.taskProgress[secondJob.id]?.count == 2
+    }
+    let firstLines = try #require(engine.taskProgress[firstJob.id])
+    let secondLines = try #require(engine.taskProgress[secondJob.id])
+    let expectedFractions: [Double?] = [1.0 / 3, 2.0 / 3]
+    #expect(firstLines.map(\.fraction) == expectedFractions)
+    #expect(firstLines.allSatisfy { $0.title.contains("first") })
+    #expect(secondLines.allSatisfy { $0.title.contains("second") })
+    _ = try engine.cancelJob(id: firstJob.id)
+    await gate.release()
+    try await waitFor {
+      engine.taskProgress[firstJob.id] == nil
+        && (try? engine.job(id: secondJob.id).status) == "done"
+    }
+    #expect(engine.taskProgress[secondJob.id] == nil)
+    #expect(try engine.job(id: firstJob.id).status == "cancelled")
+  }
+
+  @Test
+  func translationProgressCountsCompletedChunksAndMissingRegionRetries() async throws {
+    let events = ProgressEventRecorder()
+    let service = TranslationService(
+      provider: "deepseek", apiKey: "test-key",
+      requestSender: { request in
+        let response = HTTPURLResponse(
+          url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        return (Data(#"{"choices":[{"message":{"content":"译文"}}]}"#.utf8), response)
+      })
+    let text = String(repeating: "a", count: 24_001)
+    _ = try await service.translate(text, source: "en", target: "zh", glossary: "") { fraction in
+      await events.record(TaskProgressLine(title: "翻译", fraction: fraction))
+    }
+    let chunkFractions = await events.snapshot().compactMap(\.fraction)
+    let count = TranslationService.chunks(text).count
+    #expect(chunkFractions.count == count)
+    #expect(chunkFractions.first == 1.0 / Double(count))
+    #expect(chunkFractions.last == 1)
+
+    let regionEvents = ProgressEventRecorder()
+    let responses = ProgressRegionResponses()
+    let regions = (1...2).map { index in
+      PDFTranslationRegion(
+        id: "region-\(index)", pageIndex: 0, kind: .nativeText,
+        bounds: CGRect(x: 0, y: index * 20, width: 100, height: 14),
+        sourceText: "Source \(index)", preferredFontSize: 10)
+    }
+    let regionService = TranslationService(
+      provider: "deepseek", apiKey: "test-key", requestSender: { try await responses.send($0) })
+    _ = try await ProcessingProgress.$reporter.withValue(
+      { await regionEvents.record($0) },
+      operation: {
+        try await regionService.translateRegions(regions, source: "en", target: "zh", glossary: "")
+      })
+    let reported = await regionEvents.snapshot().filter { $0.id == "translation-total" }
+    #expect(reported.compactMap(\.fraction) == [0, 0.5, 1])
+    #expect(reported.last?.title.contains("已完成 1/1 页") == true)
   }
 
   @Test
@@ -159,6 +316,8 @@ struct WorkbenchTests {
     #expect(model.currentJob?.id == job.id)
     #expect(model.documents.isEmpty)
     #expect(model.requiresNewResultDestination)
+    #expect(TaskToolbarAction(model: model) == .save)
+    #expect(model.canStartSavingResult)
     #expect(model.reverseFormats(expectedSelection: model.selection))
     #expect(model.selection == RouteSelection(source: "md", target: "pdf"))
     #expect(try engine.job(id: job.id).status == "done")
@@ -978,19 +1137,25 @@ struct WorkbenchTests {
     await model.start()
     defer { model.prepareForTermination() }
     model.selectTask(task, source: parts[0])
+    #expect(TaskToolbarAction(model: model) == .addFiles)
     await model.importDocuments([input])
+    #expect(TaskToolbarAction(model: model) == .start)
     model.options.ocrLanguage = "en-US"
     model.startJob()
+    #expect(TaskToolbarAction(model: model) == .cancelSubmission)
     try await waitFor { model.currentJob?.isFinished == true && !model.isSubmitting }
     let job = try #require(model.currentJob)
     try #require(job.status == "done", "\(pair): \(job.error ?? "unknown failure")")
+    #expect(TaskToolbarAction(model: model) == .save)
     #expect(!model.showInputPreview)
     let snapshot = try await model.backend.inspectionSnapshot(jobID: job.id)
     defer { try? FileManager.default.removeItem(at: snapshot.directory) }
     let result = try #require(snapshot.result)
     #expect(result.pathExtension == outputExtension)
     model.startSavingResult()
+    #expect(TaskToolbarAction(model: model) == .cancelSaving)
     try await waitFor { !model.isSaving }
+    #expect(TaskToolbarAction(model: model) == .save)
     #expect(model.errorMessage == nil)
     #expect(try Data(contentsOf: export) == Data(contentsOf: result))
     #expect(try Data(contentsOf: input) == original)
@@ -1083,4 +1248,37 @@ struct WorkbenchTests {
 private struct EmptyWorkbenchCredentials: ProviderCredentialStoring {
   func value(for credential: ProviderCredential) throws -> String { "" }
   func setValue(_ value: String, for credential: ProviderCredential) throws {}
+}
+
+private actor ProgressTestGate {
+  private var released = false
+
+  func release() { released = true }
+
+  func wait() async throws {
+    while !released { try await Task.sleep(for: .milliseconds(10)) }
+    try Task.checkCancellation()
+  }
+}
+
+private actor ProgressEventRecorder {
+  private var events: [TaskProgressLine] = []
+  func record(_ event: TaskProgressLine) { events.append(event) }
+  func snapshot() -> [TaskProgressLine] { events }
+}
+
+private actor ProgressRegionResponses {
+  private var count = 0
+  func send(_ request: URLRequest) throws -> (Data, URLResponse) {
+    count += 1
+    let content = try JSONSerialization.data(withJSONObject: [
+      "items": [["id": "region-\(count)", "text": "译文"]]
+    ])
+    let data = try JSONSerialization.data(withJSONObject: [
+      "choices": [["message": ["content": String(decoding: content, as: UTF8.self)]]]
+    ])
+    let response = HTTPURLResponse(
+      url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+    return (data, response)
+  }
 }

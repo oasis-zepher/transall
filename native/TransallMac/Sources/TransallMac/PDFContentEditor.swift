@@ -270,8 +270,9 @@ enum PDFContentEditor {
   ) throws {
     let text = draft.text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(
       of: "\r", with: "\n")
+    let font = embeddableFont(for: draft.font)
     let attributes: [NSAttributedString.Key: Any] = [
-      .font: draft.font, .foregroundColor: draft.color,
+      .font: font, .foregroundColor: draft.color,
     ]
     let attributed = NSAttributedString(string: text, attributes: attributes)
     let typesetter = CTTypesetterCreateWithAttributedString(attributed)
@@ -283,7 +284,8 @@ enum PDFContentEditor {
     defer { for font in fonts.values { FPDFFont_Close(font) } }
     let group = "TransallEdit_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
     let color = draft.color.usingColorSpace(.sRGB) ?? .black
-    let lineHeight = ceil(draft.font.ascender - draft.font.descender + draft.font.leading) * 1.15
+    let lineHeight =
+      ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)) * 1.15
     while offset < attributed.length {
       let length = max(1, CTTypesetterSuggestLineBreak(typesetter, offset, Double(draft.width)))
       let line = CTTypesetterCreateLine(typesetter, CFRange(location: offset, length: length))
@@ -335,6 +337,50 @@ enum PDFContentEditor {
       }
       offset += length
       lineNumber += 1
+    }
+  }
+
+  /// PDFium embeds only TrueType ('glyf') or CFF outlines. On macOS 26 without the
+  /// downloadable PingFang asset, PingFang resolves to the system UI face, whose
+  /// glyphs live in Apple's private 'hvgl' table. Typeset with fonts that PDFium
+  /// can embed: keep the chosen font when possible, and put embeddable CJK fonts
+  /// first in the fallback list so CoreText does not pick the UI face.
+  static func embeddableFont(for font: NSFont) -> CTFont {
+    let size = font.pointSize
+    let bold = font.fontDescriptor.symbolicTraits.contains(.bold)
+    let cjkNames =
+      bold
+      ? ["PingFangSC-Semibold", "HiraginoSansGB-W6", "STHeitiSC-Medium"]
+      : ["PingFangSC-Regular", "HiraginoSansGB-W3", "STHeitiSC-Light"]
+    let cjkFonts = cjkNames.compactMap { name -> CTFont? in
+      let candidate = CTFontCreateWithName(name as CFString, size, nil)
+      guard CTFontCopyPostScriptName(candidate) as String == name, hasStandardOutlines(candidate)
+      else { return nil }
+      return candidate
+    }
+    var primary = font as CTFont
+    if !hasStandardOutlines(primary) {
+      var glyph: CGGlyph = 0
+      let coversCJK = CTFontGetGlyphsForCharacters(primary, [0x4E2D], &glyph, 1)
+      primary =
+        coversCJK
+        ? cjkFonts.first ?? primary
+        : CTFontCreateWithName((bold ? "Helvetica-Bold" : "Helvetica") as CFString, size, nil)
+    }
+    let cascade = cjkFonts.map { CTFontCopyFontDescriptor($0) }
+    let descriptor = CTFontDescriptorCreateCopyWithAttributes(
+      CTFontCopyFontDescriptor(primary),
+      [kCTFontCascadeListAttribute: cascade] as CFDictionary)
+    return CTFontCreateWithFontDescriptor(descriptor, size, nil)
+  }
+
+  static func hasStandardOutlines(_ font: CTFont) -> Bool {
+    guard let available = CTFontCopyAvailableTables(font, CTFontTableOptions(rawValue: 0)) else {
+      return false
+    }
+    return (0..<CFArrayGetCount(available)).contains {
+      let tag = UInt32(truncatingIfNeeded: UInt(bitPattern: CFArrayGetValueAtIndex(available, $0)))
+      return tag == 0x676C_7966 || tag == 0x4346_4620
     }
   }
 

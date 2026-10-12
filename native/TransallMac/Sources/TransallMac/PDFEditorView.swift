@@ -423,7 +423,7 @@ struct PDFEditorView: View {
           Text("原字体 · \(draft.block.fontName)").tag(draft.block.fontName)
           ForEach(
             [
-              "Helvetica", "Times New Roman", "PingFangSC-Regular", "SongtiSC-Regular",
+              "Helvetica", "Times New Roman", "PingFangSC-Regular", "STSongti-SC-Regular",
               "Menlo-Regular",
             ].filter { $0 != draft.block.fontName }, id: \.self
           ) { name in

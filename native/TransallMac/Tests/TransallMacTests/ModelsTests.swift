@@ -2571,7 +2571,7 @@ struct ModelsTests {
     try handle.close()
 
     do {
-      _ = try await NativeDocumentEngine.copyInputs(
+      _ = try await JobStorage.copyInputs(
         [SelectedDocument(url: oversized, size: 1)], to: inputDirectory,
         maximumBytes: 1_024, maximumMB: 1, chunkSize: 64)
       Issue.record("Oversized input should fail before creating a destination")
@@ -2595,7 +2595,7 @@ struct ModelsTests {
     }
 
     do {
-      _ = try await NativeDocumentEngine.copyInputs(
+      _ = try await JobStorage.copyInputs(
         files, to: inputDirectory, maximumBytes: 1_024, maximumMB: 1)
       Issue.record("An oversized input count should fail before opening source files")
     } catch let error as NativeDocumentError {
@@ -2629,7 +2629,7 @@ struct ModelsTests {
     try secondHandle.close()
 
     do {
-      _ = try await NativeDocumentEngine.copyInputs(
+      _ = try await JobStorage.copyInputs(
         [SelectedDocument(url: first, size: 1), SelectedDocument(url: second, size: 1)],
         to: inputDirectory, maximumBytes: 1_024 * 1_024, maximumMB: 1,
         chunkSize: 64 * 1_024)
@@ -2656,7 +2656,7 @@ struct ModelsTests {
     try initialHandle.close()
 
     let copyTask = Task {
-      try await NativeDocumentEngine.copyInputs(
+      try await JobStorage.copyInputs(
         [SelectedDocument(url: source, size: 1)], to: inputDirectory,
         maximumBytes: 48 * 1_024, maximumMB: 1, chunkSize: 1)
     }
@@ -2705,7 +2705,7 @@ struct ModelsTests {
     try handle.close()
 
     let copyTask = Task {
-      try await NativeDocumentEngine.copyInputs(
+      try await JobStorage.copyInputs(
         [SelectedDocument(url: source, size: 1)], to: inputDirectory,
         maximumBytes: 2 * 1_024 * 1_024, maximumMB: 2, chunkSize: 1)
     }
@@ -3794,7 +3794,7 @@ struct ModelsTests {
       createdAt: now, updatedAt: now, output: nil, error: "test", stage: "failed",
       message: "任务失败。", errorCode: "test", errorHint: nil, retryable: true,
       progress: 12, cancelRequested: false, logs: [])
-    try paddedJSON(job, minimumBytes: NativeDocumentEngine.maximumJobStateBytes + 1)
+    try paddedJSON(job, minimumBytes: JobStorage.maximumJobStateBytes + 1)
       .write(to: jobDirectory.appendingPathComponent("job.json"), options: .atomic)
 
     do {
@@ -3833,7 +3833,7 @@ struct ModelsTests {
     let metadata = PersistedJobMetadata(
       route: route, options: JobOptions(), inputNames: ["1-source.png"])
     try paddedJSON(
-      metadata, minimumBytes: NativeDocumentEngine.maximumJobMetadataBytes + 1
+      metadata, minimumBytes: JobStorage.maximumJobMetadataBytes + 1
     ).write(to: jobDirectory.appendingPathComponent("metadata.json"), options: .atomic)
 
     let restored = try engine.job(id: jobID)
@@ -3889,7 +3889,7 @@ struct ModelsTests {
     let receipt = PersistedCompletionReceipt(
       output: outputName, byteCount: Int64(outputData.count), sampleSHA256: fingerprint)
     try paddedJSON(
-      receipt, minimumBytes: NativeDocumentEngine.maximumCompletionReceiptBytes + 1
+      receipt, minimumBytes: JobStorage.maximumCompletionReceiptBytes + 1
     ).write(to: jobDirectory.appendingPathComponent("completion.json"), options: .atomic)
 
     let restored = try engine.job(id: jobID)
@@ -3918,7 +3918,7 @@ struct ModelsTests {
       createdAt: timestamp, updatedAt: timestamp, output: nil, error: "test", stage: "failed",
       message: "任务失败。", errorCode: "test", errorHint: nil, retryable: true,
       progress: 12, cancelRequested: false, logs: [])
-    try paddedJSON(job, minimumBytes: NativeDocumentEngine.maximumJobStateBytes + 1)
+    try paddedJSON(job, minimumBytes: JobStorage.maximumJobStateBytes + 1)
       .write(to: jobDirectory.appendingPathComponent("job.json"), options: .atomic)
     try FileManager.default.setAttributes(
       [.modificationDate: now.addingTimeInterval(-25 * 60 * 60)],

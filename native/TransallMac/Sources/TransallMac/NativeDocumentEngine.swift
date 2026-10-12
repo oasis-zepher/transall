@@ -1,14 +1,8 @@
 import Combine
-import CryptoKit
-import Darwin
 import Foundation
 
 @MainActor
 final class NativeDocumentEngine: ObservableObject {
-  nonisolated static let maximumJobStateBytes = 1 * 1_024 * 1_024
-  nonisolated static let maximumJobMetadataBytes = 128 * 1_024
-  nonisolated static let maximumCompletionReceiptBytes = 16 * 1_024
-
   typealias JobPersister = (JobResponse, URL) throws -> Void
   typealias JobProcessor =
     @Sendable (
@@ -23,11 +17,6 @@ final class NativeDocumentEngine: ObservableObject {
   private struct PreviewOperation {
     let token: UUID
     let task: Task<[URL], Error>
-  }
-
-  private struct CleanupScan: Sendable {
-    let directories: [URL]
-    let warnings: [String]
   }
 
   enum State: Equatable {
@@ -84,7 +73,7 @@ final class NativeDocumentEngine: ObservableObject {
       }
     self.inputCopier =
       inputCopier ?? { files, inputDirectory, maximumBytes, maximumMB in
-        try await Self.copyInputs(
+        try await JobStorage.copyInputs(
           files, to: inputDirectory, maximumBytes: maximumBytes, maximumMB: maximumMB)
       }
     self.previewGenerator =
@@ -93,7 +82,7 @@ final class NativeDocumentEngine: ObservableObject {
       }
     self.jobPersister =
       jobPersister ?? { job, directory in
-        try Self.persistJob(job, in: directory)
+        try JobStorage.persistJob(job, in: directory)
       }
   }
 
@@ -102,7 +91,7 @@ final class NativeDocumentEngine: ObservableObject {
     do {
       let override = dataDirectoryOverride
       let preparation = Task.detached(priority: .utility) {
-        try Self.prepareDataDirectory(override: override)
+        try JobStorage.prepareDataDirectory(override: override)
       }
       let prepared = try await withTaskCancellationHandler(
         operation: { try await preparation.value },
@@ -186,7 +175,7 @@ final class NativeDocumentEngine: ObservableObject {
   ) -> PreflightResponse {
     var blocking: [PreflightIssue] = []
     var warnings: [PreflightIssue] = []
-    guard Self.canonicalRoute(matching: route) != nil else {
+    guard JobStorage.canonicalRoute(matching: route) != nil else {
       blocking.append(
         issue(
           "unsupported_route", "此转换路径不属于当前原生版本。",
@@ -275,7 +264,7 @@ final class NativeDocumentEngine: ObservableObject {
     if let issue = validation.blockingIssues.first {
       throw Self.preflightError(issue)
     }
-    guard let canonicalRoute = Self.canonicalRoute(matching: route) else {
+    guard let canonicalRoute = JobStorage.canonicalRoute(matching: route) else {
       throw NativeDocumentError.invalidOption("此转换路径不属于当前原生版本。")
     }
     let id = UUID().uuidString.lowercased()
@@ -322,7 +311,7 @@ final class NativeDocumentEngine: ObservableObject {
       let metadata: NativeJobMetadata
       do {
         metadata = try load("metadata.json", from: directory)
-        try Self.validateStoredMetadata(metadata, for: job)
+        try JobStorage.validateStoredMetadata(metadata, for: job)
       } catch {
         let corrupted = replacing(
           job, status: "failed", stage: "failed", message: "任务数据已损坏。",
@@ -397,7 +386,7 @@ final class NativeDocumentEngine: ObservableObject {
     if jobs[id] == nil, let persisted: JobResponse = try? load("job.json", from: directory),
       persisted.id == id, persisted.isRunning,
       let metadata: NativeJobMetadata = try? load("metadata.json", from: directory),
-      (try? Self.validateStoredMetadata(metadata, for: persisted)) != nil
+      (try? JobStorage.validateStoredMetadata(metadata, for: persisted)) != nil
     {
       throw NativeDocumentError.processing("正在运行的任务不能删除。")
     }
@@ -437,9 +426,9 @@ final class NativeDocumentEngine: ObservableObject {
     guard state == .running, let dataDirectory else { return [] }
     let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
     let scanTask = Task.detached(priority: .utility) {
-      try Self.expiredJobDirectories(in: jobsDirectory, now: now)
+      try JobStorage.expiredJobDirectories(in: jobsDirectory, now: now)
     }
-    let scan: CleanupScan
+    let scan: JobStorage.CleanupScan
     do {
       scan = try await withTaskCancellationHandler(
         operation: { try await scanTask.value },
@@ -486,7 +475,7 @@ final class NativeDocumentEngine: ObservableObject {
     let transfer = Task.detached(priority: .userInitiated) {
       let accessing = destination.startAccessingSecurityScopedResource()
       defer { if accessing { destination.stopAccessingSecurityScopedResource() } }
-      let verified = try Self.validatedCompletedResult(named: output, in: directory)
+      let verified = try JobStorage.validatedCompletedResult(named: output, in: directory)
       try AtomicResultSaver.copyReplacing(
         source: verified.url, destination: destination,
         expectedFingerprint: verified.fingerprint,
@@ -512,9 +501,9 @@ final class NativeDocumentEngine: ObservableObject {
     let previewGenerator = self.previewGenerator
     let operation = Task.detached(priority: .userInitiated) {
       do {
-        let verified = try Self.validatedCompletedResult(named: output, in: directory)
+        let verified = try JobStorage.validatedCompletedResult(named: output, in: directory)
         let pages = try await previewGenerator(verified.url, previewDirectory)
-        _ = try Self.validatedCompletedResult(named: output, in: directory)
+        _ = try JobStorage.validatedCompletedResult(named: output, in: directory)
         try Task.checkCancellation()
         return pages
       } catch {
@@ -540,7 +529,7 @@ final class NativeDocumentEngine: ObservableObject {
   func taskConfiguration(jobID: String) throws -> (route: RouteDefinition, options: JobOptions) {
     let job = try job(id: jobID)
     let metadata: NativeJobMetadata = try load("metadata.json", from: jobDirectory(jobID))
-    try Self.validateStoredMetadata(metadata, for: job)
+    try JobStorage.validateStoredMetadata(metadata, for: job)
     return (metadata.route, metadata.options)
   }
 
@@ -552,7 +541,7 @@ final class NativeDocumentEngine: ObservableObject {
     else { throw NativeDocumentError.processing("这个任务没有可检查的 PDF 结果。") }
     let directory = try jobDirectory(jobID)
     let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
-    try Self.validateStoredMetadata(metadata, for: job)
+    try JobStorage.validateStoredMetadata(metadata, for: job)
     let operation = Task.detached(priority: .userInitiated) {
       let snapshotDirectory = directory.appendingPathComponent(
         "Inspection-\(UUID().uuidString)", isDirectory: true)
@@ -563,7 +552,7 @@ final class NativeDocumentEngine: ObservableObject {
       defer { if !completed { try? FileManager.default.removeItem(at: snapshotDirectory) } }
       var result: URL?
       if hasOutput, let output = job.output {
-        let verified = try Self.validatedCompletedResult(named: output, in: directory)
+        let verified = try JobStorage.validatedCompletedResult(named: output, in: directory)
         let copy = snapshotDirectory.appendingPathComponent(output)
         try AtomicResultSaver.copyReplacing(
           source: verified.url, destination: copy,
@@ -575,8 +564,8 @@ final class NativeDocumentEngine: ObservableObject {
         input.lowercased().hasSuffix(".pdf")
       {
         let inputDirectory = directory.appendingPathComponent("Input", isDirectory: true)
-        try Self.validateDirectory(inputDirectory, description: "任务输入目录")
-        let source = try Self.validatedRegularFile(
+        try JobStorage.validateDirectory(inputDirectory, description: "任务输入目录")
+        let source = try JobStorage.validatedRegularFile(
           named: input, in: inputDirectory, description: "任务输入")
         let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
         guard size <= NativeCapabilities.uploadLimitBytes else {
@@ -623,9 +612,9 @@ final class NativeDocumentEngine: ObservableObject {
     else { throw NativeDocumentError.processing("这个任务现在不能读取已保存译文。") }
     let directory = try jobDirectory(jobID)
     let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
-    try Self.validateStoredMetadata(metadata, for: job)
+    try JobStorage.validateStoredMetadata(metadata, for: job)
     let operation = Task.detached(priority: .userInitiated) {
-      let inputs = try Self.validatedStoredInputs(named: metadata.inputNames, in: directory)
+      let inputs = try JobStorage.validatedStoredInputs(named: metadata.inputNames, in: directory)
       guard inputs.count == 1, let input = inputs.first else {
         throw NativeDocumentError.invalidFile("翻译恢复需要一份原文副本。")
       }
@@ -653,7 +642,7 @@ final class NativeDocumentEngine: ObservableObject {
     else { throw NativeDocumentError.processing("这个任务现在不能重新排版。") }
     let directory = try jobDirectory(jobID)
     let metadata: NativeJobMetadata = try load("metadata.json", from: directory)
-    try Self.validateStoredMetadata(metadata, for: job)
+    try JobStorage.validateStoredMetadata(metadata, for: job)
     var options = metadata.options
     options.outputMode = outputMode
     let revised = NativeJobMetadata(
@@ -687,13 +676,13 @@ final class NativeDocumentEngine: ObservableObject {
       var outputURL: URL?
       do {
         try Task.checkCancellation()
-        let inputs = try Self.validatedStoredInputs(named: metadata.inputNames, in: directory)
+        let inputs = try JobStorage.validatedStoredInputs(named: metadata.inputNames, in: directory)
         guard inputs.count == 1, let input = inputs.first else {
           throw NativeDocumentError.invalidFile("翻译恢复需要一份原文副本。")
         }
         let recovery = try TranslationRecoveryStore.load(
           in: directory, inputURL: input, options: metadata.options)
-        let destination = try Self.containedFileURL(
+        let destination = try JobStorage.containedFileURL(
           named: OutputFileNamer.name(
             for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
           in: directory, description: "恢复的译文结果")
@@ -710,7 +699,7 @@ final class NativeDocumentEngine: ObservableObject {
           bilingual: metadata.options.outputMode == "bilingual")
         try Task.checkCancellation()
         guard result.outputURL.standardizedFileURL == rendered.standardizedFileURL,
-          Self.isCompleteResult(rendered)
+          JobStorage.isCompleteResult(rendered)
         else {
           throw NativeDocumentError.processing("重新排版没有生成完整可用的 PDF。")
         }
@@ -766,12 +755,12 @@ final class NativeDocumentEngine: ObservableObject {
           }
         }
         try Task.checkCancellation()
-        let expectedOutputURL = try Self.containedFileURL(
+        let expectedOutputURL = try JobStorage.containedFileURL(
           named: OutputFileNamer.name(
             for: metadata.route, options: metadata.options, inputNames: metadata.inputNames),
           in: directory, description: "任务结果")
         outputURL = expectedOutputURL
-        let inputURLs = try Self.validatedStoredInputs(
+        let inputURLs = try JobStorage.validatedStoredInputs(
           named: metadata.inputNames, in: directory)
         let result = try await ProcessingProgress.$reporter.withValue(
           { [weak self] line in await self?.updateProgress(line, jobID: jobID) }
@@ -784,7 +773,7 @@ final class NativeDocumentEngine: ObservableObject {
         guard result.outputURL.standardizedFileURL == expectedOutputURL.standardizedFileURL else {
           throw NativeDocumentError.processing("处理器返回了意外的结果位置。")
         }
-        guard Self.isCompleteResult(expectedOutputURL) else {
+        guard JobStorage.isCompleteResult(expectedOutputURL) else {
           throw NativeDocumentError.processing("处理器没有生成完整可用的结果。")
         }
         let accepted =
@@ -938,7 +927,7 @@ final class NativeDocumentEngine: ObservableObject {
     let receipt: NativeJobCompletionReceipt? = try? load("completion.json", from: directory)
     let outputURL = directory.appendingPathComponent(expectedOutput)
     if let receipt,
-      Self.completionReceiptMatches(
+      JobStorage.completionReceiptMatches(
         receipt, expectedOutput: expectedOutput, outputURL: outputURL)
     {
       appendLog("已从完整结果恢复任务 \(job.id.prefix(8))，未重新执行处理。")
@@ -996,124 +985,6 @@ final class NativeDocumentEngine: ObservableObject {
       cancelRequested: cancelRequested, logs: logs)
   }
 
-  nonisolated static func copyInputs(
-    _ files: [SelectedDocument], to inputDirectory: URL, maximumBytes: Int, maximumMB: Int,
-    chunkSize: Int = 1_024 * 1_024
-  ) async throws -> [URL] {
-    guard maximumBytes >= 0, chunkSize > 0 else {
-      throw NativeDocumentError.invalidFile("输入文件复制限制无效。")
-    }
-    guard files.count <= NativeCapabilities.maximumInputFileCount else {
-      throw NativeDocumentError.invalidFile(
-        "每批最多处理 \(NativeCapabilities.maximumInputFileCount) 个文件，请拆分为多个任务。")
-    }
-    let transfer = Task.detached(priority: .userInitiated) {
-      var copiedInputs: [URL] = []
-      var removeCopiedInputs = true
-      defer {
-        if removeCopiedInputs {
-          for copiedInput in copiedInputs {
-            try? FileManager.default.removeItem(at: copiedInput)
-          }
-        }
-      }
-      var copiedBytes: Int64 = 0
-      let resourceKeys: Set<URLResourceKey> = [
-        .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey,
-      ]
-      for (index, document) in files.enumerated() {
-        try Task.checkCancellation()
-        let safeName =
-          "\(index + 1)-\(document.name.replacingOccurrences(of: "/", with: "-"))"
-        let destination = try containedFileURL(
-          named: safeName, in: inputDirectory, description: "输入文件")
-        let accessing = document.url.startAccessingSecurityScopedResource()
-        defer { if accessing { document.url.stopAccessingSecurityScopedResource() } }
-        do {
-          let sourceValues = try document.url.resourceValues(forKeys: resourceKeys)
-          guard sourceValues.isSymbolicLink != true, sourceValues.isRegularFile == true else {
-            throw NativeDocumentError.invalidFile(
-              "\(document.name) 不是可复制的普通文件，请选择原始文件。")
-          }
-
-          let (sourceHandle, initialSourceStatus) = try SecureFileTransfer.openRegularSource(
-            document.url,
-            nonRegularMessage: "\(document.name) 不是可复制的普通文件，请选择原始文件。")
-          defer { try? sourceHandle.close() }
-
-          try Task.checkCancellation()
-          let sourceSize = initialSourceStatus.st_size
-          let maximum = Int64(maximumBytes)
-          let (expectedTotal, expectedOverflow) = copiedBytes.addingReportingOverflow(sourceSize)
-          guard !expectedOverflow, expectedTotal <= maximum else {
-            throw NativeDocumentError.invalidFile(
-              "复制后的文件总计超过 \(maximumMB) MB。")
-          }
-
-          var removeIncompleteDestination = true
-          defer {
-            if removeIncompleteDestination {
-              try? FileManager.default.removeItem(at: destination)
-            }
-          }
-          let destinationHandle = try SecureFileTransfer.openNewDestination(destination)
-          defer { try? destinationHandle.close() }
-
-          var fileBytes: Int64 = 0
-          while true {
-            try Task.checkCancellation()
-            guard let chunk = try sourceHandle.read(upToCount: chunkSize), !chunk.isEmpty else {
-              break
-            }
-            try Task.checkCancellation()
-            let (newTotal, totalOverflow) = copiedBytes.addingReportingOverflow(
-              Int64(chunk.count))
-            guard !totalOverflow, newTotal <= maximum else {
-              throw NativeDocumentError.invalidFile(
-                "复制后的文件总计超过 \(maximumMB) MB。")
-            }
-            try destinationHandle.write(contentsOf: chunk)
-            copiedBytes = newTotal
-            fileBytes += Int64(chunk.count)
-            try Task.checkCancellation()
-            await Task.yield()
-          }
-          try destinationHandle.synchronize()
-          try Task.checkCancellation()
-
-          let sourceStatus = try SecureFileTransfer.fileStatus(for: sourceHandle.fileDescriptor)
-          let copiedStatus = try SecureFileTransfer.fileStatus(
-            for: destinationHandle.fileDescriptor)
-          guard SecureFileTransfer.isUnchanged(initialSourceStatus, sourceStatus),
-            sourceStatus.st_size == fileBytes
-          else {
-            throw NativeDocumentError.invalidFile(
-              "\(document.name) 在复制过程中发生变化，请重新选择。")
-          }
-          guard SecureFileTransfer.isRegularFile(copiedStatus), copiedStatus.st_size == fileBytes
-          else {
-            throw NativeDocumentError.invalidFile(
-              "\(document.name) 复制后不是有效的普通文件。")
-          }
-          removeIncompleteDestination = false
-        } catch is CancellationError {
-          throw CancellationError()
-        } catch let error as NativeDocumentError {
-          throw error
-        } catch {
-          throw NativeDocumentError.invalidFile(
-            "无法读取 \(document.name)：\(error.localizedDescription)")
-        }
-        copiedInputs.append(destination)
-      }
-      removeCopiedInputs = false
-      return copiedInputs
-    }
-    return try await withTaskCancellationHandler(
-      operation: { try await transfer.value },
-      onCancel: { transfer.cancel() })
-  }
-
   private func allowedExtensions(for source: String) -> Set<String> {
     Set(
       (NativeCapabilities.routes.first { $0.source == source }?.accept ?? "")
@@ -1128,83 +999,6 @@ final class NativeDocumentEngine: ObservableObject {
     PreflightIssue(code: code, dependency: nil, message: message, hint: hint)
   }
 
-  private nonisolated static func prepareDataDirectory(override: URL?) throws -> (
-    directory: URL, warnings: [String]
-  ) {
-    let directory: URL
-    if let override {
-      directory = override
-    } else {
-      let base = try FileManager.default.url(
-        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-      directory = base.appendingPathComponent("Transall", isDirectory: true)
-    }
-    try FileManager.default.createDirectory(
-      at: directory.appendingPathComponent("Jobs", isDirectory: true),
-      withIntermediateDirectories: true)
-    let jobsDirectory = directory.appendingPathComponent("Jobs", isDirectory: true)
-    let scan = try expiredJobDirectories(in: jobsDirectory, now: Date())
-    var warnings = scan.warnings
-    for directory in scan.directories {
-      try Task.checkCancellation()
-      do {
-        try FileManager.default.removeItem(at: directory)
-      } catch {
-        warnings.append("未能清理过期任务 \(directory.lastPathComponent)：\(error.localizedDescription)")
-      }
-    }
-    return (directory, warnings)
-  }
-
-  private nonisolated static func expiredJobDirectories(
-    in jobsDirectory: URL, now: Date
-  ) throws -> CleanupScan {
-    try validateDirectory(jobsDirectory, description: "任务数据目录")
-    let directories = try FileManager.default.contentsOfDirectory(
-      at: jobsDirectory,
-      includingPropertiesForKeys: [
-        .contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey,
-      ],
-      options: [.skipsHiddenFiles])
-    let dateFormatter = ISO8601DateFormatter()
-    var expired: [URL] = []
-    var warnings: [String] = []
-    for directory in directories {
-      try Task.checkCancellation()
-      do {
-        let values = try directory.resourceValues(
-          forKeys: [.contentModificationDateKey, .isDirectoryKey, .isSymbolicLinkKey])
-        guard values.isSymbolicLink != true, values.isDirectory == true,
-          let modified = values.contentModificationDate
-        else { continue }
-        let referenceDate = cleanupReferenceDate(
-          in: directory, fallback: modified, now: now, dateFormatter: dateFormatter)
-        guard now.timeIntervalSince(referenceDate) >= 24 * 60 * 60 else { continue }
-        expired.append(directory)
-      } catch {
-        warnings.append("无法检查任务 \(directory.lastPathComponent) 的保留期：\(error.localizedDescription)")
-      }
-    }
-    return CleanupScan(directories: expired, warnings: warnings)
-  }
-
-  private nonisolated static func cleanupReferenceDate(
-    in directory: URL, fallback: Date, now: Date, dateFormatter: ISO8601DateFormatter
-  ) -> Date {
-    guard
-      let data = try? boundedTaskFileData(
-        named: "job.json", in: directory, description: "任务状态文件",
-        maximumBytes: maximumJobStateBytes),
-      let job = try? JSONDecoder().decode(JobResponse.self, from: data),
-      job.id == directory.lastPathComponent,
-      let createdAt = dateFormatter.date(from: job.createdAt),
-      createdAt <= now.addingTimeInterval(5 * 60)
-    else {
-      return fallback
-    }
-    return createdAt
-  }
-
   private func jobDirectory(_ id: String) throws -> URL {
     guard let dataDirectory else {
       throw NativeDocumentError.processing("原生文档引擎尚未就绪。")
@@ -1213,243 +1007,47 @@ final class NativeDocumentEngine: ObservableObject {
       throw NativeDocumentError.invalidOption("任务编号无效。")
     }
     let jobsDirectory = dataDirectory.appendingPathComponent("Jobs", isDirectory: true)
-    try Self.validateDirectory(jobsDirectory, description: "任务数据目录")
+    try JobStorage.validateDirectory(jobsDirectory, description: "任务数据目录")
     let directory = jobsDirectory.appendingPathComponent(id, isDirectory: true)
     guard FileManager.default.fileExists(atPath: directory.path) else {
       throw NativeDocumentError.processing("找不到任务数据。")
     }
-    try Self.validateDirectory(directory, description: "任务目录")
+    try JobStorage.validateDirectory(directory, description: "任务目录")
     return directory
   }
 
   private func persistMetadata(_ metadata: NativeJobMetadata, in directory: URL) throws {
     let data = try JSONEncoder().encode(metadata)
-    try Self.validatePersistedDataSize(
-      data, description: "任务元数据", maximumBytes: Self.maximumJobMetadataBytes)
+    try JobStorage.validatePersistedDataSize(
+      data, description: "任务元数据", maximumBytes: JobStorage.maximumJobMetadataBytes)
     try data.write(to: directory.appendingPathComponent("metadata.json"), options: .atomic)
   }
 
   private func persistCompletionReceipt(output: String, in directory: URL) throws {
-    let outputURL = try Self.validatedRegularFile(
+    let outputURL = try JobStorage.validatedRegularFile(
       named: output, in: directory, description: "任务结果")
-    let fingerprint = try Self.resultFingerprint(outputURL)
+    let fingerprint = try JobStorage.resultFingerprint(outputURL)
     let receipt = NativeJobCompletionReceipt(
       output: output, byteCount: fingerprint.byteCount,
       sampleSHA256: fingerprint.sampleSHA256)
     let data = try JSONEncoder().encode(receipt)
-    try Self.validatePersistedDataSize(
-      data, description: "任务完成凭据", maximumBytes: Self.maximumCompletionReceiptBytes)
+    try JobStorage.validatePersistedDataSize(
+      data, description: "任务完成凭据", maximumBytes: JobStorage.maximumCompletionReceiptBytes)
     try data.write(to: directory.appendingPathComponent("completion.json"), options: .atomic)
-  }
-
-  private nonisolated static func persistJob(_ job: JobResponse, in directory: URL) throws {
-    let data = try JSONEncoder().encode(job)
-    try validatePersistedDataSize(
-      data, description: "任务状态", maximumBytes: maximumJobStateBytes)
-    try data.write(to: directory.appendingPathComponent("job.json"), options: .atomic)
-  }
-
-  private nonisolated static func isCompleteResult(_ url: URL) -> Bool {
-    guard
-      let values = try? url.resourceValues(
-        forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-      values.isSymbolicLink != true, values.isRegularFile == true
-    else {
-      return false
-    }
-    if url.pathExtension.lowercased() == "pdf" {
-      return ((try? NativeDocumentProcessor.previewPageCount(pdfURL: url, limit: 1)) ?? 0) > 0
-    }
-    return true
-  }
-
-  private nonisolated static func completionReceiptMatches(
-    _ receipt: NativeJobCompletionReceipt, expectedOutput: String, outputURL: URL
-  ) -> Bool {
-    guard receipt.output == expectedOutput, let expected = fingerprint(from: receipt),
-      isCompleteResult(outputURL),
-      let fingerprint = try? resultFingerprint(outputURL)
-    else {
-      return false
-    }
-    return fingerprint == expected
-  }
-
-  private nonisolated static func validatedCompletedResult(
-    named output: String, in directory: URL
-  ) throws -> (url: URL, fingerprint: CompletedResultFingerprint) {
-    let outputURL = try validatedRegularFile(
-      named: output, in: directory, description: "任务结果")
-    let receipt: NativeJobCompletionReceipt
-    do {
-      let data = try boundedTaskFileData(
-        named: "completion.json", in: directory, description: "任务完成凭据",
-        maximumBytes: maximumCompletionReceiptBytes)
-      receipt = try JSONDecoder().decode(NativeJobCompletionReceipt.self, from: data)
-    } catch is CancellationError {
-      throw CancellationError()
-    } catch {
-      throw NativeDocumentError.invalidFile("任务完成凭据缺失或无效，请重新运行任务。")
-    }
-    guard receipt.output == output, let expected = fingerprint(from: receipt),
-      isCompleteResult(outputURL), try resultFingerprint(outputURL) == expected
-    else {
-      throw NativeDocumentError.invalidFile("任务结果与完成凭据不一致，请重新运行任务。")
-    }
-    return (outputURL, expected)
-  }
-
-  private nonisolated static func fingerprint(
-    from receipt: NativeJobCompletionReceipt
-  ) -> CompletedResultFingerprint? {
-    guard let byteCount = receipt.byteCount, byteCount >= 0,
-      let sampleSHA256 = receipt.sampleSHA256, sampleSHA256.count == 64,
-      sampleSHA256.allSatisfy({ $0.isHexDigit })
-    else { return nil }
-    return CompletedResultFingerprint(byteCount: byteCount, sampleSHA256: sampleSHA256)
-  }
-
-  private nonisolated static func resultFingerprint(_ url: URL) throws
-    -> CompletedResultFingerprint
-  {
-    let sampleSize = 64 * 1_024
-    let (handle, initialStatus) = try SecureFileTransfer.openRegularSource(
-      url, nonRegularMessage: "任务结果不是有效的普通文件。")
-    defer { try? handle.close() }
-    let fileSize = initialStatus.st_size
-    var sample = Data()
-    if fileSize <= Int64(sampleSize * 2) {
-      sample = try handle.readToEnd() ?? Data()
-      guard Int64(sample.count) == fileSize else {
-        throw NativeDocumentError.processing("任务结果大小在验证期间发生变化。")
-      }
-    } else {
-      let prefix = try handle.read(upToCount: sampleSize) ?? Data()
-      try handle.seek(toOffset: UInt64(fileSize - Int64(sampleSize)))
-      let suffix = try handle.read(upToCount: sampleSize) ?? Data()
-      guard prefix.count == sampleSize, suffix.count == sampleSize else {
-        throw NativeDocumentError.processing("任务结果大小在验证期间发生变化。")
-      }
-      sample.append(prefix)
-      sample.append(suffix)
-    }
-    let finalStatus = try SecureFileTransfer.fileStatus(for: handle.fileDescriptor)
-    guard SecureFileTransfer.isUnchanged(initialStatus, finalStatus) else {
-      throw NativeDocumentError.processing("任务结果在验证期间发生变化。")
-    }
-    let digest = SHA256.hash(data: sample).map { String(format: "%02x", $0) }.joined()
-    return CompletedResultFingerprint(byteCount: fileSize, sampleSHA256: digest)
   }
 
   private func load<T: Decodable>(_ name: String, from directory: URL) throws -> T {
     let maximumBytes: Int
     switch name {
-    case "job.json": maximumBytes = Self.maximumJobStateBytes
-    case "metadata.json": maximumBytes = Self.maximumJobMetadataBytes
-    case "completion.json": maximumBytes = Self.maximumCompletionReceiptBytes
+    case "job.json": maximumBytes = JobStorage.maximumJobStateBytes
+    case "metadata.json": maximumBytes = JobStorage.maximumJobMetadataBytes
+    case "completion.json": maximumBytes = JobStorage.maximumCompletionReceiptBytes
     default:
       throw NativeDocumentError.invalidFile("任务状态文件名无效。")
     }
-    let data = try Self.boundedTaskFileData(
+    let data = try JobStorage.boundedTaskFileData(
       named: name, in: directory, description: "任务状态文件", maximumBytes: maximumBytes)
     return try JSONDecoder().decode(T.self, from: data)
-  }
-
-  private nonisolated static func validatePersistedDataSize(
-    _ data: Data, description: String, maximumBytes: Int
-  ) throws {
-    guard data.count <= maximumBytes else {
-      throw NativeDocumentError.invalidFile("\(description)超过大小限制。")
-    }
-  }
-
-  private nonisolated static func boundedTaskFileData(
-    named name: String, in directory: URL, description: String, maximumBytes: Int
-  ) throws -> Data {
-    guard maximumBytes >= 0 else {
-      throw NativeDocumentError.invalidFile("\(description)大小限制无效。")
-    }
-    let url = try containedFileURL(named: name, in: directory, description: description)
-    let (handle, initialStatus) = try SecureFileTransfer.openRegularSource(
-      url, nonRegularMessage: "\(description)不是有效的普通文件。")
-    defer { try? handle.close() }
-    guard initialStatus.st_size <= Int64(maximumBytes) else {
-      throw NativeDocumentError.invalidFile("\(description)超过大小限制，数据可能已经损坏。")
-    }
-
-    var data = Data()
-    data.reserveCapacity(Int(initialStatus.st_size))
-    let readChunkBytes = 64 * 1_024
-    while true {
-      try Task.checkCancellation()
-      let remaining = maximumBytes - data.count
-      let requestedBytes = min(readChunkBytes, remaining + 1)
-      guard let chunk = try handle.read(upToCount: requestedBytes), !chunk.isEmpty else {
-        break
-      }
-      guard chunk.count <= remaining else {
-        throw NativeDocumentError.invalidFile("\(description)超过大小限制，数据可能已经损坏。")
-      }
-      data.append(chunk)
-    }
-
-    let finalStatus = try SecureFileTransfer.fileStatus(for: handle.fileDescriptor)
-    guard SecureFileTransfer.isUnchanged(initialStatus, finalStatus),
-      finalStatus.st_size == Int64(data.count)
-    else {
-      throw NativeDocumentError.invalidFile("\(description)在读取期间发生变化，数据可能已经损坏。")
-    }
-    return data
-  }
-
-  private nonisolated static func validateStoredInputNames(_ names: [String]) throws {
-    guard !names.isEmpty else {
-      throw NativeDocumentError.invalidFile("任务没有可恢复的输入文件。")
-    }
-    guard names.count <= NativeCapabilities.maximumInputFileCount else {
-      throw NativeDocumentError.invalidFile(
-        "任务输入超过每批最多 \(NativeCapabilities.maximumInputFileCount) 个文件的限制。")
-    }
-    guard Set(names).count == names.count else {
-      throw NativeDocumentError.invalidFile("任务输入列表包含重复文件，数据可能已经损坏。")
-    }
-    for name in names {
-      guard isSafeFileName(name) else {
-        throw NativeDocumentError.invalidFile("任务输入文件名无效，数据可能已经损坏。")
-      }
-    }
-  }
-
-  private nonisolated static func validateStoredMetadata(
-    _ metadata: NativeJobMetadata, for job: JobResponse
-  ) throws {
-    guard canonicalRoute(matching: metadata.route) != nil, metadata.route.kind == job.kind else {
-      throw NativeDocumentError.invalidFile("任务路径与任务状态不一致，数据可能已经损坏。")
-    }
-    try validateStoredInputNames(metadata.inputNames)
-    try JobOptionValidator.validate(route: metadata.route, options: metadata.options)
-    if metadata.route.kind == "pdf_edit", metadata.options.editAction == "merge",
-      metadata.inputNames.count < 2
-    {
-      throw NativeDocumentError.invalidFile("合并 PDF 的持久化任务缺少输入文件。")
-    }
-    if metadata.route.kind == "pdf_edit", metadata.options.editAction != "merge",
-      metadata.inputNames.count != 1
-    {
-      throw NativeDocumentError.invalidFile("单个 PDF 编辑任务的输入数量无效。")
-    }
-    if metadata.route.kind == "pdf_translate", metadata.inputNames.count != 1 {
-      throw NativeDocumentError.invalidFile("PDF 翻译任务的输入数量无效。")
-    }
-  }
-
-  private nonisolated static func canonicalRoute(
-    matching route: RouteDefinition
-  ) -> RouteDefinition? {
-    guard route.enabled else { return nil }
-    return NativeCapabilities.routes.first {
-      $0.enabled && $0.source == route.source && $0.target == route.target && $0.kind == route.kind
-    }
   }
 
   private nonisolated static func preflightError(_ issue: PreflightIssue) -> NativeDocumentError {
@@ -1464,459 +1062,9 @@ final class NativeDocumentEngine: ObservableObject {
     }
   }
 
-  private nonisolated static func validatedStoredInputs(
-    named names: [String], in jobDirectory: URL
-  ) throws -> [URL] {
-    try validateStoredInputNames(names)
-    let inputDirectory = jobDirectory.appendingPathComponent("Input", isDirectory: true)
-    try validateDirectory(inputDirectory, description: "任务输入目录")
-    return try names.map {
-      try validatedRegularFile(named: $0, in: inputDirectory, description: "任务输入")
-    }
-  }
-
-  private nonisolated static func validatedRegularFile(
-    named name: String, in directory: URL, description: String
-  ) throws -> URL {
-    let url = try containedFileURL(named: name, in: directory, description: description)
-    let values: URLResourceValues
-    do {
-      values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-    } catch {
-      throw NativeDocumentError.invalidFile("\(description)不可读取：\(error.localizedDescription)")
-    }
-    guard values.isSymbolicLink != true, values.isRegularFile == true else {
-      throw NativeDocumentError.invalidFile("\(description)不是有效的普通文件。")
-    }
-    return url
-  }
-
-  private nonisolated static func containedFileURL(
-    named name: String, in directory: URL, description: String
-  ) throws -> URL {
-    guard isSafeFileName(name) else {
-      throw NativeDocumentError.invalidFile("\(description)的文件名无效。")
-    }
-    let standardizedDirectory = directory.standardizedFileURL
-    let url = directory.appendingPathComponent(name, isDirectory: false).standardizedFileURL
-    guard url.deletingLastPathComponent() == standardizedDirectory else {
-      throw NativeDocumentError.invalidFile("\(description)超出任务目录。")
-    }
-    return url
-  }
-
-  private nonisolated static func isSafeFileName(_ name: String) -> Bool {
-    !name.isEmpty && name != "." && name != ".." && !name.contains("/")
-      && URL(fileURLWithPath: name).lastPathComponent == name
-  }
-
-  private nonisolated static func validateDirectory(_ url: URL, description: String) throws {
-    let values: URLResourceValues
-    do {
-      values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-    } catch {
-      throw NativeDocumentError.invalidFile("\(description)不可读取：\(error.localizedDescription)")
-    }
-    guard values.isSymbolicLink != true, values.isDirectory == true else {
-      throw NativeDocumentError.invalidFile("\(description)不是有效目录。")
-    }
-  }
-
   private func appendLog(_ text: String) {
     guard !text.isEmpty else { return }
     serviceLog.append(text)
     if serviceLog.count > 80 { serviceLog.removeFirst(serviceLog.count - 80) }
   }
-}
-
-struct CompletedResultFingerprint: Equatable, Sendable {
-  let byteCount: Int64
-  let sampleSHA256: String
-}
-
-enum SecureFileTransfer {
-  static func openRegularSource(
-    _ source: URL, nonRegularMessage: String
-  ) throws -> (handle: FileHandle, status: stat) {
-    var openError = Int32(EINVAL)
-    let descriptor = source.withUnsafeFileSystemRepresentation { path -> Int32 in
-      guard let path else { return -1 }
-      let result = Darwin.open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-      if result < 0 { openError = errno }
-      return result
-    }
-    guard descriptor >= 0 else {
-      if openError == ELOOP {
-        throw NativeDocumentError.invalidFile(nonRegularMessage)
-      }
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(openError))
-    }
-
-    do {
-      let status = try fileStatus(for: descriptor)
-      guard isRegularFile(status), status.st_size >= 0 else {
-        throw NativeDocumentError.invalidFile(nonRegularMessage)
-      }
-      return (FileHandle(fileDescriptor: descriptor, closeOnDealloc: true), status)
-    } catch {
-      Darwin.close(descriptor)
-      throw error
-    }
-  }
-
-  static func openNewDestination(_ destination: URL) throws -> FileHandle {
-    var openError = Int32(EINVAL)
-    let descriptor = destination.withUnsafeFileSystemRepresentation { path -> Int32 in
-      guard let path else { return -1 }
-      let result = Darwin.open(
-        path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
-        mode_t(S_IRUSR | S_IWUSR))
-      if result < 0 { openError = errno }
-      return result
-    }
-    guard descriptor >= 0 else {
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(openError))
-    }
-    return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-  }
-
-  static func fileStatus(for descriptor: Int32) throws -> stat {
-    var status = stat()
-    guard fstat(descriptor, &status) == 0 else {
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-    }
-    return status
-  }
-
-  static func isRegularFile(_ status: stat) -> Bool {
-    (status.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG)
-  }
-
-  static func isUnchanged(_ initial: stat, _ final: stat) -> Bool {
-    isRegularFile(final) && initial.st_dev == final.st_dev && initial.st_ino == final.st_ino
-      && initial.st_size == final.st_size
-      && initial.st_mtimespec.tv_sec == final.st_mtimespec.tv_sec
-      && initial.st_mtimespec.tv_nsec == final.st_mtimespec.tv_nsec
-      && initial.st_ctimespec.tv_sec == final.st_ctimespec.tv_sec
-      && initial.st_ctimespec.tv_nsec == final.st_ctimespec.tv_nsec
-  }
-}
-
-enum AtomicResultSaver {
-  static func copyReplacing(
-    source: URL, destination: URL, chunkSize: Int = 1_024 * 1_024,
-    expectedFingerprint: CompletedResultFingerprint? = nil,
-    allowReplacingExistingDestination: Bool = true
-  ) throws {
-    guard source.isFileURL, destination.isFileURL else {
-      throw ResultSaveError.invalidDestination
-    }
-    guard chunkSize > 0 else {
-      throw NativeDocumentError.invalidFile("结果保存分块大小无效。")
-    }
-    let manager = FileManager.default
-    if !allowReplacingExistingDestination, manager.fileExists(atPath: destination.path) {
-      throw ResultSaveError.restoredTaskExistingDestination
-    }
-    let temporary = destination.deletingLastPathComponent().appendingPathComponent(
-      ".transall-save-\(UUID().uuidString)", isDirectory: false)
-    var removeTemporary = true
-    defer {
-      if removeTemporary {
-        try? manager.removeItem(at: temporary)
-      }
-    }
-
-    try Task.checkCancellation()
-    let (sourceHandle, initialSourceStatus) = try SecureFileTransfer.openRegularSource(
-      source, nonRegularMessage: "任务结果不是有效的普通文件。")
-    defer { try? sourceHandle.close() }
-
-    let destinationHandle = try SecureFileTransfer.openNewDestination(temporary)
-    var destinationClosed = false
-    defer {
-      if !destinationClosed { try? destinationHandle.close() }
-    }
-
-    var copiedBytes: Int64 = 0
-    let sampleSize = 64 * 1_024
-    var smallResultSample = Data()
-    var firstSample = Data()
-    var lastSample = Data()
-    var canUseCompleteSample = true
-    while true {
-      try Task.checkCancellation()
-      guard let chunk = try sourceHandle.read(upToCount: chunkSize), !chunk.isEmpty else {
-        break
-      }
-      try Task.checkCancellation()
-      let (newTotal, overflow) = copiedBytes.addingReportingOverflow(Int64(chunk.count))
-      guard !overflow else {
-        throw NativeDocumentError.invalidFile("任务结果过大，无法保存。")
-      }
-      if expectedFingerprint != nil {
-        if canUseCompleteSample, newTotal <= Int64(sampleSize * 2) {
-          smallResultSample.append(chunk)
-        } else {
-          canUseCompleteSample = false
-          smallResultSample.removeAll(keepingCapacity: false)
-        }
-        if firstSample.count < sampleSize {
-          firstSample.append(chunk.prefix(sampleSize - firstSample.count))
-        }
-        if chunk.count >= sampleSize {
-          lastSample = Data(chunk.suffix(sampleSize))
-        } else {
-          lastSample.append(chunk)
-          if lastSample.count > sampleSize {
-            lastSample.removeFirst(lastSample.count - sampleSize)
-          }
-        }
-      }
-      try destinationHandle.write(contentsOf: chunk)
-      copiedBytes = newTotal
-      try Task.checkCancellation()
-    }
-    if let expectedFingerprint {
-      var sample = canUseCompleteSample ? smallResultSample : firstSample
-      if !canUseCompleteSample { sample.append(lastSample) }
-      let digest = SHA256.hash(data: sample).map { String(format: "%02x", $0) }.joined()
-      let actual = CompletedResultFingerprint(
-        byteCount: copiedBytes, sampleSHA256: digest)
-      guard actual == expectedFingerprint else {
-        throw NativeDocumentError.invalidFile(
-          "任务结果与完成凭据不一致，未保存结果。请重新运行任务。")
-      }
-    }
-    try destinationHandle.synchronize()
-    try Task.checkCancellation()
-
-    let finalSourceStatus = try SecureFileTransfer.fileStatus(for: sourceHandle.fileDescriptor)
-    let copiedStatus = try SecureFileTransfer.fileStatus(
-      for: destinationHandle.fileDescriptor)
-    guard SecureFileTransfer.isUnchanged(initialSourceStatus, finalSourceStatus),
-      finalSourceStatus.st_size == copiedBytes
-    else {
-      throw NativeDocumentError.invalidFile("任务结果在保存期间发生变化，请重新保存。")
-    }
-    guard SecureFileTransfer.isRegularFile(copiedStatus), copiedStatus.st_size == copiedBytes
-    else {
-      throw NativeDocumentError.invalidFile("结果副本保存不完整，请重试。")
-    }
-
-    try destinationHandle.close()
-    destinationClosed = true
-    try Task.checkCancellation()
-    if allowReplacingExistingDestination {
-      if manager.fileExists(atPath: destination.path) {
-        _ = try manager.replaceItemAt(destination, withItemAt: temporary)
-      } else {
-        try manager.moveItem(at: temporary, to: destination)
-      }
-    } else {
-      try moveExclusively(temporary, to: destination)
-    }
-    removeTemporary = false
-  }
-
-  private static func moveExclusively(_ source: URL, to destination: URL) throws {
-    var renameError = Int32(EINVAL)
-    let result = source.withUnsafeFileSystemRepresentation { sourcePath -> Int32 in
-      guard let sourcePath else { return -1 }
-      return destination.withUnsafeFileSystemRepresentation { destinationPath -> Int32 in
-        guard let destinationPath else { return -1 }
-        let result = renamex_np(sourcePath, destinationPath, UInt32(RENAME_EXCL))
-        if result < 0 { renameError = errno }
-        return result
-      }
-    }
-    guard result == 0 else {
-      if renameError == EEXIST {
-        throw ResultSaveError.restoredTaskExistingDestination
-      }
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(renameError))
-    }
-  }
-}
-
-enum ResultSavePolicy {
-  static let panelMessage =
-    "处理过程不会修改原始文件；不能把结果存回本次任务的原文件。恢复的任务只能保存为新文件。替换其他已有文件时，macOS 会先要求确认。"
-
-  static func validate(destination: URL, originalDocuments: [SelectedDocument]?) throws {
-    guard destination.isFileURL else {
-      throw ResultSaveError.invalidDestination
-    }
-    guard let originalDocuments else {
-      if FileManager.default.fileExists(atPath: destination.path) {
-        throw ResultSaveError.restoredTaskExistingDestination
-      }
-      return
-    }
-    for document in originalDocuments where refersToSameFile(destination, document.url) {
-      throw ResultSaveError.originalFile
-    }
-  }
-
-  private static func refersToSameFile(_ first: URL, _ second: URL) -> Bool {
-    let firstResolved = first.standardizedFileURL.resolvingSymlinksInPath()
-    let secondResolved = second.standardizedFileURL.resolvingSymlinksInPath()
-    if firstResolved.path == secondResolved.path { return true }
-
-    let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
-    guard
-      let firstIdentifier = try? firstResolved.resourceValues(forKeys: keys)
-        .fileResourceIdentifier as? AnyHashable,
-      let secondIdentifier = try? secondResolved.resourceValues(forKeys: keys)
-        .fileResourceIdentifier as? AnyHashable
-    else { return false }
-    return firstIdentifier == secondIdentifier
-  }
-}
-
-enum ResultSaveError: LocalizedError {
-  case invalidDestination
-  case originalFile
-  case restoredTaskExistingDestination
-
-  var errorDescription: String? {
-    switch self {
-    case .invalidDestination:
-      "只能把结果保存为本机文件。"
-    case .originalFile:
-      "不能覆盖本次任务的原始文件。请选择其他位置或文件名。"
-    case .restoredTaskExistingDestination:
-      "恢复的任务无法确认原文件身份，不能替换已有文件。请选择新文件名或其他空位置。"
-    }
-  }
-}
-
-enum OutputFileNamer {
-  static func name(
-    for route: RouteDefinition, options: JobOptions, inputNames: [String]
-  ) -> String {
-    let firstName = inputNames.first.map(originalInputName) ?? "document"
-    let stem = safeOutputStem(
-      URL(fileURLWithPath: firstName).deletingPathExtension().lastPathComponent)
-    return switch route.kind {
-    case "pdf_edit" where options.editAction == "merge": "merged.pdf"
-    case "pdf_edit": "\(stem)-edited.pdf"
-    case "ocr" where options.ocrOutputFormat == "text": "\(stem)-ocr.txt"
-    case "ocr": "\(stem)-ocr.pdf"
-    case "office_convert" where route.target == "md": "\(stem).md"
-    case "extract_markdown": "\(stem).md"
-    case "pdf_translate" where options.outputMode == "bilingual": "\(stem)-bilingual.pdf"
-    case "pdf_translate": "\(stem)-translated.pdf"
-    case "image_to_pdf" where inputNames.count > 1: "images.pdf"
-    default: "\(stem).pdf"
-    }
-  }
-
-  private static func originalInputName(_ value: String) -> String {
-    value.replacingOccurrences(
-      of: #"^\d+-"#, with: "", options: .regularExpression)
-  }
-
-  private static func safeOutputStem(_ value: String) -> String {
-    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_ "))
-    let filtered = value.unicodeScalars.map { allowed.contains($0) ? Character(String($0)) : "-" }
-    let result = String(filtered).trimmingCharacters(in: CharacterSet(charactersIn: "- "))
-    return String((result.isEmpty ? "document" : result).prefix(80))
-  }
-}
-
-enum PreviewCache {
-  static func pages(pdfURL: URL, directory: URL, limit: Int = 8) async throws -> [URL] {
-    let generation = Task.detached(priority: .userInitiated) {
-      try cachedPages(pdfURL: pdfURL, directory: directory, limit: limit)
-    }
-    return try await withTaskCancellationHandler(
-      operation: { try await generation.value },
-      onCancel: { generation.cancel() })
-  }
-
-  private static func cachedPages(pdfURL: URL, directory: URL, limit: Int) throws -> [URL] {
-    try Task.checkCancellation()
-    try discardUnsafeCacheEntry(at: directory)
-    let expectedCount = try NativeDocumentProcessor.previewPageCount(
-      pdfURL: pdfURL, limit: limit)
-    guard expectedCount > 0 else {
-      try? FileManager.default.removeItem(at: directory)
-      return []
-    }
-
-    let existing = previewFiles(in: directory)
-    if isComplete(existing, expectedCount: expectedCount) {
-      return existing
-    }
-
-    try discardCache(at: directory)
-    do {
-      let generated = try NativeDocumentProcessor.makePreviews(
-        pdfURL: pdfURL, directory: directory, limit: limit)
-      guard isComplete(generated, expectedCount: expectedCount) else {
-        throw NativeDocumentError.processing("PDF 预览生成不完整，请重试。")
-      }
-      return generated
-    } catch {
-      try? FileManager.default.removeItem(at: directory)
-      throw error
-    }
-  }
-
-  private static func previewFiles(in directory: URL) -> [URL] {
-    ((try? FileManager.default.contentsOfDirectory(
-      at: directory,
-      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])) ?? [])
-      .filter { $0.pathExtension.lowercased() == "png" }
-      .sorted {
-        $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
-      }
-  }
-
-  private static func isComplete(_ urls: [URL], expectedCount: Int) -> Bool {
-    guard urls.count == expectedCount else { return false }
-    return urls.enumerated().allSatisfy { index, url in
-      guard (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) == nil else {
-        return false
-      }
-      guard
-        let values = try? url.resourceValues(
-          forKeys: [.isRegularFileKey])
-      else { return false }
-      return url.lastPathComponent == "page-\(index + 1).png"
-        && values.isRegularFile == true
-        && NativeDocumentProcessor.isReadableImage(url)
-    }
-  }
-
-  private static func discardUnsafeCacheEntry(at directory: URL) throws {
-    let manager = FileManager.default
-    if (try? manager.destinationOfSymbolicLink(atPath: directory.path)) != nil {
-      try manager.removeItem(atPath: directory.path)
-      return
-    }
-    var isDirectory = ObjCBool(false)
-    if manager.fileExists(atPath: directory.path, isDirectory: &isDirectory), !isDirectory.boolValue
-    {
-      try manager.removeItem(atPath: directory.path)
-    }
-  }
-
-  private static func discardCache(at directory: URL) throws {
-    guard FileManager.default.fileExists(atPath: directory.path) else { return }
-    try FileManager.default.removeItem(at: directory)
-  }
-}
-
-private struct NativeJobMetadata: Codable {
-  let route: RouteDefinition
-  let options: JobOptions
-  let inputNames: [String]
-}
-
-private struct NativeJobCompletionReceipt: Codable {
-  let output: String
-  let byteCount: Int64?
-  let sampleSHA256: String?
 }

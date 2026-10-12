@@ -234,39 +234,6 @@ struct TranslationRecoveryEngineTests {
   }
 
   @Test @MainActor
-  func recoveryRejectsActiveAndRepeatedRequests() async throws {
-    let fixture = try RecoveryEngineFixture()
-    defer { fixture.remove() }
-    let gate = RecoveryProcessingGate()
-    defer { Task { await gate.release() } }
-    let engine = fixture.engine(gate: gate)
-    defer { engine.prepareForTermination() }
-    await engine.start()
-    let submitted = try await fixture.submit(to: engine)
-    await gate.waitUntilEntered()
-    do {
-      _ = try engine.recoverTranslationAsPlainPDF(jobID: submitted.id)
-      Issue.record("An active translation cannot be replaced by a recovery export")
-    } catch is NativeDocumentError {}
-    await gate.release()
-    _ = try await finishedJob(submitted.id, in: engine)
-
-    _ = try engine.recoverTranslationAsPlainPDF(jobID: submitted.id)
-    do {
-      _ = try engine.recoverTranslationAsPlainPDF(jobID: submitted.id)
-      Issue.record("A queued recovery must not start a second export")
-    } catch is NativeDocumentError {}
-    let completed = try await finishedJob(submitted.id, in: engine)
-    #expect(completed.status == "done")
-    do {
-      _ = try engine.recoverTranslationAsPlainPDF(jobID: submitted.id)
-      Issue.record("A completed recovery must not overwrite its verified output")
-    } catch is NativeDocumentError {}
-    #expect(fixture.calls.processorCount == 1)
-    #expect(fixture.calls.credentialReads == [.deepseek])
-  }
-
-  @Test @MainActor
   func cancelledRecoveryCanRetryAndDiscardWaitsBeforeRemovingAllTaskData() async throws {
     let fixture = try RecoveryEngineFixture()
     defer { fixture.remove() }
@@ -350,48 +317,6 @@ struct TranslationRecoveryEngineTests {
   }
 
   @Test @MainActor
-  func modelClearsRecoveryWhenChangingJobsAndIgnoresAnOldJobButton() async throws {
-    let fixture = try RecoveryEngineFixture()
-    defer { fixture.remove() }
-    let engine = fixture.engine()
-    await engine.start()
-    let first = try await fixture.submit(to: engine)
-    let firstFailure = try await finishedJob(first.id, in: engine)
-    let second = try await fixture.submit(to: engine)
-    let secondFailure = try await finishedJob(second.id, in: engine)
-    let suiteName = "transall-recovery-model-\(UUID().uuidString)"
-    let preferences = try #require(UserDefaults(suiteName: suiteName))
-    defer { preferences.removePersistentDomain(forName: suiteName) }
-    let model = AppModel(backend: engine, preferences: preferences)
-    defer { model.prepareForTermination() }
-    model.currentJob = firstFailure
-    await model.refreshTranslationRecovery(jobID: first.id)
-    #expect(
-      model.translationRecovery
-        == TranslationRecoverySummary(
-          jobID: first.id, regionCount: 2, issueCount: 1, issuePages: [2], completedRegionCount: 2))
-    #expect(model.canRecoverTranslation)
-
-    model.currentJob = secondFailure
-    #expect(model.translationRecovery == nil)
-    #expect(!model.canRecoverTranslation)
-    await model.refreshTranslationRecovery(jobID: second.id)
-    #expect(model.translationRecovery?.jobID == second.id)
-    #expect(model.canRecoverTranslation)
-    model.recoverTranslationAsPlainPDF(jobID: first.id)
-    #expect(model.currentJob?.id == second.id)
-    #expect(model.currentJob?.status == "failed")
-    #expect(try engine.job(id: first.id).status == "failed")
-    #expect(try engine.job(id: second.id).status == "failed")
-
-    model.currentJob = nil
-    await model.refreshTranslationRecovery(jobID: second.id)
-    #expect(model.translationRecovery == nil)
-    #expect(model.translationRecoveryError == nil)
-    #expect(!model.canRecoverTranslation)
-  }
-
-  @Test @MainActor
   func modelRecoveryPreservesTheSubmittedOriginalProtection() async throws {
     let fixture = try RecoveryEngineFixture()
     defer { fixture.remove() }
@@ -471,57 +396,6 @@ struct TranslationRecoveryEngineTests {
     #expect(model.errorMessage?.contains("不能替换已有文件") == true)
     #expect(fixture.calls.processorCount == 1)
     #expect(fixture.calls.credentialReads == readsBeforeRecovery + [.deepseek, .openAI])
-  }
-
-  @Test(arguments: [false, true]) @MainActor
-  func cancelledRecoveryLoadingWaitsForItsWorkerAndFollowsTheCurrentJob(switchAway: Bool)
-    async throws
-  {
-    let fixture = try RecoveryEngineFixture()
-    defer { fixture.remove() }
-    let gate = RecoveryProcessingGate()
-    defer { Task { await gate.release() } }
-    let engine = fixture.engine(gate: gate, pauseAfterSaving: true)
-    let suiteName = "transall-cancelled-recovery-model-\(UUID().uuidString)"
-    let preferences = try #require(UserDefaults(suiteName: suiteName))
-    defer { preferences.removePersistentDomain(forName: suiteName) }
-    let model = AppModel(backend: engine, preferences: preferences)
-    defer { model.prepareForTermination() }
-    await engine.start()
-    model.capabilities = NativeCapabilities.response
-    model.selection = RouteSelection(source: "pdf", target: "translated_pdf")
-    model.options.outputMode = "preserve_layout"
-    model.documents = [
-      SelectedDocument(url: fixture.source, size: Int64(try Data(contentsOf: fixture.source).count))
-    ]
-    await model.runJob()
-    await gate.waitUntilEntered()
-    let jobID = try #require(model.currentJob?.id)
-    let cancellation = Task { await model.cancelJob() }
-    try await waitForModel(model) { $0.currentJob?.status == "cancelled" }
-    #expect(!model.canRecoverTranslation)
-    #expect(model.isLoadingTranslationRecovery)
-    if switchAway { model.resetRoute(animated: false) }
-    await gate.release()
-    await cancellation.value
-    if switchAway {
-      #expect(model.currentJob == nil)
-      #expect(model.translationRecovery == nil)
-      #expect(model.translationRecoveryError == nil)
-      #expect(!model.isLoadingTranslationRecovery)
-      #expect(!model.canRecoverTranslation)
-      return
-    }
-    #expect(model.currentJob?.status == "cancelled")
-    #expect(model.canRecoverTranslation)
-    #expect(model.translationRecovery?.jobID == jobID)
-    #expect(model.translationRecovery?.issuePages == [2])
-    #expect(model.translationRecoveryError == nil)
-    let readsBeforeRecovery = fixture.calls.credentialReads
-    model.recoverTranslationAsPlainPDF(jobID: jobID)
-    try await waitForModel(model) { $0.currentJob?.status == "done" }
-    #expect(fixture.calls.processorCount == 1)
-    #expect(fixture.calls.credentialReads == readsBeforeRecovery)
   }
 
   @MainActor

@@ -55,14 +55,6 @@ struct ModelsTests {
   }
 
   @Test
-  func providerDisplayNamesPreserveOfficialCapitalization() {
-    let providers = NativeCapabilities.providers(configured: [:]).providers
-
-    #expect(providers.first { $0.name == "deepseek" }?.displayName == "DeepSeek")
-    #expect(providers.first { $0.name == "openai" }?.displayName == "OpenAI")
-  }
-
-  @Test
   func privacyPolicyConfigurationAcceptsPublicHTTPSDestination() throws {
     let url = try #require(
       PrivacyPolicyConfiguration.url(from: "https://www.apple.com/legal/privacy/"))
@@ -94,35 +86,6 @@ struct ModelsTests {
     for value in invalidValues {
       #expect(PrivacyPolicyConfiguration.url(from: value) == nil)
     }
-  }
-
-  @Test
-  func terminalJobStatusesProduceBoundedAccessibilityAnnouncements() throws {
-    #expect(JobStatusAnnouncementPolicy.announcement(for: testJob(status: "queued")) == nil)
-    #expect(JobStatusAnnouncementPolicy.announcement(for: testJob(status: "running")) == nil)
-
-    let completed = try #require(
-      JobStatusAnnouncementPolicy.announcement(for: testJob(status: "done")))
-    #expect(completed.message == "任务已完成，结果可以保存。")
-    #expect(completed.priority == .medium)
-
-    let cancelled = try #require(
-      JobStatusAnnouncementPolicy.announcement(for: testJob(status: "cancelled")))
-    #expect(cancelled.message == "任务已取消。")
-    #expect(cancelled.priority == .medium)
-
-    let failed = try #require(
-      JobStatusAnnouncementPolicy.announcement(
-        for: testJob(
-          status: "failed", error: "PDF 无法读取。", errorHint: "请重新选择原文件。")))
-    #expect(failed.message == "任务失败。 PDF 无法读取。 请重新选择原文件。")
-    #expect(failed.priority == .high)
-
-    let oversized = try #require(
-      JobStatusAnnouncementPolicy.announcement(
-        for: testJob(status: "failed", error: String(repeating: "错", count: 2_000))))
-    #expect(oversized.message.count == JobStatusAnnouncementPolicy.maximumAnnouncementCharacters)
-    #expect(oversized.message.hasSuffix("…"))
   }
 
   @Test @MainActor

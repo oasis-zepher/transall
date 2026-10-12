@@ -3,7 +3,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-private struct DocumentImportError: LocalizedError, Sendable {
+struct DocumentImportError: LocalizedError, Sendable {
   let failures: [String]
 
   var errorDescription: String? {
@@ -103,39 +103,39 @@ final class AppModel: ObservableObject {
       }
     }
   }
-  @Published private(set) var translationRecovery: TranslationRecoverySummary?
-  @Published private(set) var translationRecoveryError: String?
-  @Published private(set) var isLoadingTranslationRecovery = false
-  private var recoveryLoadID = UUID()
+  @Published var translationRecovery: TranslationRecoverySummary?
+  @Published var translationRecoveryError: String?
+  @Published var isLoadingTranslationRecovery = false
+  var recoveryLoadID = UUID()
   @Published var previewPages: [PreviewPage] = []
   @Published var previewError: String?
   @Published var preflightWarnings: [PreflightIssue] = []
   @Published var errorMessage: String?
-  @Published private(set) var isImporting = false
+  @Published var isImporting = false
   @Published var isSubmitting = false
-  @Published private(set) var isSaving = false
+  @Published var isSaving = false
   @Published var isDeletingJob = false
   @Published var isLoadingPreview = false
   @Published var showAdvanced = false
   @Published var inspectionPage = 1
-  private(set) var resultOriginalDocuments: [SelectedDocument]?
+  var resultOriginalDocuments: [SelectedDocument]?
 
   let backend: NativeDocumentEngine
-  private var pollingTask: Task<Void, Never>?
+  var pollingTask: Task<Void, Never>?
   private var retentionCleanupTask: Task<Void, Never>?
-  private var documentImportTask: Task<Void, Never>?
+  var documentImportTask: Task<Void, Never>?
   private var jobSubmissionTask: Task<Void, Never>?
-  private var resultSaveTask: Task<Void, Never>?
+  var resultSaveTask: Task<Void, Never>?
   private var isStarting = false
   private var hasStarted = false
-  private let preferences: UserDefaults
+  let preferences: UserDefaults
   private let jobCreator: JobCreator
-  private let resultDestinationPicker: ResultDestinationPicker?
-  private var resultSavePanel: NSSavePanel?
-  private let resultDownloader: ResultDownloader
-  private let resultRevealer: ResultRevealer
-  private let documentInspector: DocumentInspector
-  private let lastJobKey = "transall.native.lastJobId"
+  let resultDestinationPicker: ResultDestinationPicker?
+  var resultSavePanel: NSSavePanel?
+  let resultDownloader: ResultDownloader
+  let resultRevealer: ResultRevealer
+  let documentInspector: DocumentInspector
+  let lastJobKey = "transall.native.lastJobId"
 
   convenience init() {
     self.init(backend: NativeDocumentEngine())
@@ -316,385 +316,6 @@ final class AppModel: ObservableObject {
     errorMessage = nil
   }
 
-  func canChooseFormat(_ format: String) -> Bool {
-    guard canChangeRoute else { return false }
-    if selection.source == nil || selection.target != nil {
-      return NativeCapabilities.routes.contains { $0.source == format && $0.enabled }
-    }
-    return NativeCapabilities.routes.contains {
-      $0.source == selection.source && $0.target == format && $0.enabled
-    }
-  }
-
-  func chooseFormat(_ format: String, animated: Bool = true) {
-    if let routeChangeLock {
-      errorMessage = routeChangeLock.errorMessage(reset: false)
-      return
-    }
-    guard canChooseFormat(format) else { return }
-    var next = selection
-    next.choose(format)
-    resetFormatSelection()
-    selection = next
-  }
-
-  // A slot drag is validated as one operation, so an invalid swap cannot erase a draft.
-  func formatSelection(
-    dropping format: String, from origin: FormatRouteSlot? = nil, to destination: FormatRouteSlot?
-  ) -> RouteSelection? {
-    guard canChangeRoute else { return nil }
-    var next = selection
-    if let origin {
-      guard next[origin] == format else { return nil }
-      if origin == destination { return next }
-      next[origin] = destination.flatMap { next[$0] }
-    } else if destination == nil {
-      return nil
-    }
-    if let destination { next[destination] = format }
-    guard supportsFormatSelection(next) else { return nil }
-    return next
-  }
-
-  private func supportsFormatSelection(_ selection: RouteSelection) -> Bool {
-    NativeCapabilities.routes.contains {
-      $0.enabled && (selection.source == nil || $0.source == selection.source)
-        && (selection.target == nil || $0.target == selection.target)
-    }
-  }
-
-  var formatReversalDisabledReason: String? {
-    if let routeChangeLock { return routeChangeLock.helpText }
-    if selection.source == nil && selection.target == nil { return "请先选择格式" }
-    if selection.source == selection.target { return "源格式与目标格式相同" }
-    guard supportsFormatSelection(selection.reversed) else {
-      if let source = selection.target, let target = selection.source {
-        return "暂不支持 \(NativeFormatOrbit.title(source)) → \(NativeFormatOrbit.title(target))"
-      }
-      let slot: FormatRouteSlot = selection.source == nil ? .source : .target
-      let format = selection.source ?? selection.target ?? ""
-      return "\(NativeFormatOrbit.title(format)) 不能用作\(slot.title)"
-    }
-    return nil
-  }
-
-  @discardableResult
-  func reverseFormats(expectedSelection: RouteSelection) -> Bool {
-    guard selection == expectedSelection, formatReversalDisabledReason == nil else { return false }
-    return applyFormatSelection(selection.reversed)
-  }
-
-  @discardableResult
-  func dropFormat(
-    _ format: String, from origin: FormatRouteSlot? = nil, to destination: FormatRouteSlot?
-  ) -> Bool {
-    guard let next = formatSelection(dropping: format, from: origin, to: destination) else {
-      return false
-    }
-    return applyFormatSelection(next)
-  }
-
-  private func applyFormatSelection(_ next: RouteSelection) -> Bool {
-    guard next != selection else { return true }
-    clearRouteDraft()
-    options = JobOptions()
-    if let provider = providers.first(where: \.configured) { options.provider = provider.name }
-    showAdvanced = false
-    selection = next
-    return true
-  }
-
-  func orbitDockingFeedback(
-    for format: String, from origin: FormatRouteSlot?, at point: CGPoint,
-    layout: HourglassLayout
-  ) -> OrbitDockingTarget? {
-    guard canChangeRoute else { return nil }
-    // An occupied chamber uses the same compatibility and morph feedback as an empty one.
-    // Prefer the actual hit chamber so the neighboring role cannot steal a replacement.
-    let candidates = layout.slot(at: point).map { [$0] } ?? FormatRouteSlot.allCases
-    return candidates.compactMap { slot -> OrbitDockingTarget? in
-      let frame = layout.slotFrame(slot)
-      let strength = NativeFormatOrbit.dockingStrength(at: point, to: frame, slot: slot)
-      guard strength > 0 else { return nil }
-      return OrbitDockingTarget(
-        slot: slot, frame: frame, strength: strength,
-        compatibility: formatSelection(dropping: format, from: origin, to: slot) == nil
-          ? .incompatible : .compatible)
-    }.max { $0.strength < $1.strength }
-  }
-
-  func orbitPreparedRelease(
-    for format: String, from origin: FormatRouteSlot?, docking: OrbitDockingTarget?
-  ) -> OrbitReleasePresentation? {
-    guard let docking, docking.compatibility == .compatible,
-      let old = selection[docking.slot], old != format,
-      let next = formatSelection(dropping: format, from: origin, to: docking.slot),
-      next.source != old, next.target != old
-    else { return nil }
-    return .preparation(
-      item: OrbitReleasedFormat(format: old, slot: docking.slot),
-      strength: docking.strength)
-  }
-
-  func orbitDropSelection(
-    for format: String, from origin: FormatRouteSlot?, at point: CGPoint,
-    layout: HourglassLayout
-  ) -> RouteSelection? {
-    let slot = layout.slot(at: point)
-    // The waist belongs to neither chamber; dropping there must not remove an occupied format.
-    guard slot != nil || !layout.frame.contains(point) else { return nil }
-    return formatSelection(dropping: format, from: origin, to: slot)
-  }
-
-  func orbitPreviewSelection(
-    for format: String, from origin: FormatRouteSlot?, docking: OrbitDockingTarget?
-  ) -> RouteSelection? {
-    guard let docking, docking.compatibility == .compatible, docking.strength > 0 else {
-      return nil
-    }
-    return formatSelection(dropping: format, from: origin, to: docking.slot)
-  }
-
-  func orbitRoles(for format: String, selection preview: RouteSelection? = nil) -> OrbitFormatRoles
-  {
-    let selection = preview ?? self.selection
-    var asSource = selection
-    asSource.source = format
-    var asTarget = selection
-    asTarget.target = format
-    return OrbitFormatRoles(
-      source: supportsFormatSelection(asSource), target: supportsFormatSelection(asTarget))
-  }
-
-  func orbitDestinations(for format: String, activeSlot: FormatRouteSlot) -> [FormatRouteSlot] {
-    NativeFormatOrbit.candidateSlots(for: selection, activeSlot: activeSlot).filter {
-      formatSelection(dropping: format, to: $0) != nil
-    }
-  }
-
-  func resetFormatSelection(keepingSource: Bool = false) {
-    guard canChangeRoute else { return }
-    let source = keepingSource ? selection.source : nil
-    resetRoute(animated: false)
-    selection.source = source
-    options = JobOptions()
-    if let provider = providers.first(where: \.configured) { options.provider = provider.name }
-    showAdvanced = false
-  }
-
-  func resetRoute(animated: Bool = true) {
-    if let routeChangeLock {
-      errorMessage = routeChangeLock.errorMessage(reset: true)
-      return
-    }
-    let changes = { [self] in
-      clearRouteDraft()
-      selection.clear()
-    }
-    if animated {
-      withAnimation(.easeOut(duration: 0.3), changes)
-    } else {
-      changes()
-    }
-  }
-
-  private func clearRouteDraft() {
-    pollingTask?.cancel()
-    preferences.removeObject(forKey: lastJobKey)
-    inspectionPage = 1
-    showInputPreview = false
-    documents = []
-    currentJob = nil
-    resultOriginalDocuments = nil
-    previewPages = []
-    previewError = nil
-    isLoadingPreview = false
-    preflightWarnings = []
-    errorMessage = nil
-  }
-
-  @discardableResult
-  func receiveDroppedDocuments(_ urls: [URL]) -> Bool {
-    guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else {
-      errorMessage = "请拖入本机文件。"
-      return false
-    }
-    guard canEditTaskDraft, !isImporting else {
-      errorMessage = taskDraftLockMessage ?? "正在读取文件，请稍后再拖入。"
-      return false
-    }
-    if route == nil {
-      // On the empty hourglass, infer only a supported route for this batch.
-      // Existing source/target choices constrain the inference.
-      let candidates = (capabilities?.routes ?? []).filter { route in
-        let suffixes = Set(
-          route.accept.split(separator: ",").map {
-            $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ".", with: "")
-              .lowercased()
-          })
-        return route.enabled && (selection.source == nil || selection.source == route.source)
-          && (selection.target == nil || selection.target == route.target)
-          && urls.allSatisfy { suffixes.contains($0.pathExtension.lowercased()) }
-      }
-      guard let route = candidates.first(where: { $0.target == "pdf" }) ?? candidates.first else {
-        errorMessage = "这些文件无法用于当前格式组合，请选择匹配的源格式和目标格式。"
-        return false
-      }
-      selection = RouteSelection(source: route.source, target: route.target)
-    }
-    startDocumentImport(urls, appending: !documents.isEmpty)
-    return isImporting
-  }
-
-  func startDocumentImport(_ urls: [URL], appending: Bool = false) {
-    guard !urls.isEmpty else {
-      errorMessage = "没有选择文件。"
-      return
-    }
-    guard documentImportTask == nil, !isImporting else { return }
-    guard canEditTaskDraft else {
-      errorMessage = taskDraftLockMessage.map { "\($0)。" } ?? "当前无法修改文件和参数。"
-      return
-    }
-    guard route?.enabled == true else {
-      errorMessage = "请先选择源格式和目标格式。"
-      return
-    }
-
-    isImporting = true
-    errorMessage = nil
-    documentImportTask = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        isImporting = false
-        documentImportTask = nil
-      }
-      await performDocumentImport(urls, appending: appending)
-    }
-  }
-
-  func importDocuments(_ urls: [URL], appending: Bool = false) async {
-    startDocumentImport(urls, appending: appending)
-    guard let documentImportTask else { return }
-    await documentImportTask.value
-  }
-
-  func requestDocumentImportCancellation() {
-    documentImportTask?.cancel()
-  }
-
-  func cancelDocumentImport() async {
-    guard let documentImportTask else { return }
-    documentImportTask.cancel()
-    await documentImportTask.value
-  }
-
-  private func performDocumentImport(_ urls: [URL], appending: Bool) async {
-    guard !Task.isCancelled else { return }
-
-    var seenURLs = Set(
-      (appending ? documents : []).map { $0.url.standardizedFileURL })
-    let uniqueURLs = urls.filter {
-      seenURLs.insert($0.standardizedFileURL).inserted
-    }
-    guard seenURLs.count <= NativeCapabilities.maximumInputFileCount else {
-      errorMessage =
-        "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件，请分批处理。"
-      return
-    }
-
-    let imported: [SelectedDocument]
-    do {
-      imported = try await documentInspector(uniqueURLs)
-      try Task.checkCancellation()
-    } catch is CancellationError {
-      return
-    } catch {
-      guard !Task.isCancelled else { return }
-      errorMessage = error.localizedDescription
-      return
-    }
-
-    var combined = appending ? documents : []
-    var existing = Set(combined.map { $0.url.standardizedFileURL.resolvingSymlinksInPath() })
-    combined.append(
-      contentsOf: imported.filter {
-        existing.insert($0.url.standardizedFileURL.resolvingSymlinksInPath()).inserted
-      })
-    guard combined.count <= NativeCapabilities.maximumInputFileCount else {
-      errorMessage =
-        "每批最多选择 \(NativeCapabilities.maximumInputFileCount) 个文件，请分批处理。"
-      return
-    }
-
-    if let route {
-      let extensions = Set(
-        route.accept.split(separator: ",").map {
-          $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ".", with: "")
-            .lowercased()
-        })
-      if let invalid = combined.first(where: {
-        !extensions.contains($0.url.pathExtension.lowercased())
-      }) {
-        errorMessage = "\(invalid.name)：当前任务接受 \(route.accept)。"
-        return
-      }
-    }
-
-    let total = combined.reduce(Int64.zero) { partial, document in
-      let (sum, overflow) = partial.addingReportingOverflow(document.size)
-      return overflow ? Int64.max : sum
-    }
-    let limitBytes =
-      route.map(NativeCapabilities.inputLimitBytes(for:))
-      ?? capabilities?.limits.maxUploadBytes ?? NativeCapabilities.uploadLimitBytes
-    if total > Int64(limitBytes) {
-      errorMessage = "所选文件超过 \(inputLimitMB) MB 限制。"
-      return
-    }
-    guard !Task.isCancelled else { return }
-    // Import edits the next submission's draft. Keep the displayed result, its
-    // preview and submitted-original identities available until a new job exists.
-    documents = combined
-    errorMessage = nil
-  }
-
-  private nonisolated static func inspectDocuments(_ urls: [URL]) throws
-    -> [SelectedDocument]
-  {
-    let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]
-    var imported: [SelectedDocument] = []
-    var failures: [String] = []
-
-    for url in urls {
-      try Task.checkCancellation()
-      let accessing = url.startAccessingSecurityScopedResource()
-      defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-      do {
-        let values = try url.resourceValues(forKeys: keys)
-        if values.isSymbolicLink == true {
-          failures.append("\(url.lastPathComponent)：不支持符号链接，请选择原始文件。")
-        } else if values.isRegularFile != true {
-          failures.append("\(url.lastPathComponent)：不是普通文件。")
-        } else if let size = values.fileSize {
-          imported.append(SelectedDocument(url: url, size: Int64(size)))
-        } else {
-          failures.append("\(url.lastPathComponent)：无法读取文件大小。")
-        }
-      } catch {
-        failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
-      }
-    }
-
-    guard failures.isEmpty else { throw DocumentImportError(failures: failures) }
-    return imported
-  }
-
-  func removeDocument(_ document: SelectedDocument) {
-    guard !isImporting, canEditTaskDraft else { return }
-    documents.removeAll { $0.id == document.id }
-  }
-
   func retryBackend() async {
     errorMessage = nil
     await start()
@@ -800,156 +421,6 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func refreshTranslationRecovery(jobID: String) async {
-    guard let job = currentJob, job.id == jobID, job.kind == "pdf_translate",
-      ["failed", "cancelled"].contains(job.status), !isDeletingJob, !isSubmitting
-    else { return }
-    let requestID = UUID()
-    recoveryLoadID = requestID
-    isLoadingTranslationRecovery = true
-    translationRecovery = nil
-    translationRecoveryError = nil
-    defer {
-      if recoveryLoadID == requestID { isLoadingTranslationRecovery = false }
-    }
-    do {
-      let recovery = try await backend.translationRecovery(jobID: jobID, allowingIncomplete: true)
-      try Task.checkCancellation()
-      guard recoveryLoadID == requestID, currentJob?.id == jobID,
-        currentJob?.status == job.status, !isDeletingJob, !isSubmitting
-      else { return }
-      translationRecovery = TranslationRecoverySummary(
-        jobID: jobID, regionCount: recovery.regions.count,
-        issueCount: recovery.overflowRegionIDs.count,
-        issuePages: Array(Set(recovery.issues.map { $0.pageIndex + 1 })).sorted(),
-        completedRegionCount: recovery.translations.count)
-
-    } catch is CancellationError {
-      return
-    } catch {
-      guard recoveryLoadID == requestID, currentJob?.id == jobID,
-        currentJob?.status == job.status
-      else { return }
-      if job.errorCode == "translation_layout_overflow" {
-        translationRecoveryError = "无法复用已保存的译文：\(error.localizedDescription)"
-      }
-    }
-  }
-
-  func recoverTranslationAsPlainPDF(jobID: String) {
-    guard canRecoverTranslation, currentJob?.id == jobID else { return }
-    do {
-      let queued = try backend.recoverTranslationAsPlainPDF(jobID: jobID)
-      pollingTask?.cancel()
-      currentJob = queued
-      previewPages = []
-      previewError = nil
-      isLoadingPreview = false
-      errorMessage = nil
-      options.outputMode = "translated"
-      preferences.set(jobID, forKey: lastJobKey)
-      beginPolling(jobID: jobID)
-    } catch {
-      errorMessage = error.localizedDescription
-    }
-  }
-
-  func rebuildTranslationPDF(outputMode: String) {
-    guard let job = currentJob, job.kind == "pdf_translate", job.isFinished,
-      !isImporting && !isSubmitting && !isSaving && !isDeletingJob
-    else { return }
-    do {
-      let queued = try backend.rebuildTranslationPDF(jobID: job.id, outputMode: outputMode)
-      pollingTask?.cancel()
-      currentJob = queued
-      previewPages = []
-      previewError = nil
-      isLoadingPreview = false
-      errorMessage = nil
-      options.outputMode = outputMode
-      beginPolling(jobID: job.id)
-    } catch { errorMessage = error.localizedDescription }
-  }
-
-  private func clearTranslationRecovery() {
-    recoveryLoadID = UUID()
-    translationRecovery = nil
-    translationRecoveryError = nil
-    isLoadingTranslationRecovery = false
-  }
-
-  func startSavingResult() {
-    guard resultSaveTask == nil, canStartSavingResult,
-      let job = currentJob, job.status == "done", let output = job.output
-    else { return }
-    isSaving = true
-    errorMessage = nil
-    if let resultDestinationPicker {
-      saveResult(to: resultDestinationPicker(output), job: job)
-    } else {
-      let panel = NSSavePanel()
-      panel.nameFieldStringValue = output
-      panel.canCreateDirectories = true
-      panel.message = ResultSavePolicy.panelMessage
-      resultSavePanel = panel
-      // Keep SwiftUI's main event loop free while the system file service validates destinations.
-      panel.begin { [weak self] response in
-        guard let self, resultSavePanel === panel else { return }
-        resultSavePanel = nil
-        saveResult(to: response == .OK ? panel.url : nil, job: job)
-      }
-    }
-  }
-
-  private func saveResult(to destination: URL?, job: JobResponse) {
-    guard let destination else {
-      isSaving = false
-      return
-    }
-    let originalDocuments = resultOriginalDocuments
-    let allowReplacingExistingDestination = originalDocuments != nil
-    do {
-      try ResultSavePolicy.validate(
-        destination: destination, originalDocuments: originalDocuments)
-    } catch {
-      errorMessage = error.localizedDescription
-      isSaving = false
-      return
-    }
-
-    errorMessage = nil
-    isSaving = true
-    resultSaveTask = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        isSaving = false
-        resultSaveTask = nil
-      }
-      do {
-        try await resultDownloader(
-          job.id, destination, allowReplacingExistingDestination)
-        try Task.checkCancellation()
-        resultRevealer(destination)
-      } catch is CancellationError {
-        return
-      } catch {
-        guard !Task.isCancelled else { return }
-        errorMessage = error.localizedDescription
-      }
-    }
-  }
-
-  func cancelResultSaving() async {
-    if let panel = resultSavePanel {
-      resultSavePanel = nil
-      panel.cancel(nil)
-      isSaving = false
-    }
-    guard let resultSaveTask else { return }
-    resultSaveTask.cancel()
-    await resultSaveTask.value
-  }
-
   func refreshPreview() async {
     guard !isLoadingPreview, !isDeletingJob, let job = currentJob, hasPreviewableResult else {
       return
@@ -995,7 +466,7 @@ final class AppModel: ObservableObject {
     return diagnostics[requirement.name]
   }
 
-  private func beginPolling(jobID: String) {
+  func beginPolling(jobID: String) {
     pollingTask?.cancel()
     pollingTask = Task { [weak self] in
       guard let self else { return }
@@ -1093,5 +564,4 @@ final class AppModel: ObservableObject {
       preferences.removeObject(forKey: lastJobKey)
     }
   }
-
 }

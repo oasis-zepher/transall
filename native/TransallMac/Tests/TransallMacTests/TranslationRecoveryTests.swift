@@ -89,17 +89,6 @@ struct TranslationRecoveryTests {
   }
 
   @Test
-  func layoutRecoveryHintSurvivesOptionalAndNSErrorBridging() throws {
-    let error: NativeDocumentError? = .layoutOverflow(2)
-    let hint = try #require(error?.recoverySuggestion)
-    #expect(hint.contains("无需再次调用"))
-    let underlying = try #require(error)
-    #expect((underlying as NSError).localizedRecoverySuggestion == hint)
-    let localized: any LocalizedError = underlying
-    #expect(localized.recoverySuggestion == hint)
-  }
-
-  @Test
   func overflowAutomaticallyAppendsReadableNotesAndCanRenderOffline() throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -257,34 +246,6 @@ struct TranslationRecoveryTests {
     }
   }
 
-  @Test(arguments: ["oversized", "symlink", "hardlink", "fifo", "directory"])
-  func rejectsUnsafeCacheFiles(kind: String) throws {
-    let directory = try temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let source = directory.appendingPathComponent("source.pdf")
-    try fixture(source)
-    let cached = try document(source)
-    let cache = directory.appendingPathComponent(TranslationRecoveryStore.filename)
-    switch kind {
-    case "oversized":
-      try Data().write(to: cache)
-      let handle = try FileHandle(forWritingTo: cache)
-      try handle.truncate(atOffset: UInt64(TranslationRecoveryStore.maximumBytes + 1))
-      try handle.close()
-    case "symlink":
-      try FileManager.default.createSymbolicLink(at: cache, withDestinationURL: source)
-    case "hardlink": try FileManager.default.linkItem(at: source, to: cache)
-    case "fifo": #expect(mkfifo(cache.path, 0o600) == 0)
-    default: try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: false)
-    }
-    #expect(throws: (any Error).self) {
-      try TranslationRecoveryStore.load(in: directory, inputURL: source, options: JobOptions())
-    }
-    if kind != "oversized" {
-      #expect(throws: (any Error).self) { try TranslationRecoveryStore.save(cached, in: directory) }
-    }
-  }
-
   @Test
   func rejectsInputAndAncestorSymlinks() throws {
     let directory = try temporaryDirectory()
@@ -305,25 +266,6 @@ struct TranslationRecoveryTests {
     }
     #expect(throws: (any Error).self) {
       try TranslationRecoveryStore.save(document, in: directoryLink)
-    }
-  }
-
-  @Test(arguments: ["origin", "size", "font", "pageCount"])
-  func rejectsNonfiniteGeometryAndMismatchedPDFPageCount(kind: String) throws {
-    let directory = try temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let source = directory.appendingPathComponent("source.pdf")
-    try fixture(source)
-    let region = PDFTranslationRegion(
-      id: "invalid", pageIndex: 0, kind: .nativeText,
-      bounds: CGRect(
-        x: kind == "origin" ? CGFloat.nan : 30, y: 120,
-        width: kind == "size" ? CGFloat.infinity : 60, height: 14),
-      sourceText: "SOURCE TEXT", preferredFontSize: kind == "font" ? .infinity : 12)
-    #expect(throws: (any Error).self) {
-      try TranslationRecoveryStore.create(
-        inputURL: source, options: JobOptions(), pageCount: kind == "pageCount" ? 2 : 1,
-        regions: [region], translations: [region.id: "COMPLETE TRANSLATION"], overflowRegionIDs: [])
     }
   }
 

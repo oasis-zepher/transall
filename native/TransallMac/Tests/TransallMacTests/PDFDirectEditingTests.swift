@@ -64,7 +64,10 @@ struct PDFDirectEditingTests {
     #expect(doc.page(at: 0)?.string?.contains("中文输入") == true)
     #expect(doc.page(at: 0)?.string?.contains("Keep this text") == true)
     #expect(doc.page(at: 1)?.string == PDFDocument(data: input)?.page(at: 1)?.string)
-    #expect(doc.page(at: 0)?.annotations.count == 1)
+    // Some PDFKit versions save the note with a separate popup annotation.
+    let inputAnnotations = PDFDocument(data: input)?.page(at: 0)?.annotations.count ?? 0
+    #expect(inputAnnotations >= 1)
+    #expect(doc.page(at: 0)?.annotations.count == inputAnnotations)
     let before = try PDFContentEditor.objectCounts(in: input, page: 0)
     let after = try PDFContentEditor.objectCounts(in: output, page: 0)
     #expect(before.images == 1 && after.images == before.images)

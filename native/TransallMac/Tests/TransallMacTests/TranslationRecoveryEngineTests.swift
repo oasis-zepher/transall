@@ -10,6 +10,40 @@ import Testing
 @Suite(.serialized)
 struct TranslationRecoveryEngineTests {
   @Test @MainActor
+  func completedTranslationCanBeRebuiltSideBySideWithoutCredentialOrProviderAccess() async throws {
+    let fixture = try RecoveryEngineFixture()
+    defer { fixture.remove() }
+    let engine = fixture.engine()
+    defer { engine.prepareForTermination() }
+    await engine.start()
+    let submitted = try await fixture.submit(to: engine)
+    _ = try await finishedJob(submitted.id, in: engine)
+    let previous = try await engine.translationRecovery(jobID: submitted.id)
+    let directory = fixture.jobDirectory(submitted.id)
+    let input = try #require(
+      FileManager.default.contentsOfDirectory(
+        at: directory.appendingPathComponent("Input"), includingPropertiesForKeys: nil
+      ).first)
+    var translations = previous.translations
+    translations[RecoveryEngineFixture.problemRegion.id] = "第二页"
+    let cache = try TranslationRecoveryStore.create(
+      inputURL: input, options: JobOptions(), pageCount: 2,
+      regions: previous.regions, translations: translations, overflowRegionIDs: [])
+    try TranslationRecoveryStore.save(cache, in: directory)
+    for _ in 0..<2 {
+      _ = try engine.rebuildTranslationPDF(jobID: submitted.id, outputMode: "bilingual")
+      let done = try await finishedJob(submitted.id, in: engine)
+      #expect(done.status == "done")
+      let file = directory.appendingPathComponent(try #require(done.output))
+      #expect(PDFLayoutTranslation.isSideBySideBilingual(file))
+      #expect(PDFDocument(url: file)?.pageCount == 2)
+      #expect(done.output?.hasSuffix("-bilingual.pdf") == true)
+    }
+    #expect(fixture.calls.processorCount == 1)
+    #expect(fixture.calls.credentialReads == [.deepseek])
+  }
+
+  @Test @MainActor
   func failedLayoutInspectionShowsSubmittedOriginalAndExactProblemRegion() async throws {
     let fixture = try RecoveryEngineFixture()
     defer { fixture.remove() }
@@ -335,7 +369,7 @@ struct TranslationRecoveryEngineTests {
     #expect(
       model.translationRecovery
         == TranslationRecoverySummary(
-          jobID: first.id, regionCount: 2, issueCount: 1, issuePages: [2]))
+          jobID: first.id, regionCount: 2, issueCount: 1, issuePages: [2], completedRegionCount: 2))
     #expect(model.canRecoverTranslation)
 
     model.currentJob = secondFailure
@@ -404,7 +438,7 @@ struct TranslationRecoveryEngineTests {
   }
 
   @Test @MainActor
-  func restartedModelRestoresRecoverySummaryAndRequiresANewSaveDestination() async throws {
+  func restartedModelAutomaticallyBuildsPDFWithoutReadingCredentialsAndRetainsIt() async throws {
     let fixture = try RecoveryEngineFixture()
     defer { fixture.remove() }
     let first = fixture.engine()
@@ -422,16 +456,13 @@ struct TranslationRecoveryEngineTests {
       resultDestinationPicker: { _ in fixture.source },
       resultDownloader: { _, _, _ in downloadCalls += 1 }, resultRevealer: { _ in })
     defer { model.prepareForTermination() }
+    let readsBeforeRecovery = fixture.calls.credentialReads
     await model.start()
     #expect(model.currentJob?.id == submitted.id)
-    #expect(model.currentJob?.status == "failed")
-    #expect(model.translationRecovery?.issuePages == [2])
-    #expect(model.canRecoverTranslation)
-    #expect(model.resultOriginalDocuments == nil)
-    let readsBeforeRecovery = fixture.calls.credentialReads
-
-    model.recoverTranslationAsPlainPDF(jobID: submitted.id)
     try await waitForModel(model) { $0.currentJob?.status == "done" }
+    #expect(model.translationRecovery == nil)
+    #expect(!model.canRecoverTranslation)
+    #expect(model.options.outputMode == "preserve_layout")
     #expect(model.resultOriginalDocuments == nil)
     #expect(model.requiresNewResultDestination)
     model.startSavingResult()
@@ -439,7 +470,7 @@ struct TranslationRecoveryEngineTests {
     #expect(!model.isSaving)
     #expect(model.errorMessage?.contains("不能替换已有文件") == true)
     #expect(fixture.calls.processorCount == 1)
-    #expect(fixture.calls.credentialReads == readsBeforeRecovery)
+    #expect(fixture.calls.credentialReads == readsBeforeRecovery + [.deepseek, .openAI])
   }
 
   @Test(arguments: [false, true]) @MainActor

@@ -14,6 +14,7 @@ struct SettingsAnnouncement: Equatable, Identifiable {
 }
 
 enum ProviderCredentialStorageState: Equatable {
+  case awaitingAuthorization
   case unavailable
   case notConfigured
   case configured
@@ -36,6 +37,7 @@ struct ProviderCredentialRowState: Equatable {
   var statusLabel: String {
     let storedLabel =
       switch storage {
+      case .awaitingAuthorization: "尚未读取"
       case .unavailable: "读取失败"
       case .notConfigured: "未配置"
       case .configured: "已配置"
@@ -54,6 +56,7 @@ struct ProviderCredentialRowState: Equatable {
     if hasUnsavedChanges { return "pencil.circle.fill" }
     return switch storage {
     case .unavailable, .invalid: "exclamationmark.triangle.fill"
+    case .awaitingAuthorization: "lock.circle"
     case .notConfigured: "circle"
     case .configured: "checkmark.circle.fill"
     }
@@ -64,7 +67,7 @@ struct ProviderCredentialRowState: Equatable {
     if hasUnsavedChanges { return .pending }
     return switch storage {
     case .unavailable, .invalid: .invalid
-    case .notConfigured: .muted
+    case .awaitingAuthorization, .notConfigured: .muted
     case .configured: .configured
     }
   }
@@ -81,6 +84,7 @@ final class ProviderSettingsModel: ObservableObject {
   @Published var pendingRemoval: ProviderCredential?
   @Published private(set) var isLoading = false
   @Published private(set) var isLoaded = false
+  @Published private(set) var authorizationPending = false
   @Published private(set) var messageIsError = false
   @Published private(set) var announcement: SettingsAnnouncement?
 
@@ -112,12 +116,18 @@ final class ProviderSettingsModel: ObservableObject {
     isLoading = true
     defer { isLoading = false }
     do {
-      applyLoadedValues(try await worker.readStoredValues())
-      publish(showSuccess ? "已重新读取钥匙串。" : "", isError: false)
+      applyLoadedValues(
+        try await worker.readStoredValues(allowingInteraction: showSuccess, refreshing: showSuccess)
+      )
+      publish(showSuccess ? "已重新读取本机配置。" : "", isError: false)
+    } catch let error as ProviderCredentialStoreError where error.requiresUserInteraction {
+      clearLoadedValues()
+      authorizationPending = true
+      publish("无法读取已保存的配置，请重新读取配置后重试。", isError: false)
     } catch {
       clearLoadedValues()
       publish(
-        "无法读取钥匙串，现有 API Key 未被更改：\(error.localizedDescription)",
+        "无法读取本机配置，现有 API Key 未被更改：\(error.localizedDescription)",
         isError: true)
     }
   }
@@ -125,7 +135,7 @@ final class ProviderSettingsModel: ObservableObject {
   func save(appModel: AppModel) async {
     guard !isSaving else { return }
     guard isLoaded, !isLoading else {
-      publish("请先重新读取钥匙串，再保存 API Key。", isError: true)
+      publish("请先重新读取本机配置，再保存 API Key。", isError: true)
       return
     }
 
@@ -166,7 +176,7 @@ final class ProviderSettingsModel: ObservableObject {
         applyLoadedValues(actualValues)
         if actualValues == previousValues {
           publish(
-            "API Key 保存失败，但已验证钥匙串已恢复到保存前状态：\(saveError)",
+            "API Key 保存失败，但已验证本机配置已恢复到保存前状态：\(saveError)",
             isError: true)
         } else {
           _ = await appModel.applyCredentialChanges()
@@ -179,7 +189,7 @@ final class ProviderSettingsModel: ObservableObject {
             rollbackErrors.isEmpty
             ? "" : "；回滚错误：\(rollbackErrors.joined(separator: "；"))"
           publish(
-            "API Key 保存失败，\(changedProviders) 未恢复到保存前状态；已重新读取钥匙串当前值，请检查后重试：\(saveError)\(rollbackDetail)",
+            "API Key 保存失败，\(changedProviders) 未恢复到保存前状态；已重新读取本机配置当前值，请检查后重试：\(saveError)\(rollbackDetail)",
             isError: true)
         }
       } else {
@@ -188,13 +198,13 @@ final class ProviderSettingsModel: ObservableObject {
           rollbackErrors.isEmpty
           ? "" : "；回滚错误：\(rollbackErrors.joined(separator: "；"))"
         publish(
-          "API Key 保存失败，且无法确认钥匙串当前状态：\(saveError)；重新读取失败：\(reconciliationError ?? "未知错误")\(rollbackDetail)",
+          "API Key 保存失败，且无法确认本机配置当前状态：\(saveError)；重新读取失败：\(reconciliationError ?? "未知错误")\(rollbackDetail)",
           isError: true)
       }
     } catch {
       clearLoadedValues()
       publish(
-        "API Key 保存失败，且无法确认钥匙串当前状态：\(error.localizedDescription)",
+        "API Key 保存失败，且无法确认本机配置当前状态：\(error.localizedDescription)",
         isError: true)
     }
   }
@@ -204,7 +214,7 @@ final class ProviderSettingsModel: ObservableObject {
   ) async {
     guard !isSaving else { return }
     guard isLoaded, !isLoading else {
-      publish("请先重新读取钥匙串，再删除 API Key。", isError: true)
+      publish("请先重新读取本机配置，再删除 API Key。", isError: true)
       return
     }
     isSaving = true
@@ -213,7 +223,7 @@ final class ProviderSettingsModel: ObservableObject {
     do {
       applyLoadedValues(try await worker.remove(credential, from: storedValues))
       _ = await appModel.applyCredentialChanges()
-      publish("\(credential.displayName) API Key 已从钥匙串删除。", isError: false)
+      publish("\(credential.displayName) API Key 已从本机配置删除。", isError: false)
     } catch ProviderCredentialTransactionError.removal(
       _, let removalError, let actualValues, let reconciliationError)
     {
@@ -222,23 +232,23 @@ final class ProviderSettingsModel: ObservableObject {
         _ = await appModel.applyCredentialChanges()
         if actualValues[credential]?.isEmpty != false {
           publish(
-            "\(credential.displayName) API Key 实际已删除，但钥匙串清理返回错误；已重新读取当前状态：\(removalError)",
+            "\(credential.displayName) API Key 实际已删除，但本机配置清理返回错误；已重新读取当前状态：\(removalError)",
             isError: true)
         } else {
           publish(
-            "\(credential.displayName) API Key 删除失败；已重新读取钥匙串当前状态：\(removalError)",
+            "\(credential.displayName) API Key 删除失败；已重新读取本机配置当前状态：\(removalError)",
             isError: true)
         }
       } else {
         clearLoadedValues()
         publish(
-          "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(removalError)；重新读取失败：\(reconciliationError ?? "未知错误")",
+          "\(credential.displayName) API Key 删除失败，且无法确认本机配置当前状态：\(removalError)；重新读取失败：\(reconciliationError ?? "未知错误")",
           isError: true)
       }
     } catch {
       clearLoadedValues()
       publish(
-        "\(credential.displayName) API Key 删除失败，且无法确认钥匙串当前状态：\(error.localizedDescription)",
+        "\(credential.displayName) API Key 删除失败，且无法确认本机配置当前状态：\(error.localizedDescription)",
         isError: true)
     }
   }
@@ -256,7 +266,8 @@ final class ProviderSettingsModel: ObservableObject {
   func rowState(for credential: ProviderCredential) -> ProviderCredentialRowState {
     guard isLoaded else {
       return ProviderCredentialRowState(
-        storage: .unavailable, hasStoredValue: false, hasUnsavedChanges: false,
+        storage: authorizationPending ? .awaitingAuthorization : .unavailable,
+        hasStoredValue: false, hasUnsavedChanges: false,
         draftValidationError: nil)
     }
 
@@ -286,6 +297,7 @@ final class ProviderSettingsModel: ObservableObject {
   }
 
   private func applyLoadedValues(_ values: [ProviderCredential: String]) {
+    authorizationPending = false
     deepseekKey = values[.deepseek] ?? ""
     openAIKey = values[.openAI] ?? ""
     storedValues = values
@@ -293,6 +305,7 @@ final class ProviderSettingsModel: ObservableObject {
   }
 
   private func clearLoadedValues() {
+    authorizationPending = false
     deepseekKey = ""
     openAIKey = ""
     storedValues = [:]
@@ -313,45 +326,29 @@ struct SettingsView: View {
   @State private var conversionMessage = ""
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 22) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("翻译与隐私")
-            .font(.title2.weight(.semibold))
-          Text("API Key 只保存在 macOS 钥匙串，不写入任务文件或日志。")
-            .font(.caption)
-            .foregroundStyle(TransallTheme.muted)
+    VStack(spacing: 0) {
+      Form {
+        Section("翻译服务") {
+          Text("API 密钥以明文保存在仅当前账户可读的本机配置文件，不写入任务文件或日志。")
+            .font(.callout).foregroundStyle(.secondary)
+          providerRow(
+            credential: .deepseek, key: $settings.deepseekKey,
+            privacyURL: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")
+          providerRow(
+            credential: .openAI, key: $settings.openAIKey,
+            privacyURL: "https://openai.com/policies/privacy-policy/")
+          Label("只有执行翻译时，提取的文字才会发送给所选服务商。PDF 原文件不会上传。", systemImage: "network")
+            .font(.callout).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
-
-        providerRow(
-          credential: .deepseek, key: $settings.deepseekKey,
-          privacyURL: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")
-
-        Divider().overlay(TransallTheme.line)
-
-        providerRow(
-          credential: .openAI, key: $settings.openAIKey,
-          privacyURL: "https://openai.com/policies/privacy-policy/")
-
-        Label {
-          Text("只有主动执行翻译时，提取出的文档文字才会发送给所选服务商。PDF 原文件不会上传。")
-        } icon: {
-          Image(systemName: "network")
-        }
-        .font(.caption)
-        .foregroundStyle(TransallTheme.warning)
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TransallTheme.warning.opacity(0.075))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
-
-        VStack(alignment: .leading, spacing: 8) {
+        Section("Office 转换") {
           LabeledContent(
-            "Office 文档转换",
+            "LibreOffice",
             value: OfficeDocumentConverter.executable == nil
-              ? "未安装 LibreOffice" : (OfficeConversionComponent.requiresSetup ? "待启用" : "可用"))
+              ? "未安装" : (OfficeConversionComponent.requiresSetup ? "待启用" : "可用"))
           if OfficeConversionComponent.requiresSetup {
             Button("启用 Office 转换…") { conversionMessage = OfficeConversionComponent.install() }
+              .buttonStyle(.bordered)
           }
           if !conversionMessage.isEmpty { Text(conversionMessage).textSelection(.enabled) }
           if OfficeDocumentConverter.executable == nil {
@@ -360,18 +357,15 @@ struct SettingsView: View {
               destination: URL(
                 string: "https://www.libreoffice.org/download/download-libreoffice/")!)
           }
-          Text("Transall 数据与隐私")
-            .font(.callout.weight(.semibold))
-          Label("文件副本、结果、预览和日志保存在 Transall 的 App 容器内。", systemImage: "internaldrive")
-          Label(
-            "任务数据超过 24 小时后，会在启动时及运行期间定期自动清理；也可以在结果区立即删除。",
-            systemImage: "clock.arrow.circlepath")
-          Label("处理过程不会删除或修改原始文件；保存结果时由你选择目标位置。", systemImage: "checkmark.shield")
+        }
+        Section("数据与隐私") {
+          Label("文件副本、结果、预览和日志保存在本机 App 容器内。", systemImage: "internaldrive")
+          Label("任务数据超过 24 小时后自动清理，也可在结果区立即删除。", systemImage: "clock.arrow.circlepath")
+          Label("原始文件不会被修改；保存结果时由你选择位置。", systemImage: "checkmark.shield")
           if let privacyPolicyURL = PrivacyPolicyConfiguration.appURL {
             Link(destination: privacyPolicyURL) {
               Label("查看 Transall 隐私政策", systemImage: "hand.raised")
             }
-            .foregroundStyle(TransallTheme.accent)
             .accessibilityHint("在浏览器中打开 Transall 的公开隐私政策")
           } else {
             Label("发布版隐私政策网址尚未配置", systemImage: "exclamationmark.triangle")
@@ -379,23 +373,21 @@ struct SettingsView: View {
               .accessibilityHint("归档发布版前必须配置公开 HTTPS 地址")
           }
         }
-        .font(.caption)
-        .foregroundStyle(TransallTheme.inkSoft)
-
+        .font(.callout)
+      }
+      .formStyle(.grouped)
+      .scrollContentBackground(.hidden)
+      Divider()
+      VStack(alignment: .leading, spacing: 10) {
         if !settings.message.isEmpty {
-          Text(settings.message)
-            .font(.caption)
+          Text(settings.message).font(.callout)
             .foregroundStyle(settings.messageIsError ? TransallTheme.danger : TransallTheme.inkSoft)
-            .textSelection(.enabled)
+            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
-
         HStack {
           if !settings.isLoaded {
-            Button("重新读取钥匙串") {
-              Task { await settings.reload() }
-            }
-            .buttonStyle(QuietButtonStyle())
-            .disabled(settings.isSaving || settings.isLoading)
+            Button("重新读取配置") { Task { await settings.reload() } }
+              .buttonStyle(.bordered).disabled(settings.isSaving || settings.isLoading)
           }
           Spacer()
           Button(settings.isSaving ? "正在保存" : "保存并应用") {
@@ -407,10 +399,11 @@ struct SettingsView: View {
               || !settings.hasUnsavedChanges)
         }
       }
-      .padding(24)
+      .padding(20)
     }
-    .frame(width: 540)
-    .frame(minHeight: 560)
+    .controlSize(.regular)
+    .frame(width: 560)
+    .frame(minHeight: 560, idealHeight: 680, maxHeight: 800)
     .background(TransallTheme.paper)
     .task {
       if !settings.isLoaded {
@@ -435,7 +428,7 @@ struct SettingsView: View {
       )
     ) {
       if let credential = settings.pendingRemoval {
-        Button("从钥匙串删除", role: .destructive) {
+        Button("从本机配置删除", role: .destructive) {
           Task { await settings.remove(credential, appModel: appModel) }
         }
       }
@@ -462,9 +455,10 @@ struct SettingsView: View {
             settings.isLoading ? TransallTheme.muted : statusColor(state.statusStyle))
       }
 
+      Text("API 密钥").font(.callout)
       HStack {
         SecureField("\(credential.displayName) API Key", text: key)
-          .textFieldStyle(.roundedBorder)
+          .textFieldStyle(.roundedBorder).labelsHidden()
           .accessibilityLabel("\(credential.displayName) API Key")
           .accessibilityValue(status)
           .disabled(!settings.isLoaded || settings.isSaving || settings.isLoading)
@@ -472,7 +466,7 @@ struct SettingsView: View {
         Button("删除密钥", role: .destructive) {
           settings.pendingRemoval = credential
         }
-        .buttonStyle(QuietButtonStyle())
+        .buttonStyle(.bordered)
         .disabled(
           !state.canRemoveStoredValue || settings.isSaving || settings.isLoading
             || !settings.isLoaded)

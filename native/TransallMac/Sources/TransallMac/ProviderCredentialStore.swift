@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 enum ProviderCredential: String, CaseIterable, Identifiable, Sendable {
@@ -65,17 +66,31 @@ enum ProviderCredentialPolicy {
 enum ProviderCredentialStoreError: LocalizedError {
   case keychain(OSStatus)
 
+  var requiresUserInteraction: Bool {
+    if case .keychain(errSecInteractionNotAllowed) = self { return true }
+    return false
+  }
+
   var errorDescription: String? {
     switch self {
     case .keychain(let status):
-      "无法访问钥匙串（错误 \(status)）。"
+      status == errSecInteractionNotAllowed
+        ? "系统尚未允许此版本读取已保存的密钥，请在设置中授权一次。应用不会自动弹出钥匙串窗口。"
+        : "无法访问钥匙串（错误 \(status)）。"
     }
   }
 }
 
 protocol ProviderCredentialStoring: Sendable {
   func value(for credential: ProviderCredential) throws -> String
+  func value(for credential: ProviderCredential, allowingInteraction: Bool) throws -> String
   func setValue(_ value: String, for credential: ProviderCredential) throws
+}
+
+extension ProviderCredentialStoring {
+  func value(for credential: ProviderCredential, allowingInteraction: Bool) throws -> String {
+    try value(for: credential)
+  }
 }
 
 struct KeychainClient: @unchecked Sendable {
@@ -111,23 +126,51 @@ struct ProviderCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
   }
 
   func value(for credential: ProviderCredential) throws -> String {
-    var query = Self.baseQuery(for: credential, dataProtection: true)
-    query[kSecReturnData as String] = true
-    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    try value(for: credential, allowingInteraction: true)
+  }
 
+  func value(for credential: ProviderCredential, allowingInteraction: Bool) throws -> String {
+    var query = Self.readQuery(
+      for: credential, dataProtection: true, allowingInteraction: allowingInteraction)
     let (status, data) = client.copyMatching(query)
     switch status {
     case errSecSuccess:
-      let value = try decodedValue(data)
-      try deleteLegacyValue(for: credential)
-      return value
-    case errSecItemNotFound:
-      return try migrateLegacyValue(for: credential)
-    case errSecMissingEntitlement:
-      return try legacyValue(for: credential)
+      return try decodedValue(data)
+    case errSecItemNotFound, errSecMissingEntitlement:
+      if !allowingInteraction {
+        var presenceQuery = Self.baseQuery(for: credential, dataProtection: false)
+        presenceQuery[kSecReturnAttributes as String] = true
+        presenceQuery[kSecMatchLimit as String] = kSecMatchLimitOne
+        let (presenceStatus, _) = client.copyMatching(presenceQuery)
+        if presenceStatus == errSecItemNotFound { return "" }
+        if presenceStatus == errSecSuccess {
+          throw ProviderCredentialStoreError.keychain(errSecInteractionNotAllowed)
+        }
+        throw ProviderCredentialStoreError.keychain(presenceStatus)
+      }
+      query = Self.readQuery(
+        for: credential, dataProtection: false, allowingInteraction: allowingInteraction)
+      let (legacyStatus, legacyData) = client.copyMatching(query)
+      if legacyStatus == errSecItemNotFound { return "" }
+      guard legacyStatus == errSecSuccess else {
+        throw ProviderCredentialStoreError.keychain(legacyStatus)
+      }
+      return try decodedValue(legacyData)
     default:
       throw ProviderCredentialStoreError.keychain(status)
     }
+  }
+
+  private static func readQuery(
+    for credential: ProviderCredential, dataProtection: Bool, allowingInteraction: Bool
+  ) -> [String: Any] {
+    var query = baseQuery(for: credential, dataProtection: dataProtection)
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    let context = LAContext()
+    context.interactionNotAllowed = !allowingInteraction
+    query[kSecUseAuthenticationContext as String] = context
+    return query
   }
 
   func setValue(_ value: String, for credential: ProviderCredential) throws {
@@ -164,33 +207,6 @@ struct ProviderCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
   private func decodedValue(_ data: Data?) throws -> String {
     guard let data, let value = String(data: data, encoding: .utf8) else {
       throw ProviderCredentialStoreError.keychain(errSecDecode)
-    }
-    return value
-  }
-
-  private func legacyValue(for credential: ProviderCredential) throws -> String {
-    var query = Self.baseQuery(for: credential, dataProtection: false)
-    query[kSecReturnData as String] = true
-    query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-    let (status, data) = client.copyMatching(query)
-    if status == errSecItemNotFound { return "" }
-    guard status == errSecSuccess else {
-      throw ProviderCredentialStoreError.keychain(status)
-    }
-    return try decodedValue(data)
-  }
-
-  private func migrateLegacyValue(for credential: ProviderCredential) throws -> String {
-    let value = try legacyValue(for: credential)
-    guard !value.isEmpty else { return "" }
-    do {
-      try storeValue(value, for: credential, dataProtection: true)
-      try deleteLegacyValue(for: credential)
-    } catch ProviderCredentialStoreError.keychain(let status)
-      where status == errSecMissingEntitlement
-    {
-      return value
     }
     return value
   }
@@ -243,6 +259,7 @@ struct ProviderCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
 struct ProviderCredentialStatusSnapshot: Sendable {
   let configured: [ProviderCredential: Bool]
   let errors: [ProviderCredential: String]
+  var requiresAuthorization: Set<ProviderCredential> = []
 }
 
 enum ProviderCredentialTransactionError: Error, Sendable {
@@ -258,22 +275,31 @@ enum ProviderCredentialTransactionError: Error, Sendable {
 }
 
 actor ProviderCredentialWorker {
-  static let shared = ProviderCredentialWorker(store: ProviderCredentialStore.shared)
+  static let shared = ProviderCredentialWorker(store: LocalProviderCredentialStore.shared)
 
   private let store: any ProviderCredentialStoring
+  // Reuse successful reads during this process; the local store persists across launches.
+  private var cachedValues: [ProviderCredential: String] = [:]
 
   init(store: any ProviderCredentialStoring) {
     self.store = store
   }
 
-  func value(for credential: ProviderCredential) throws -> String {
-    try store.value(for: credential)
+  func value(for credential: ProviderCredential, allowingInteraction: Bool = true) throws -> String
+  {
+    if let cached = cachedValues[credential] { return cached }
+    let value = try store.value(for: credential, allowingInteraction: allowingInteraction)
+    if !value.isEmpty { cachedValues[credential] = value }
+    return value
   }
 
-  func readStoredValues() throws -> [ProviderCredential: String] {
+  func readStoredValues(
+    allowingInteraction: Bool = true, refreshing: Bool = false
+  ) throws -> [ProviderCredential: String] {
+    if refreshing { cachedValues.removeAll() }
     var values: [ProviderCredential: String] = [:]
     for credential in ProviderCredential.allCases {
-      values[credential] = try store.value(for: credential)
+      values[credential] = try value(for: credential, allowingInteraction: allowingInteraction)
     }
     return values
   }
@@ -281,17 +307,23 @@ actor ProviderCredentialWorker {
   func status() -> ProviderCredentialStatusSnapshot {
     var configured: [ProviderCredential: Bool] = [:]
     var errors: [ProviderCredential: String] = [:]
+    var requiresAuthorization: Set<ProviderCredential> = []
     for credential in ProviderCredential.allCases {
       do {
-        let value = try store.value(for: credential)
+        let value = try value(for: credential, allowingInteraction: false)
         configured[credential] =
           !(try ProviderCredentialPolicy.normalizedValue(value, allowingEmpty: true)).isEmpty
       } catch {
         configured[credential] = false
         errors[credential] = error.localizedDescription
+        if case ProviderCredentialStoreError.keychain(errSecInteractionNotAllowed) = error {
+          requiresAuthorization.insert(credential)
+        }
       }
     }
-    return ProviderCredentialStatusSnapshot(configured: configured, errors: errors)
+    return ProviderCredentialStatusSnapshot(
+      configured: configured, errors: errors,
+      requiresAuthorization: requiresAuthorization)
   }
 
   func save(
@@ -300,11 +332,13 @@ actor ProviderCredentialWorker {
   ) throws -> [ProviderCredential: String] {
     let changed = ProviderCredential.allCases.filter { values[$0] != previousValues[$0] }
     var attempted: [ProviderCredential] = []
+    for credential in changed { cachedValues[credential] = nil }
     do {
       for credential in changed {
         attempted.append(credential)
         try store.setValue(values[credential] ?? "", for: credential)
       }
+      for credential in changed { cachedValues[credential] = values[credential] }
       return values
     } catch {
       let saveError = error.localizedDescription
@@ -319,7 +353,7 @@ actor ProviderCredentialWorker {
       let actualValues: [ProviderCredential: String]?
       let reconciliationError: String?
       do {
-        actualValues = try readStoredValues()
+        actualValues = try readStoredValues(allowingInteraction: false, refreshing: true)
         reconciliationError = nil
       } catch {
         actualValues = nil
@@ -335,6 +369,7 @@ actor ProviderCredentialWorker {
   func remove(
     _ credential: ProviderCredential, from previousValues: [ProviderCredential: String]
   ) throws -> [ProviderCredential: String] {
+    cachedValues[credential] = nil
     do {
       try store.setValue("", for: credential)
       var values = previousValues
@@ -345,7 +380,7 @@ actor ProviderCredentialWorker {
       let actualValues: [ProviderCredential: String]?
       let reconciliationError: String?
       do {
-        actualValues = try readStoredValues()
+        actualValues = try readStoredValues(allowingInteraction: false, refreshing: true)
         reconciliationError = nil
       } catch {
         actualValues = nil
@@ -355,5 +390,117 @@ actor ProviderCredentialWorker {
         credential: credential, removalError: removalError, actualValues: actualValues,
         reconciliationError: reconciliationError)
     }
+  }
+}
+
+// User-selected local storage: owner-only directory and file, with no Keychain lookup.
+final class LocalProviderCredentialStore: ProviderCredentialStoring, @unchecked Sendable {
+  static let shared = LocalProviderCredentialStore()
+  private static let lock = NSLock()
+  private let directory: URL
+  private let filename = "provider-credentials.json"
+
+  init(directory: URL? = nil) {
+    self.directory =
+      directory
+      ?? FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Transall/Configuration", isDirectory: true)
+  }
+
+  func value(for credential: ProviderCredential) throws -> String {
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    let descriptor = try openDirectory()
+    defer { close(descriptor) }
+    return try readValues(in: descriptor)[credential.rawValue] ?? ""
+  }
+
+  func setValue(_ value: String, for credential: ProviderCredential) throws {
+    let normalized = try ProviderCredentialPolicy.normalizedValue(value, allowingEmpty: true)
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    let directoryFD = try openDirectory()
+    defer { close(directoryFD) }
+    var values = try readValues(in: directoryFD)
+    values[credential.rawValue] = normalized.isEmpty ? nil : normalized
+    let data = try JSONEncoder().encode(values)
+    let temporary = ".credentials-\(UUID().uuidString)"
+    let descriptor = openat(
+      directoryFD, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard descriptor >= 0 else { throw storageError() }
+    defer {
+      close(descriptor)
+      unlinkat(directoryFD, temporary, 0)
+    }
+    try data.withUnsafeBytes { bytes in
+      var offset = 0
+      while offset < bytes.count {
+        let count = write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+        if count < 0 && errno == EINTR { continue }
+        guard count > 0 else { throw storageError() }
+        offset += count
+      }
+    }
+    guard fsync(descriptor) == 0,
+      renameat(directoryFD, temporary, directoryFD, filename) == 0
+    else { throw storageError() }
+  }
+
+  private func openDirectory() throws -> Int32 {
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard descriptor >= 0 else { throw storageError() }
+    var info = stat()
+    guard fstat(descriptor, &info) == 0, info.st_uid == geteuid(), fchmod(descriptor, 0o700) == 0
+    else {
+      close(descriptor)
+      throw storageError()
+    }
+    return descriptor
+  }
+
+  private func readValues(in directoryFD: Int32) throws -> [String: String] {
+    let descriptor = openat(directoryFD, filename, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+    if descriptor < 0 && errno == ENOENT { return [:] }
+    guard descriptor >= 0 else { throw storageError() }
+    defer { close(descriptor) }
+    var info = stat()
+    guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+      info.st_uid == geteuid(), info.st_nlink == 1, info.st_size <= 32_768,
+      fchmod(descriptor, 0o600) == 0
+    else { throw storageError() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while true {
+      let count = read(descriptor, &buffer, buffer.count)
+      if count < 0 && errno == EINTR { continue }
+      guard count >= 0 else { throw storageError() }
+      if count == 0 { break }
+      data.append(contentsOf: buffer.prefix(count))
+      guard data.count <= 32_768 else { throw storageError() }
+    }
+    do {
+      let values = try JSONDecoder().decode([String: String].self, from: data)
+      for value in values.values {
+        _ = try ProviderCredentialPolicy.normalizedValue(value, allowingEmpty: true)
+      }
+      return values
+    } catch {
+      throw NSError(
+        domain: "TransallCredentials", code: 2,
+        userInfo: [
+          NSLocalizedDescriptionKey: "本机密钥配置损坏，未覆盖已有内容。"
+        ])
+    }
+  }
+
+  private func storageError() -> NSError {
+    NSError(
+      domain: "TransallCredentials", code: 1,
+      userInfo: [
+        NSLocalizedDescriptionKey: "无法安全读写本机密钥配置，请检查当前账户的文件权限。"
+      ])
   }
 }

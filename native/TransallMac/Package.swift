@@ -1,6 +1,10 @@
 // swift-tools-version: 6.0
 
 import PackageDescription
+import Foundation
+
+let pdfiumLibrary = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .appendingPathComponent("ThirdParty/PDFium/lib").path
 
 let package = Package(
     name: "TransallMac",
@@ -9,9 +13,12 @@ let package = Package(
         .executable(name: "TransallMac", targets: ["TransallMac"]),
     ],
     targets: [
+        .systemLibrary(name: "CPDFium", path: "Sources/CPDFium"),
         .executableTarget(
             name: "TransallMac",
-            path: "Sources/TransallMac"
+            dependencies: ["CPDFium"],
+            path: "Sources/TransallMac",
+            linkerSettings: [.unsafeFlags(["-L", pdfiumLibrary, "-lc++"])]
         ),
         .testTarget(
             name: "TransallMacTests",

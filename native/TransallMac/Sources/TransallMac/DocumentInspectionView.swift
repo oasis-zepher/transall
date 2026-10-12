@@ -7,14 +7,17 @@ struct DocumentInspectionSnapshot: Sendable {
   let result: URL?
   let original: URL?
   let issues: [TranslationLayoutIssue]
+  let bilingualDownload: Bool
 
   init(
-    directory: URL, result: URL?, original: URL?, issues: [TranslationLayoutIssue] = []
+    directory: URL, result: URL?, original: URL?, issues: [TranslationLayoutIssue] = [],
+    bilingualDownload: Bool = false
   ) {
     self.directory = directory
     self.result = result
     self.original = original
     self.issues = issues
+    self.bilingualDownload = bilingualDownload
   }
 }
 
@@ -28,6 +31,8 @@ struct DocumentInspectionView: View {
   let backend: NativeDocumentEngine
   let request: DocumentInspectionRequest
   var embedded = false
+  var pairedWorkspace = false
+  var fallbackOriginal: SelectedDocument?
   @Environment(\.dismiss) private var dismiss
   @StateObject private var session = InspectionSession()
   @State private var snapshot: DocumentInspectionSnapshot?
@@ -39,18 +44,25 @@ struct DocumentInspectionView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 12) {
-        if let snapshot, snapshot.original != nil,
+        if snapshot?.bilingualDownload == true {
+          Text("双语左右对照 · 左侧原文，右侧译文").font(.callout.weight(.medium))
+        } else if let snapshot, snapshot.original != nil,
           snapshot.result?.pathExtension.lowercased() == "pdf"
         {
-          Picker("显示内容", selection: $mode) {
-            Text("原件").tag(InspectionDisplayMode.original)
-            Text("结果").tag(InspectionDisplayMode.result)
-            Text("对照").tag(InspectionDisplayMode.compare)
+          if pairedWorkspace {
+            Text("原文件与转换结果")
+              .font(.callout.weight(.medium))
+          } else {
+            Picker("显示内容", selection: $mode) {
+              Text("原件").tag(InspectionDisplayMode.original)
+              Text("结果").tag(InspectionDisplayMode.result)
+              Text("对照").tag(InspectionDisplayMode.compare)
+            }
+            .pickerStyle(.segmented).frame(maxWidth: 240)
           }
-          .pickerStyle(.segmented).frame(maxWidth: 240)
           if mode == .compare {
             Toggle("同页联动", isOn: $session.synchronize).toggleStyle(.checkbox)
-              .disabled(!session.canSynchronize).font(.caption)
+              .disabled(!session.canSynchronize).font(.callout)
               .help("按相同页码和位置联动，不判断内容是否对应")
           }
         } else {
@@ -80,23 +92,60 @@ struct DocumentInspectionView: View {
             .frame(maxWidth: .infinity, alignment: .leading).padding(10)
           Divider()
         }
-        HStack(spacing: 1) {
-          if mode != .result || snapshot.result == nil, let original = snapshot.original {
-            InspectionPane(
-              title: "原文 · 提交时的副本", url: original, scale: $scale,
-              initialPage: request.page, controller: session.original)
-          }
-          if let result = snapshot.result, mode != .original || snapshot.original == nil {
-            if result.pathExtension.lowercased() == "pdf" {
-              InspectionPane(
-                title: "处理结果", url: result, scale: $scale,
-                initialPage: request.page, controller: session.result)
-            } else {
-              TextResultPreview(url: result)
+        if snapshot.bilingualDownload, let result = snapshot.result {
+          InspectionPane(
+            title: "转换结果 · 左右对照", url: result, scale: $scale,
+            initialPage: request.page, controller: session.result)
+        } else {
+          GeometryReader { geometry in
+            let layout =
+              !pairedWorkspace && geometry.size.width < 600
+              ? AnyLayout(VStackLayout(spacing: 1)) : AnyLayout(HStackLayout(spacing: 1))
+            layout {
+              if mode != .result || snapshot.result == nil, let original = snapshot.original {
+                InspectionPane(
+                  title: "原文件", url: original, scale: $scale,
+                  initialPage: request.page, controller: session.original)
+              } else if pairedWorkspace {
+                VStack(spacing: 0) {
+                  Text("原文件").font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                  Divider()
+                  if let fallbackOriginal {
+                    SourceDocumentPreview(document: fallbackOriginal).id(fallbackOriginal.id)
+                  } else {
+                    ContentUnavailableView(
+                      "原文件未保留", systemImage: "doc",
+                      description: Text("转换结果仍可预览和下载。"))
+                  }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+              }
+              if pairedWorkspace { Divider() }
+              if let result = snapshot.result, mode != .original || snapshot.original == nil {
+                if result.pathExtension.lowercased() == "pdf" {
+                  InspectionPane(
+                    title: "转换结果", url: result, scale: $scale,
+                    initialPage: request.page, controller: session.result)
+                } else {
+                  VStack(spacing: 0) {
+                    Text("转换结果").font(.headline)
+                      .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                    Divider()
+                    TextResultPreview(url: result)
+                  }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+              } else if !snapshot.issues.isEmpty {
+                issueList(snapshot.issues)
+                  .frame(minWidth: 240, idealWidth: 285, maxWidth: 330)
+              } else if pairedWorkspace {
+                ContentUnavailableView(
+                  "转换结果尚未生成", systemImage: "doc.richtext",
+                  description: Text("可使用已保存的译文继续生成 PDF。")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+              }
             }
-          } else if !snapshot.issues.isEmpty {
-            issueList(snapshot.issues)
-              .frame(minWidth: 240, idealWidth: 285, maxWidth: 330)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
         }
       } else if let error {
@@ -114,6 +163,10 @@ struct DocumentInspectionView: View {
       minHeight: embedded ? 0 : 560, idealHeight: 760, maxHeight: .infinity
     )
     .task(id: request.jobID) {
+      if pairedWorkspace {
+        mode = .compare
+        session.comparisonVisible = true
+      }
       do {
         let files = try await backend.inspectionSnapshot(jobID: request.jobID)
         guard !Task.isCancelled else {
@@ -121,6 +174,10 @@ struct DocumentInspectionView: View {
           return
         }
         snapshot = files
+        if files.bilingualDownload {
+          mode = .result
+          session.comparisonVisible = false
+        }
       } catch is CancellationError {
         return
       } catch {
@@ -201,16 +258,15 @@ struct InspectionPane: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      VStack(spacing: 8) {
-        HStack {
-          Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(
-            .middle)
-          Spacer(minLength: 0)
+      ViewThatFits(in: .horizontal) {
+        header(compact: false)
+        ScrollView(.horizontal, showsIndicators: false) {
+          header(compact: true).fixedSize(horizontal: true, vertical: false)
         }
-        searchControls
       }
-      .padding(12)
+      .padding(.horizontal, 12).padding(.vertical, 10)
       .background(TransallTheme.paper)
+      Divider()
       if let searchNotice = controller.searchNotice {
         Text(searchNotice).font(.caption).foregroundStyle(TransallTheme.inkSoft)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -227,33 +283,40 @@ struct InspectionPane: View {
               "无法读取 PDF", systemImage: "doc.badge.exclamationmark", description: Text(error))
           }
         }
-      TransallControlGroup {
-        TransallGlassBar {
-          ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) {
-              pageNavigation
-              Divider().frame(height: 16)
-              zoomControls
-            }
-            VStack(spacing: 10) {
-              pageNavigation
-              zoomControls
-            }
-          }
-          .padding(.horizontal, 14).padding(.vertical, 10)
-        }
-      }
-      .fixedSize(horizontal: false, vertical: true).padding(12)
     }
     .background(Color(nsColor: .underPageBackgroundColor))
     .onChange(of: controller.currentPage) { _, page in pageInput = String(page) }
   }
 
+  @State private var showSearch = false
+
+  private func header(compact: Bool) -> some View {
+    HStack(spacing: 8) {
+      Text(title).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+        .lineLimit(1).truncationMode(.middle).frame(maxWidth: 110, alignment: .leading)
+      if compact {
+        Button("搜索文档文字", systemImage: "magnifyingglass") { showSearch.toggle() }
+          .labelStyle(.iconOnly)
+          .popover(isPresented: $showSearch) {
+            searchControls.frame(width: 260).padding(12)
+          }
+      } else {
+        searchControls.frame(minWidth: 80, maxWidth: .infinity)
+      }
+      pageNavigation
+      Divider().frame(height: 16)
+      zoomControls
+    }
+    .buttonStyle(.borderless)
+    .controlSize(.small)
+  }
+
   private var zoomControls: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: 8) {
       Button("缩小", systemImage: "minus.magnifyingglass") { scale = max(0.25, scale / 1.25) }
         .labelStyle(.iconOnly).help("缩小")
-      Button("适合页面") { scale = 1 }.font(.caption)
+      Button("适合页面", systemImage: "arrow.up.left.and.arrow.down.right") { scale = 1 }
+        .labelStyle(.iconOnly).help("适合页面")
       Button("放大", systemImage: "plus.magnifyingglass") { scale = min(4, scale * 1.25) }
         .labelStyle(.iconOnly).help("放大")
     }
@@ -267,7 +330,7 @@ struct InspectionPane: View {
         controller.go(to: controller.currentPage - 1)
       }
       .labelStyle(.iconOnly).disabled(controller.currentPage <= 1)
-      TextField("页码", text: $pageInput).frame(width: 40).multilineTextAlignment(.center)
+      TextField("页码", text: $pageInput).frame(width: 26).multilineTextAlignment(.center)
         .textFieldStyle(.plain)
         .onSubmit {
           if let page = InspectionNavigation.pageNumber(pageInput, count: controller.pageCount) {
@@ -290,7 +353,7 @@ struct InspectionPane: View {
   private var searchControls: some View {
     HStack(spacing: 8) {
       Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
-      TextField("搜索文档文字", text: $controller.query)
+      TextField("搜索文字", text: $controller.query)
         .textFieldStyle(.plain)
         .onSubmit { controller.moveMatch(forward: true) }
         .accessibilityLabel("搜索\(title)")
@@ -631,6 +694,7 @@ final class InspectionPDFController: NSObject, ObservableObject {
 }
 
 private struct InspectionPDFView: NSViewRepresentable {
+  @Environment(\.fileDropAction) private var fileDropAction
   let url: URL
   let scale: CGFloat
   let initialPage: Int
@@ -639,7 +703,8 @@ private struct InspectionPDFView: NSViewRepresentable {
   func makeCoordinator() -> InspectionPDFController { controller }
 
   func makeNSView(context: Context) -> PDFView {
-    let view = PDFView()
+    let view = FileReceivingPDFView()
+    view.fileDropAction = fileDropAction
     view.displayMode = .singlePageContinuous
     view.displayDirection = .vertical
     view.backgroundColor = .underPageBackgroundColor
@@ -648,6 +713,7 @@ private struct InspectionPDFView: NSViewRepresentable {
   }
 
   func updateNSView(_ view: PDFView, context: Context) {
+    (view as? FileReceivingPDFView)?.fileDropAction = fileDropAction
     if controller.loadedURL != url {
       controller.attach(to: view, url: url, initialPage: initialPage)
     }

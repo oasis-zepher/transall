@@ -5,16 +5,28 @@ import PDFKit
 /// Redraw only changed pages so replaced text is removed from the result's text layer.
 /// Reattach the remaining text invisibly; an overlay alone would leave the old text searchable.
 enum PDFTextReplacement {
-  static func apply(to document: PDFDocument, find: String, replacement: String) throws {
+  static func apply(
+    to document: PDFDocument, find: String, replacement: String,
+    pageIndex: Int? = nil, selectedRange: NSRange? = nil
+  ) throws {
     guard !find.isEmpty, find != replacement else { return }
     var matches = 0
     for index in 0..<document.pageCount {
+      if let pageIndex, index != pageIndex { continue }
       try Task.checkCancellation()
       guard let original = document.page(at: index), let text = original.string else { continue }
       let string = text as NSString
       var ranges: [NSRange] = []
+      if let selectedRange {
+        guard selectedRange.location != NSNotFound, selectedRange.location >= 0,
+          selectedRange.length > 0, selectedRange.location <= string.length,
+          selectedRange.length <= string.length - selectedRange.location,
+          string.substring(with: selectedRange) == find
+        else { throw NativeDocumentError.invalidOption("选中文字已变化，请重新选择。") }
+        ranges = [selectedRange]
+      }
       var cursor = 0
-      while cursor < string.length {
+      while selectedRange == nil && cursor < string.length {
         let range = string.range(
           of: find, range: NSRange(location: cursor, length: string.length - cursor))
         if range.location == NSNotFound { break }
@@ -55,10 +67,46 @@ enum PDFTextReplacement {
         guard !rect.isEmpty, media.contains(rect) else {
           throw NativeDocumentError.processing("无法定位替换文字。")
         }
-        let line = try fittedLine(replacement, rect: rect)
-        bitmap.setFillColor(NSColor.white.cgColor)
-        bitmap.fill(rect.insetBy(dx: -0.5, dy: -0.5))
-        replacements.append((rect, line))
+        let sourceValue = string.substring(with: range)
+        let tokens = sourceValue.split(whereSeparator: { $0.isWhitespace })
+        let isCharacterGrid =
+          selectedRange != nil && tokens.count > 1
+          && tokens.allSatisfy { $0.count == 1 }
+        if isCharacterGrid {
+          // Comb-style forms draw one letter in each cell. Erase and redraw only
+          // the glyph boxes, leaving the vertical rules between cells intact.
+          let letters = replacement.filter { !$0.isWhitespace }.map(String.init)
+          guard letters.count <= tokens.count else {
+            throw NativeDocumentError.invalidOption("所选区域只有 \(tokens.count) 个字符格，请缩短文字或选中更多字符格。")
+          }
+          var offset = range.location
+          var letterIndex = 0
+          for character in sourceValue {
+            let length = String(character).utf16.count
+            defer { offset += length }
+            guard !character.isWhitespace else { continue }
+            guard let glyph = page.selection(for: NSRange(location: offset, length: length)) else {
+              throw NativeDocumentError.processing("无法定位字符格。")
+            }
+            let box = glyph.bounds(for: page)
+            guard !box.isEmpty, media.contains(box) else {
+              throw NativeDocumentError.processing("字符格位置无效。")
+            }
+            let value = letterIndex < letters.count ? letters[letterIndex] : ""
+            let style = glyph.attributedString
+            let line = try fittedLine(value, rect: box, style: style)
+            bitmap.setFillColor(NSColor.white.cgColor)
+            bitmap.fill(box)
+            replacements.append((box, line))
+            letterIndex += 1
+          }
+        } else {
+          let line = try fittedLine(
+            replacement, rect: rect, style: selectedRange == nil ? nil : selection.attributedString)
+          bitmap.setFillColor(NSColor.white.cgColor)
+          bitmap.fill(rect.insetBy(dx: -0.5, dy: -0.5))
+          replacements.append((rect, line))
+        }
       }
       guard let image = bitmap.makeImage() else {
         throw NativeDocumentError.processing("无法生成修改页图像。")
@@ -73,8 +121,24 @@ enum PDFTextReplacement {
       // Restore only text outside the replaced ranges, maintaining searchable untouched text.
       var start = 0
       for range in ranges + [NSRange(location: string.length, length: 0)] {
-        if range.location > start,
-          let kept = page.selection(for: NSRange(location: start, length: range.location - start))
+        // A range starting on PDFKit's synthetic newline can select the previous
+        // glyph again. Exclude boundary whitespace before restoring the text layer.
+        var keptStart = start
+        var keptEnd = range.location
+        while keptStart < keptEnd,
+          string.substring(with: NSRange(location: keptStart, length: 1))
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+          keptStart += 1
+        }
+        while keptEnd > keptStart,
+          string.substring(with: NSRange(location: keptEnd - 1, length: 1))
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+          keptEnd -= 1
+        }
+        if keptEnd > keptStart,
+          let kept = page.selection(for: NSRange(location: keptStart, length: keptEnd - keptStart))
         {
           for line in kept.selectionsByLine() {
             let bounds = line.bounds(for: page)
@@ -106,15 +170,24 @@ enum PDFTextReplacement {
     }
   }
 
-  private static func fittedLine(_ value: String, rect: CGRect, requiresFit: Bool = true) throws
-    -> CTLine
-  {
-    var size = max(8, min(36, rect.height * 0.85))
+  private static func fittedLine(
+    _ value: String, rect: CGRect, requiresFit: Bool = true, style: NSAttributedString? = nil
+  ) throws -> CTLine {
+    let attributes = style.flatMap {
+      $0.length > 0 ? $0.attributes(at: 0, effectiveRange: nil) : nil
+    }
+    let sourceFont = attributes?[.font] as? NSFont
+    let color = attributes?[.foregroundColor] as? NSColor ?? .black
+    var size = sourceFont?.pointSize ?? max(8, min(36, rect.height * 0.85))
     func line(_ size: CGFloat) -> CTLine {
       CTLineCreateWithAttributedString(
         NSAttributedString(
           string: value,
-          attributes: [.font: NSFont.systemFont(ofSize: size), .foregroundColor: NSColor.black]))
+          attributes: [
+            .font: sourceFont.flatMap { NSFont(name: $0.fontName, size: size) }
+              ?? NSFont.systemFont(ofSize: size),
+            .foregroundColor: color,
+          ]))
     }
     var result = line(size)
     let width = CTLineGetTypographicBounds(result, nil, nil, nil)

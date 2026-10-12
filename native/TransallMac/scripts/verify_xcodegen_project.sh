@@ -29,6 +29,7 @@ trap cleanup EXIT
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/transall-xcodegen.XXXXXX")
 cp "$project_root/project.yml" "$temporary_root/project.yml"
 cp -R "$project_root/Sources" "$temporary_root/Sources"
+cp -R "$project_root/ThirdParty" "$temporary_root/ThirdParty"
 cp -R "$project_root/Resources" "$temporary_root/Resources"
 cp -R "$project_root/Tests" "$temporary_root/Tests"
 

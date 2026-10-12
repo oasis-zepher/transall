@@ -30,6 +30,8 @@ Queued and running jobs keep the visible file list and route options locked to t
 
 The former engine, licensing, helper-signing, and feature-scope P0 items are resolved for the App Store edition: it contains no Python helper, PyMuPDF, LibreOffice, Chromium, OCRmyPDF, Tesseract, or BabelDOC. Those dependencies remain limited to the separately run browser edition.
 
+The independent PDF editor added on 2026-09-21 bundles PDFium 8046 (BSD and included third-party notices), built without V8. Its universal static library is linked into the application executable. This changes the earlier system-framework-only dependency profile; distribution/archive validation must cover the statically linked engine and bundled notices. The old Python-based engine remains excluded.
+
 ## Recommended App Store edition
 
 For the first App Store release, keep the app small and predictable:

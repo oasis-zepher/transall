@@ -1,0 +1,8 @@
+module CPDFium [system] {
+  header "../../ThirdParty/PDFium/include/fpdfview.h"
+  header "../../ThirdParty/PDFium/include/fpdf_edit.h"
+  header "../../ThirdParty/PDFium/include/fpdf_text.h"
+  header "../../ThirdParty/PDFium/include/fpdf_save.h"
+  link "pdfium"
+  export *
+}

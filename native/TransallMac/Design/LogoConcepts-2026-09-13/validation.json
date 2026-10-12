@@ -1,0 +1,17 @@
+{
+  "svg_files_valid_with_unique_ids_and_internal_vector_references": 15,
+  "icon_png_sizes_verified": [
+    16,
+    32,
+    64,
+    128,
+    1024
+  ],
+  "local_html_links_and_images": "all resolve",
+  "visual_review": [
+    "comparison.png",
+    "pixel-check.png",
+    "monochrome.png"
+  ],
+  "application_integration": "not performed; concept only"
+}

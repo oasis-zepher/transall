@@ -84,6 +84,7 @@ struct ProviderDefinition: Codable, Equatable, Identifiable {
   let baseURL: String
   let model: String
   let configured: Bool
+  var authorizationRequired: Bool? = nil
 
   var id: String { name }
   var displayName: String {
@@ -95,6 +96,7 @@ struct ProviderDefinition: Codable, Equatable, Identifiable {
     case baseURL = "base_url"
     case model
     case configured
+    case authorizationRequired
   }
 }
 
@@ -150,6 +152,28 @@ struct PreflightResponse: Codable, Equatable {
   enum CodingKeys: String, CodingKey {
     case ok, warnings, requirements
     case blockingIssues = "blocking_issues"
+  }
+}
+
+struct TaskProgressLine: Equatable, Identifiable, Sendable {
+  let id: String
+  let title: String
+  let fraction: Double?
+
+  init(id: String = "main", title: String, fraction: Double? = nil) {
+    self.id = id
+    self.title = title
+    self.fraction = fraction.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+  }
+}
+
+enum ProcessingProgress {
+  // Structured child tasks inherit the reporter; independent jobs get separate scopes.
+  @TaskLocal static var reporter: (@Sendable (TaskProgressLine) async -> Void)?
+
+  static func report(_ title: String, fraction: Double? = nil, id: String = "main") async {
+    guard !Task.isCancelled else { return }
+    await reporter?(TaskProgressLine(id: id, title: title, fraction: fraction))
   }
 }
 
@@ -242,8 +266,8 @@ struct RouteSelection: Equatable {
 
 struct JobOptions: Codable, Equatable {
   var provider = "deepseek"
-  var outputMode = "translated"
-  var sourceLanguage = "en"
+  var outputMode = "preserve_layout"
+  var sourceLanguage = "auto"
   var targetLanguage = "zh"
   var glossary = ""
 

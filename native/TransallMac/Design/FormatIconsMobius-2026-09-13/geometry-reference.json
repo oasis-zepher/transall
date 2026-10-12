@@ -1,0 +1,17 @@
+{
+  "surface": "M\u00f6bius",
+  "formula": "((R+v*cos(u/2))*cos(u), (R+v*cos(u/2))*sin(u), v*sin(u/2))",
+  "u_range": [
+    0,
+    6.283185307179586
+  ],
+  "v_range": [
+    -0.92,
+    0.92
+  ],
+  "radius": 2.8,
+  "seam": "P(0,v) = P(2*pi,-v)",
+  "seam_error": 9.111372185656307e-16,
+  "half_twists": 1,
+  "texture_tiles": 12
+}

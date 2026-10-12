@@ -179,6 +179,7 @@ struct OrbitExtrusionShape: Shape {
 }
 
 struct OrbitReturningModule: View, Animatable {
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorSchemeContrast) private var contrast
   nonisolated var progress: Double
@@ -201,7 +202,7 @@ struct OrbitReturningModule: View, Animatable {
     let shape = OrbitExtrusionShape(departure: path, progress: progress)
     let bulb = path.moduleFrame(at: progress)
     let available = glass ? Color.clear : TransallTheme.orbitVacancy
-    let unavailable = Color(nsColor: .textBackgroundColor)
+    let unavailable = TransallTheme.orbitUnavailable(for: colorScheme)
     let surface = LinearGradient(
       stops: [
         .init(color: roles.source ? available : unavailable, location: 0),

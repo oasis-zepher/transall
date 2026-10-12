@@ -60,12 +60,17 @@ enum WorkbenchTask: String, CaseIterable, Identifiable {
     }
   }
   static func contentTypes(source: String?) -> [UTType] {
-    let extensions =
-      NativeCapabilities.routes.first { $0.source == source }?.accept
-      .split(separator: ",").map {
-        $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ".", with: "")
-      } ?? []
-    return extensions.compactMap { UTType(filenameExtension: $0) }
+    // The importer is created before a saved route is restored. An empty initial
+    // type list can leave AppKit's restored panel unable to select any document.
+    let routes = NativeCapabilities.routes.filter { source == nil || $0.source == source }
+    let extensions = Set(
+      routes.flatMap { route in
+        route.accept.split(separator: ",").map {
+          $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ".", with: "")
+        }
+      })
+    let types = extensions.sorted().compactMap { UTType(filenameExtension: $0) }
+    return types.isEmpty ? [.item] : types
   }
 }
 
@@ -238,6 +243,7 @@ private struct OrbitPlacement: ViewModifier {
 }
 
 struct FormatRouterView: View {
+  @Environment(\.colorScheme) private var colorScheme
   @EnvironmentObject private var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorSchemeContrast) private var contrast
@@ -305,13 +311,9 @@ struct FormatRouterView: View {
           .frame(width: size, height: size)
         HStack(spacing: 16) {
           if model.route != nil {
-            Button("选择文件…", systemImage: "plus") {
-              NotificationCenter.default.post(name: .transallChooseDocuments, object: nil)
-            }
-            .buttonStyle(PrimaryButtonStyle()).disabled(
-              !model.canSelectDocuments || drag != nil || isAnimatingSelection
-            )
-            .transition(.opacity)
+            Text("从工具栏添加文件，或按 ⌘O")
+              .font(.callout).foregroundStyle(.secondary)
+              .transition(.opacity)
           }
         }
         .frame(height: 36)
@@ -397,7 +399,7 @@ struct FormatRouterView: View {
     return ZStack {
       TransallControlGroup(spacing: 14) {
         ZStack {
-          Circle().fill(TransallTheme.panel)
+          Circle().fill(TransallTheme.orbitBackground(for: colorScheme))
             .overlay {
               Circle().stroke(
                 contrast == .increased ? TransallTheme.inkSoft : TransallTheme.line, lineWidth: 1)
@@ -1065,6 +1067,7 @@ struct OrbitFormatButton: View {
 }
 
 private struct OrbitModuleSurface: ViewModifier, Animatable {
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorSchemeContrast) private var contrast
   let selected: Bool
@@ -1083,7 +1086,7 @@ private struct OrbitModuleSurface: ViewModifier, Animatable {
 
   private func roleGradient() -> LinearGradient {
     // Supported halves reveal the same native surface as the empty chamber.
-    let unavailable = Color(nsColor: .textBackgroundColor)
+    let unavailable = TransallTheme.orbitUnavailable(for: colorScheme)
     let source = unavailable.opacity(1 - sourceSupport)
     let target = unavailable.opacity(1 - targetSupport)
     return LinearGradient(
@@ -1115,6 +1118,14 @@ private struct OrbitModuleSurface: ViewModifier, Animatable {
 
 struct InputFileListView: View {
   @EnvironmentObject private var model: AppModel
+  @State private var hoveredFileID: URL?
+
+  private var canRemove: Bool { !model.isImporting && model.canEditTaskDraft }
+
+  private func showsRemoval(for document: SelectedDocument) -> Bool {
+    hoveredFileID == document.id
+      || (model.showInputPreview && model.selectedDocumentID == document.id)
+  }
 
   var body: some View {
     List(
@@ -1137,10 +1148,26 @@ struct InputFileListView: View {
             Spacer(minLength: 0)
             Button("移除文件", systemImage: "xmark") { model.removeDocument(document) }
               .labelStyle(.iconOnly).buttonStyle(.borderless)
-              .disabled(!model.canSelectDocuments && (model.isImporting || !model.canEditTaskDraft))
+              .disabled(!canRemove || !showsRemoval(for: document))
+              .opacity(showsRemoval(for: document) ? 1 : 0)
+              .accessibilityHidden(!showsRemoval(for: document))
               .accessibilityLabel("移除\(document.name)")
           }
           .help(document.name).tag(document.id)
+          .onHover { hovering in
+            if hovering {
+              hoveredFileID = document.id
+            } else if hoveredFileID == document.id {
+              hoveredFileID = nil
+            }
+          }
+          .accessibilityAction(named: "移除文件") {
+            if canRemove { model.removeDocument(document) }
+          }
+          .contextMenu {
+            Button("移除文件", role: .destructive) { model.removeDocument(document) }
+              .disabled(!canRemove)
+          }
         }
         if model.documents.isEmpty {
           Text("尚未添加文件").font(.callout).foregroundStyle(.secondary)
@@ -1149,14 +1176,17 @@ struct InputFileListView: View {
         HStack {
           Text("文件 · \(model.documents.count)")
           Spacer()
-          Button("添加文件", systemImage: "plus") {
-            NotificationCenter.default.post(name: .transallChooseDocuments, object: nil)
-          }
-          .labelStyle(.iconOnly).buttonStyle(.borderless).disabled(!model.canSelectDocuments)
+
         }
       }
     }
     .listStyle(.sidebar)
     .accessibilityLabel("当前任务的文件")
+    .onDeleteCommand {
+      guard canRemove, model.showInputPreview,
+        let document = model.documents.first(where: { $0.id == model.selectedDocumentID })
+      else { return }
+      model.removeDocument(document)
+    }
   }
 }

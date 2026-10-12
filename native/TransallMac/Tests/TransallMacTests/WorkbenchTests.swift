@@ -671,10 +671,7 @@ struct WorkbenchTests {
   }
 
   @MainActor private func waitFor(_ predicate: () -> Bool) async throws {
-    for _ in 0..<300 {
-      if predicate() { return }
-      try await Task.sleep(for: .milliseconds(25))
-    }
+    if try await eventually(predicate) { return }
     Issue.record("Workbench operation did not finish")
   }
 

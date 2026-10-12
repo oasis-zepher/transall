@@ -179,11 +179,8 @@ struct DocumentInspectionTests {
 
   @MainActor
   private func waitFor(_ condition: () -> Bool) async throws {
-    for _ in 0..<200 {
-      if condition() { return }
-      try await Task.sleep(for: .milliseconds(25))
-    }
-    Issue.record("PDF inspection did not finish loading or searching within five seconds")
+    if try await eventually(condition) { return }
+    Issue.record("PDF inspection did not finish loading or searching")
   }
 
   private func makePDF(_ url: URL, pageCount: Int = 12, matchesPerPage: Int = 1) throws {

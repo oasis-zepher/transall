@@ -61,10 +61,7 @@ struct FileDropTests {
   }
 
   private func finishImport(_ model: AppModel) async throws {
-    for _ in 0..<200 {
-      if !model.isImporting { break }
-      try await Task.sleep(for: .milliseconds(5))
-    }
+    try await eventually { !model.isImporting }
     #expect(!model.isImporting)
     #expect(model.errorMessage == nil)
   }

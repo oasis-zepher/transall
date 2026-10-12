@@ -13,3 +13,10 @@ native/TransallMac/.swiftpm/
 native/TransallMac/DerivedData/
 native/TransallMac/Transall.xcodeproj/xcuserdata/
 *.xcuserstate
+.venv/
+.ruff_cache/
+# 翻译质量检查生成的大体积 PDF；已提交的样本仍然被跟踪
+output/pdf/
+# Finder/iCloud 冲突时自动生成的重复副本
+native/TransallMac/Transall [0-9]*.xcodeproj/
+native/TransallMac/Support/Info [0-9]*.plist
